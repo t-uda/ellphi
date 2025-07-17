@@ -3,13 +3,32 @@ import numpy
 from scipy.optimize import root_scalar
 
 def to_abcdef(x0, y0, r1, r2, theta):
+    """Convert ellipse parameters to polynomial coefficients.
+
+    Given an ellipse defined by its center `(x0, y0)`, semi-axis lengths `r1` and `r2`
+    (along the major and minor axes), and rotation angle `theta` (radians from the x-axis),
+    compute the coefficients of its quadratic equation. The result is an array
+    `[a, b, c, d, e, f]` representing the conic:
+    **a**·x² + 2·**b**·x·y + **c**·y² + 2·**d**·x + 2·**e**·y + **f** = 0.
+
+    Args:
+        x0 (float): X-coordinate of the ellipse center.
+        y0 (float): Y-coordinate of the ellipse center.
+        r1 (float): Semi-axis length along the ellipse’s major axis.
+        r2 (float): Semi-axis length along the ellipse’s minor axis.
+        theta (float): Rotation of the ellipse in radians (0 = aligned with x-axis).
+
+    Returns:
+        numpy.ndarray: A length-6 array of coefficients `[a, b, c, d, e, f]` for the ellipse’s implicit equation.
+    """
     C, S = numpy.cos(theta), numpy.sin(theta)
     a = (S ** 2) / (r2 ** 2) + (C ** 2) / (r1 ** 2)
     b = (-S * C) / (r2 ** 2) + (S * C) / (r1 ** 2)
     c = (C ** 2) / (r2 ** 2) + (S ** 2) / (r1 ** 2)
     d = (-x0 * S ** 2 + y0 * S * C) / (r2 ** 2) - (x0 * C ** 2 + y0 * S * C) / (r1 ** 2)
     e = (x0 * S * C - y0 * C ** 2) / (r2 ** 2) - (x0 * S * C + y0 * S ** 2) / (r1 ** 2)
-    f = (x0 ** 2 * S ** 2 - 2 * x0 * y0 * S * C + y0 ** 2 * C ** 2) / (r2 ** 2) + (x0 ** 2 * C ** 2 + 2 * x0 * y0 * S * C + y0 ** 2 * S ** 2) / (r1 ** 2)
+    f = (x0 ** 2 * S ** 2 - 2 * x0 * y0 * S * C + y0 ** 2 * C ** 2) / (r2 ** 2) \
+      + (x0 ** 2 * C ** 2 + 2 * x0 * y0 * S * C + y0 ** 2 * S ** 2) / (r1 ** 2)
     return numpy.array([a, b, c, d, e, f])
 
 def epoly(a, b, c, d, e, f, x, y):
@@ -55,20 +74,71 @@ def target_function_prime(mu, p, q):
     return 2 * A_xprime.T @ A_mu_inv @ A_xprime
 
 def find_intersect(p, q, method='brentq+newton', *, bracket=[0, 1], x0=None):
+    """Find the tangency point between two ellipses given by their coefficients.
+
+    This function computes the point of intersection or closest approach between two ellipses
+    (defined by coefficient arrays `p` and `q`). It uses a root-finding strategy to find a parameter `mu`
+    in [0, 1] such that the two ellipses are tangent (their defining equations are equal at some point).
+    By default, a combination of Brent’s method and Newton’s method is used for efficiency and accuracy.
+
+    Args:
+        p (array-like): Coefficients `[a, b, c, d, e, f]` of the first ellipse’s quadratic equation.
+        q (array-like): Coefficients `[a, b, c, d, e, f]` of the second ellipse’s quadratic equation.
+        method (str, optional): Root-finding method to use for solving the tangency condition.
+            Options include `'brentq+newton'` (default, two-phase Brent then Newton refinement),
+            `'bisect'`, `'brentq'`, `'brenth'`, or `'newton'`.
+            See `find_intersect_mu` for details.
+        bracket (list of float, optional): Two-element list `[mu_min, mu_max]` bracketing the solution (default `[0, 1]`).
+        x0 (float, optional): Initial guess for `mu` (required if `method='newton'` alone is used).
+
+    Returns:
+        tuple: A tuple `(t, xc, mu)` where:
+          - **t** (float) is the tangential distance measure at the intersection point (non-negative).
+          - **xc** (numpy.ndarray of shape (2,)): the *(x, y)* coordinates of the tangency point.
+          - **mu** (float): the interpolation parameter in [0, 1] at which the tangency occurs (mu=0 corresponds to ellipse `p`, mu=1 to ellipse `q`).
+
+    Raises:
+        ValueError: If an invalid `method` is specified, or if `method='newton'` is used without providing an `x0` initial guess.
+    """
     mu = find_intersect_mu(p, q, method=method, bracket=bracket, x0=x0)
     q_mu = pencil(1 - mu, p, mu, q)
     xc = center_point(q_mu)
     t = numpy.sqrt(epoly(*q_mu, *xc))
     return (t, xc, mu)
 
+
 def find_intersect_mu(p, q, method='brentq+newton', *, bracket=[0, 1], x0=None):
+    """Solve for the Lagrange multiplier that equalizes two ellipse quadratic polynomials.
+
+    Finds the value `mu` in [0, 1] such that the "pencil" combination of ellipse `p` and ellipse `q`
+    has a point where both original ellipses evaluate equally. In other words, it solves for `mu`
+    where the two ellipses are tangent or intersecting. This is a lower-level helper for `find_intersect`
+    that returns only the parameter `mu`.
+
+    The root-finding method can be specified:
+      - `'brentq+newton'`: first use Brent’s bracketing method to approximate the root, then refine with a couple of Newton steps (default).
+      - `'bisect'`, `'brentq'`, `'brenth'`: use the corresponding bracketing method from `scipy.optimize` directly.
+      - `'newton'`: use Newton method (requires a good initial guess `x0`).
+
+    Args:
+        p (array-like): Coefficients of the first ellipse.
+        q (array-like): Coefficients of the second ellipse.
+        method (str, optional): Root-finding algorithm to use (default `'brentq+newton'`).
+        bracket (list of float, optional): Bracket interval [min, max] for methods that require it (default [0, 1]).
+        x0 (float, optional): Initial guess for Newton’s method (required if `method='newton'`).
+
+    Returns:
+        float: The solution `mu` (between 0 and 1) that makes the ellipses tangent.
+
+    Raises:
+        ValueError: If `method` is not one of the supported options, or if `method='newton'` is chosen without providing an `x0`.
+    """
     if method == 'brentq+newton':
-        # Step 1: Use Brent's method to quickly converge to a rough solution
+        # (Brent’s method followed by Newton refinement)
         brent_result = root_scalar(target_function, args=(p, q), bracket=bracket, method='brentq', options={'maxiter': 8})
         mu_approx = brent_result.root
-        
-        # Step 2: Use Newton's method for fine-tuning with 2 iterations
-        newton_result = root_scalar(target_function, args=(p, q), x0=mu_approx, method='newton', fprime=target_function_prime, options={'maxiter': 3})
+        newton_result = root_scalar(target_function, args=(p, q), x0=mu_approx, method='newton',
+                                    fprime=target_function_prime, options={'maxiter': 3})
         return newton_result.root
     if method in ['bisect', 'brentq', 'brenth']:
         return root_scalar(target_function, args=(p, q), bracket=bracket, method=method).root
