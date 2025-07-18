@@ -32,6 +32,9 @@ dev = [
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
 
+[tool.poetry.group.dev.dependencies]
+homcloud = "^4.8.0"
+
 [build-system]
 requires = ["poetry-core>=1.9.0"]
 build-backend = "poetry.core.masonry.api"
