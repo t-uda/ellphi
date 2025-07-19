@@ -1,16 +1,43 @@
 """
-ellphi: fast ellipse tangency solver
+ellphi top-level package initialisation
+--------------------------------------
+
+Re-exports the most frequently used symbols so users can::
+
+    import ellphi as el
+    el.tangency(...)
 """
 
 from importlib.metadata import version as _version
 
-from .geometry import Ellipse, ellipse_coeffs, coeff_matrix
-from .solver import tangency, pairwise_tangency, TangencyResult
+# geometry
+from .geometry import (
+    unit_vector,
+    axes_from_cov,
+    coef_from_axes,
+    coef_from_array,
+    coef_from_cov,
+)
+
+# solver
+from .solver import (
+    quad_eval,
+    pencil,
+    tangency,
+    pairwise_tangency,
+    TangencyResult,
+)
 
 __all__ = [
-    "Ellipse",
-    "ellipse_coeffs",
-    "coeff_matrix",
+    # geometry
+    "unit_vector",
+    "axes_from_cov",
+    "coef_from_axes",
+    "coef_from_array",
+    "coef_from_cov",
+    # solver
+    "quad_eval",
+    "pencil",
     "tangency",
     "pairwise_tangency",
     "TangencyResult",

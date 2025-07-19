@@ -1,70 +1,89 @@
+"""
+ellphi.geometry  –  geometric helpers for ellipse cloud
+=======================================================
+
+Key API (all return NumPy float64):
+
+- unit_vector(theta)
+- axes_from_cov(cov, scale=1.0)
+- coef_from_axes(x, y, r1, r2, theta) # centre+axes → (6,)
+- coef_from_array(arr)                # (N,5) → (N,6)
+- coef_from_cov(x, y, cov, scale=1.0) # centre+cov → (6,)
+"""
+
+from __future__ import annotations
 
 from collections import namedtuple
-from typing import Union, Sequence
 
 import numpy
 
 __all__ = [
-    "Ellipse",
-    "ellipse_coeffs",
-    "coeff_matrix",
-    "_to_array",
+    "unit_vector",
+    "axes_from_cov",
+    "coef_from_axes",
+    "coef_from_array",
+    "coef_from_cov",
 ]
 
-# ---------------------------------------------------------------------------
-# Lightweight parameter container
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Pure helpers
+# ------------------------------------------------------------------
+def unit_vector(theta: float) -> numpy.ndarray:  # noqa: D401
+    """Return the unit vector (cosθ, sinθ)."""
+    return numpy.array([numpy.cos(theta), numpy.sin(theta)], dtype=float)
 
-Ellipse = namedtuple("Ellipse", ["x", "y", "r1", "r2", "theta"])
-
-
-# ---------------------------------------------------------------------------
-# Conversion helpers
-# ---------------------------------------------------------------------------
-
-def ellipse_coeffs(e: Ellipse) -> numpy.ndarray:
-    """Convert an :class:`Ellipse` to six conic coefficients `[a,b,c,d,e,f]`.
-
-    The coefficients are normalised so that the polynomial equals 1 on the
-    ellipse boundary.
-    """
-    x0, y0, r1, r2, th = e
-    c, s = numpy.cos(th), numpy.sin(th)
-    a = (s ** 2) / (r2 ** 2) + (c ** 2) / (r1 ** 2)
-    b = (-s * c) / (r2 ** 2) + (s * c) / (r1 ** 2)
-    c2 = (c ** 2) / (r2 ** 2) + (s ** 2) / (r1 ** 2)
-    d = (-x0 * s ** 2 + y0 * s * c) / (r2 ** 2) - (x0 * c ** 2 + y0 * s * c) / (r1 ** 2)
-    ecoef = (x0 * s * c - y0 * c ** 2) / (r2 ** 2) - (x0 * s * c + y0 * s ** 2) / (r1 ** 2)
-    f = (
-        (x0 ** 2 * s ** 2 - 2 * x0 * y0 * s * c + y0 ** 2 * c ** 2) / (r2 ** 2)
-        + (x0 ** 2 * c ** 2 + 2 * x0 * y0 * s * c + y0 ** 2 * s ** 2) / (r1 ** 2)
+def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
+    """Covariance (2×2) → (r1, r2, θ) with r1 ≥ r2."""
+    eigvals, eigvecs = numpy.linalg.eigh(cov)
+    order = numpy.argsort(eigvals)[::-1]
+    lam1, lam2 = eigvals[order]
+    v1 = eigvecs[:, order[0]]
+    return float(numpy.sqrt(lam1) * scale), float(numpy.sqrt(lam2) * scale), float(
+        numpy.arctan2(v1[1], v1[0])
     )
-    return numpy.array([a, b, c2, d, ecoef, f], dtype=float)
 
+# ------------------------------------------------------------------
+# Shared core formula (broadcast-friendly)
+# ------------------------------------------------------------------
+def _coef_core(x, y, r1, r2, cos, sin):
+    """Return stacked [a,b,c,d,e,f] along last dimension."""
+    a = sin**2 / r2**2 + cos**2 / r1**2
+    b = (-sin * cos) / r2**2 + (sin * cos) / r1**2
+    c = cos**2 / r2**2 + sin**2 / r1**2
+    d = (-x * sin**2 + y * sin * cos) / r2**2 - (x * cos**2 + y * sin * cos) / r1**2
+    e = (x * sin * cos - y * cos**2) / r2**2 - (x * sin * cos + y * sin**2) / r1**2
+    f = (
+        (x**2 * sin**2 - 2 * x * y * sin * cos + y**2 * cos**2) / r2**2
+        + (x**2 * cos**2 + 2 * x * y * sin * cos + y**2 * sin**2) / r1**2
+    )
+    return numpy.stack([a, b, c, d, e, f], axis=-1)  # (..., 6)
 
-def _to_array(obj: Union[Ellipse, Sequence[float], numpy.ndarray]) -> numpy.ndarray:
-    """Return *obj* as a numpy float64 1‑D array (copy if needed)."""
-    if isinstance(obj, Ellipse):
-        return ellipse_coeffs(obj)
-    return numpy.asarray(obj, dtype=float)
+# ------------------------------------------------------------------
+# Public façade
+# ------------------------------------------------------------------
+def coef_from_axes(
+        x: float,
+        y: float,
+        r1: float,
+        r2: float,
+        theta: float
+) -> numpy.ndarray:
+    """Centre & axes → conic coefficient array (6,)."""
+    return _coef_core(x, y, r1, r2, *unit_vector(theta)).ravel()
 
-
-# ---------------------------------------------------------------------------
-# Vectorised batch conversion
-# ---------------------------------------------------------------------------
-
-def coeff_matrix(params: numpy.ndarray) -> numpy.ndarray:
-    """Convert ``(N,5)`` param rows to ``(N,6)`` coefficient rows."""
+def coef_from_array(params: numpy.ndarray) -> numpy.ndarray:
+    """Vectorised `(N,5)` → `(N,6)` conversion."""
     x, y, r1, r2, th = params.T
-    c, s = numpy.cos(th), numpy.sin(th)
-    a = (s ** 2) / r2 ** 2 + (c ** 2) / r1 ** 2
-    b = (-s * c) / r2 ** 2 + (s * c) / r1 ** 2
-    c2 = (c ** 2) / r2 ** 2 + (s ** 2) / r1 ** 2
-    d = (-x * s ** 2 + y * s * c) / r2 ** 2 - (x * c ** 2 + y * s * c) / r1 ** 2
-    ecoef = (x * s * c - y * c ** 2) / r2 ** 2 - (x * s * c + y * s ** 2) / r1 ** 2
-    f = (
-        (x ** 2 * s ** 2 - 2 * x * y * s * c + y ** 2 * c ** 2) / r2 ** 2
-        + (x ** 2 * c ** 2 + 2 * x * y * s * c + y ** 2 * s ** 2) / r1 ** 2
-    )
-    return numpy.stack([a, b, c2, d, ecoef, f], axis=1)
+    return _coef_core(x, y, r1, r2, numpy.cos(th), numpy.sin(th))
+
+def coef_from_cov(
+    x: float,
+    y: float,
+    cov: numpy.ndarray,
+    /,
+    *,
+    scale: float = 1.0,
+) -> numpy.ndarray:
+    """Centre + covariance → conic coefficients."""
+    return coef_from_axes(x, y, *axes_from_cov(cov, scale=scale))
 

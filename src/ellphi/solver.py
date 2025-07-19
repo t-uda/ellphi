@@ -4,12 +4,10 @@ from __future__ import annotations
 """Tangency solver – consolidated version with correct derivative formula."""
 
 from collections import namedtuple
-from typing import Sequence, Tuple, Union
+from typing import Sequence, Tuple
 
 import numpy
 from scipy.optimize import root_scalar
-
-from .geometry import Ellipse, ellipse_coeffs, _to_array
 
 __all__ = [
     "quad_eval",
@@ -39,12 +37,12 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
 TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 
 
-def _center(c: numpy.ndarray) -> Tuple[float, float]:
-    a, b, c2, d, e, _ = c
-    det = a * c2 - b**2
+def _center(coef: numpy.ndarray) -> Tuple[float, float]:
+    a, b, c, d, e, _ = coef
+    det = a * c - b**2
     if det == 0:
         raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    x = (b * e - c2 * d) / det
+    x = (b * e - c * d) / det
     y = (b * d - a * e) / det
     return (x, y)
 
@@ -103,16 +101,14 @@ def _solve_mu(
 # ---------------------------------------------------------------------------
 
 def tangency(
-    p: Union[Ellipse, Sequence[float], numpy.ndarray],
-    q: Union[Ellipse, Sequence[float], numpy.ndarray],
+    pcoef: numpy.ndarray,
+    qcoef: numpy.ndarray,
     *,
     method: str = "brentq+newton",
     bracket: Sequence[float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
-    pcoef = ellipse_coeffs(p) if isinstance(p, Ellipse) else _to_array(p)
-    qcoef = ellipse_coeffs(q) if isinstance(q, Ellipse) else _to_array(q)
     mu = _solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
     coef = pencil(pcoef, qcoef, mu)
     point = numpy.asarray(_center(coef))
@@ -120,31 +116,12 @@ def tangency(
     return TangencyResult(t, point, mu)
 
 
-def pairwise_tangency(coeffs: numpy.ndarray) -> numpy.ndarray:
+def pairwise_tangency(coefs: numpy.ndarray) -> numpy.ndarray:
     """Compute symmetric tangency distance matrix for many ellipses."""
-    N = coeffs.shape[0]
+    N = coefs.shape[0]
     D = numpy.zeros((N, N), dtype=float)
     for i in range(N):
         for j in range(i + 1, N):
-            D[i, j] = D[j, i] = tangency(coeffs[i], coeffs[j]).t
+            D[i, j] = D[j, i] = tangency(coefs[i], coefs[j]).t
     return D
-
-
-# ---------------------------------------------------------------------------
-# Deprecated wrappers
-# ---------------------------------------------------------------------------
-
-def find_intersect(p, q, **kw):  # legacy alias
-    import warnings
-    warnings.warn("find_intersect is deprecated; use ellphi.tangency", DeprecationWarning, stacklevel=2)
-    res = tangency(p, q, **kw)
-    return (res.t, res.point, res.mu)
-
-
-def find_intersect_mu(p, q, **kw):  # legacy alias
-    import warnings
-    warnings.warn("find_intersect_mu is deprecated; use ellphi.tangency", DeprecationWarning, stacklevel=2)
-    pcoef = ellipse_coeffs(p) if isinstance(p, Ellipse) else _to_array(p)
-    qcoef = ellipse_coeffs(q) if isinstance(q, Ellipse) else _to_array(q)
-    return _solve_mu(pcoef, qcoef, **kw)
 
