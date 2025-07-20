@@ -15,9 +15,13 @@ from .geometry import (
     unit_vector,
     axes_from_cov,
     coef_from_axes,
-    coef_from_array,
     coef_from_cov,
+)
+
+from .ellcloud import (
     ellipse_cloud,
+    EllipseCloud,
+    LocalCov
 )
 
 # solver
@@ -34,9 +38,11 @@ __all__ = [
     "unit_vector",
     "axes_from_cov",
     "coef_from_axes",
-    "coef_from_array",
     "coef_from_cov",
+    # ellcloud
     "ellipse_cloud",
+    "EllipseCloud",
+    "LocalCov",
     # solver
     "quad_eval",
     "pencil",

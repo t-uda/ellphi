@@ -8,8 +8,8 @@ from ellphi import coef_from_axes, tangency
 # -----------------------------------------------------------------------------
 
 def test_tangent_unit_circles():
-    a = coef_from_axes(0, 0, 1, 1, 0)
-    b = coef_from_axes(2, 0, 1, 1, 0)
+    a = coef_from_axes([0, 0], 1, 1, 0)
+    b = coef_from_axes([2, 0], 1, 1, 0)
     res = tangency(a, b)
     assert res.mu == pytest.approx(0.5)
     assert res.point.tolist() == pytest.approx([1.0, 0.0])
@@ -21,8 +21,8 @@ def test_tangent_unit_circles():
 # -----------------------------------------------------------------------------
 
 def test_symmetry_generic():
-    p = coef_from_axes(0.3, -0.7, 1.2, 0.9, 0.4)
-    q = coef_from_axes(-1.1, 1.4, 0.8, 1.5, 1.0)
+    p = coef_from_axes([0.3, -0.7], 1.2, 0.9, 0.4)
+    q = coef_from_axes([-1.1, 1.4], 0.8, 1.5, 1.0)
 
     r1 = tangency(p, q)
     r2 = tangency(q, p)
@@ -43,8 +43,8 @@ def test_symmetry_generic():
 # -----------------------------------------------------------------------------
 
 def test_newton_requires_x0():
-    p = coef_from_axes(0, 0, 1, 1, 0)
-    q = coef_from_axes(1, 0, 1, 1, 0)
+    p = coef_from_axes([0, 0], 1, 1, 0)
+    q = coef_from_axes([1, 0], 1, 1, 0)
     with pytest.raises(ValueError):
         tangency(p, q, method="newton")
 

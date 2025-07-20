@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 
 import numpy
 from scipy.optimize import root_scalar
-from .geometry import EllipseCloudResult
+# from .ellcloud import EllipseCloud
 
 __all__ = [
     "quad_eval",
@@ -116,18 +116,17 @@ def tangency(
     t = float(numpy.sqrt(quad_eval(*coef, *point)))
     return TangencyResult(t, point, mu)
 
-def pdist_tangency(ellcloud: EllipseCloudResult) -> numpy.ndarray:
+def pdist_tangency(ellcloud: "EllipseCloud") -> numpy.ndarray:
     """
     The pairwise tangency is computed and stored in entry ``m * i + j - ((i + 2) * (i + 1)) // 2``,
     where m is the number of ellipses.
     """
-    coefs = ellcloud.coefs
-    m = ellcloud.num_ellipses
+    m = len(ellcloud)
     n = m * (m - 1) // 2
     d = numpy.zeros((n,), dtype=float)
     for i in range(m):
         for j in range(i + 1, m):
             k = m * i + j - ((i + 2) * (i + 1)) // 2
-            d[k] = tangency(coefs[i], coefs[j]).t
+            d[k] = tangency(ellcloud[i], ellcloud[j]).t
     return d
 

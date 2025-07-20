@@ -30,17 +30,18 @@ __all__ = [
 #     x, y = U @ (scale * sqrtD @ unit_vector(t)) + c
 #     return {'x': x, 'y': y}
 
-def ellipse_patch(x0, y0, r1=1, r2=1, theta=0, *, cov=None, scale=1):
+def ellipse_patch(X, r_major=1, r_minor=1, theta=0, *, cov=None, scale=1, **kwgs):
     if cov is not None:
-        r1, r2, theta = axes_from_cov(cov)
+        r_major, r_minor, theta = axes_from_cov(cov)
     ellipse = plt.matplotlib.patches.Ellipse(
-        (x0, y0),
-        width=2*r1*scale,
-        height=2*r2*scale,
+        X,
+        width=2 * r_major * scale,
+        height=2 * r_minor * scale,
         angle=numpy.degrees(theta),
-        edgecolor='black',
         facecolor='none',
-        linestyle='-'
+        **kwgs
+        # edgecolor='black',
+        # linestyle='-'
     )
     return ellipse
 

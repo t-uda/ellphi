@@ -6,9 +6,8 @@ Key API (all return NumPy float64):
 
 - unit_vector(theta)
 - axes_from_cov(cov, scale=1.0)
-- coef_from_axes(x, y, r0, r1, theta) # centre+axes → (6,)
-- coef_from_array(arr)                # (N,5) → (N,6)
-- coef_from_cov(x, y, cov, scale=1.0) # centre+cov → (6,)
+- coef_from_axes(X, r0, r1, theta) # centre+axes → (6,)
+- coef_from_cov(X, cov, scale=1.0) # centre+cov → (6,)
 """
 
 from __future__ import annotations
@@ -16,16 +15,12 @@ from __future__ import annotations
 from collections import namedtuple
 
 import numpy
-from scipy.spatial.distance import pdist, squareform 
 
 __all__ = [
     "unit_vector",
     "axes_from_cov",
     "coef_from_axes",
-    "coef_from_array",
     "coef_from_cov",
-    "ellipse_cloud",
-    "EllipseCloudResult"
 ]
 
 # ------------------------------------------------------------------
@@ -33,7 +28,7 @@ __all__ = [
 # ------------------------------------------------------------------
 def unit_vector(theta: float) -> numpy.ndarray:  # noqa: D401
     """Return the unit vector (cosθ, sinθ)."""
-    return numpy.array([numpy.cos(theta), numpy.sin(theta)], dtype=float)
+    return numpy.transpose([numpy.cos(theta), numpy.sin(theta)])
 
 def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
     """Covariance (2×2) → (r0, r1, θ) with r0 ≥ r1."""
@@ -49,8 +44,9 @@ def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
 # ------------------------------------------------------------------
 # Shared core formula (broadcast-friendly)
 # ------------------------------------------------------------------
-def _coef_core(x, y, r0, r1, cos, sin):
+def _coef_core(X, r0, r1, cos, sin):
     """Return stacked [a,b,c,d,e,f] along last dimension."""
+    x, y = numpy.transpose(X)
     a = sin**2 / r1**2 + cos**2 / r0**2
     b = (-sin * cos) / r1**2 + (sin * cos) / r0**2
     c = cos**2 / r1**2 + sin**2 / r0**2
@@ -66,43 +62,38 @@ def _coef_core(x, y, r0, r1, cos, sin):
 # Public façade
 # ------------------------------------------------------------------
 def coef_from_axes(
-        x: float,
-        y: float,
+        X: float,
         r0: float,
         r1: float,
         theta: float
 ) -> numpy.ndarray:
     """Centre & axes → conic coefficient array (6,)."""
-    return _coef_core(x, y, r0, r1, *unit_vector(theta))
-
-def coef_from_array(params: numpy.ndarray) -> numpy.ndarray:
-    """Vectorised `(N,5)` → `(N,6)` conversion."""
-    x, y, r0, r1, th = params.T
-    return _coef_core(x, y, r0, r1, numpy.cos(th), numpy.sin(th))
+    return _coef_core(X, r0, r1, numpy.cos(theta), numpy.sin(theta))
 
 def coef_from_cov_composed(
-    x: float,
-    y: float,
+    X: float,
     cov: numpy.ndarray,
     /,
     *,
     scale: float = 1.0,
 ) -> numpy.ndarray:
     """Centre + covariance → conic coefficients."""
-    return coef_from_axes(x, y, *axes_from_cov(cov, scale=scale))
+    return coef_from_axes(X, *axes_from_cov(cov, scale=scale))
 
 def coef_from_cov(
-    x: numpy.ndarray,
-    y: numpy.ndarray,
+    X: numpy.ndarray,
     cov: numpy.ndarray,
     /,
     *,
     scale: float = 1.0,
 ) -> numpy.ndarray:
     """Centre + covariance → conic coefficients."""
+    X = numpy.array(X)
+    if len(X.shape) <= 1:
+        X = X[None, :] # Extend if single observation
     if len(cov.shape) <= 2:
-        cov = cov[None, :, :]
-    centers = numpy.transpose([x, y])[:, :, None]
+        cov = cov[None, :, :] # Extend if single observation
+    centers = X[:, :, None]
     matrices = numpy.linalg.inv(cov) / scale**2
     coef_b = - matrices @ centers
     coef_c = centers.transpose(0, 2, 1) @ matrices @ centers
@@ -114,24 +105,4 @@ def coef_from_cov(
         coef_b[:, 1].ravel(),
         coef_c.ravel()
     ], axis=-1)
-
-EllipseCloudResult = namedtuple("EllipseCloudResult", [
-    "coefs", "means", "covs", "neighbors", "k", "num_ellipses"
-])
-
-def ellipse_cloud(x: numpy.ndarray, y: numpy.ndarray, k: int, *, scale: float = 1.0) -> EllipseCloudResult:
-    points = numpy.transpose([x, y])
-    d = squareform(pdist(points)) # Euclidean distance matrix
-    # argsort したものから :near だけとると重複が生じるので削る
-    near_subsets = numpy.unique(numpy.argsort(d, axis=1)[:, :k], axis=0)
-    # 各サブセットをソートしてタプルに変換
-    sorted_subsets = [tuple(sorted(subset)) for subset in near_subsets]
-    unique_subsets = numpy.unique(sorted_subsets, axis=0) # 重複を取り除く
-    num_ellipses = unique_subsets.shape[0]
-    knbd = points[unique_subsets]
-    means = numpy.mean(knbd, axis=1)
-    rel_nbd = knbd - means[:, None, :]
-    covs = rel_nbd.transpose(0, 2, 1) @ rel_nbd / (k - 1)
-    coefs = coef_from_cov(*means.T, covs)
-    return EllipseCloudResult(coefs, means, covs, unique_subsets, k, num_ellipses)
 
