@@ -17,6 +17,7 @@ from .geometry import (
     coef_from_axes,
     coef_from_array,
     coef_from_cov,
+    ellipse_cloud,
 )
 
 # solver
@@ -24,7 +25,7 @@ from .solver import (
     quad_eval,
     pencil,
     tangency,
-    pairwise_tangency,
+    pdist_tangency,
     TangencyResult,
 )
 
@@ -35,11 +36,12 @@ __all__ = [
     "coef_from_axes",
     "coef_from_array",
     "coef_from_cov",
+    "ellipse_cloud",
     # solver
     "quad_eval",
     "pencil",
     "tangency",
-    "pairwise_tangency",
+    "pdist_tangency",
     "TangencyResult",
 ]
 

@@ -58,6 +58,6 @@ def test_coef_from_cov():
     x0, y0 = 0.3, -0.8
     r1, r2, th = axes_from_cov(cov)
     coef1 = coef_from_axes(x0, y0, r1, r2, th)
-    coef2 = coef_from_cov(x0, y0, cov)
+    coef2 = coef_from_cov([x0], [y0], cov)
     assert np.allclose(coef1, coef2, rtol=1e-12, atol=1e-12)
 

@@ -8,13 +8,14 @@ from typing import Sequence, Tuple
 
 import numpy
 from scipy.optimize import root_scalar
+from .geometry import EllipseCloudResult
 
 __all__ = [
     "quad_eval",
     "pencil",
     "TangencyResult",
     "tangency",
-    "pairwise_tangency",
+    "pdist_tangency",
 ]
 
 # ---------------------------------------------------------------------------
@@ -115,13 +116,18 @@ def tangency(
     t = float(numpy.sqrt(quad_eval(*coef, *point)))
     return TangencyResult(t, point, mu)
 
-
-def pairwise_tangency(coefs: numpy.ndarray) -> numpy.ndarray:
-    """Compute symmetric tangency distance matrix for many ellipses."""
-    N = coefs.shape[0]
-    D = numpy.zeros((N, N), dtype=float)
-    for i in range(N):
-        for j in range(i + 1, N):
-            D[i, j] = D[j, i] = tangency(coefs[i], coefs[j]).t
-    return D
+def pdist_tangency(ellcloud: EllipseCloudResult) -> numpy.ndarray:
+    """
+    The pairwise tangency is computed and stored in entry ``m * i + j - ((i + 2) * (i + 1)) // 2``,
+    where m is the number of ellipses.
+    """
+    coefs = ellcloud.coefs
+    m = ellcloud.num_ellipses
+    n = m * (m - 1) // 2
+    d = numpy.zeros((n,), dtype=float)
+    for i in range(m):
+        for j in range(i + 1, m):
+            k = m * i + j - ((i + 2) * (i + 1)) // 2
+            d[k] = tangency(coefs[i], coefs[j]).t
+    return d
 
