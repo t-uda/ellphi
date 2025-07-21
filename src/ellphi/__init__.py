@@ -18,11 +18,7 @@ from .geometry import (
     coef_from_cov,
 )
 
-from .ellcloud import (
-    ellipse_cloud,
-    EllipseCloud,
-    LocalCov
-)
+from .ellcloud import ellipse_cloud, EllipseCloud, LocalCov
 
 # solver
 from .solver import (

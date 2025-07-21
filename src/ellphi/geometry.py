@@ -51,26 +51,18 @@ def _coef_core(X, r0, r1, cos, sin):
     a = sin**2 / r1**2 + cos**2 / r0**2
     b = (-sin * cos) / r1**2 + (sin * cos) / r0**2
     c = cos**2 / r1**2 + sin**2 / r0**2
-    d = ((-x * sin**2 + y * sin * cos) / r1**2
-         - (x * cos**2 + y * sin * cos) / r0**2)
-    e = ((x * sin * cos - y * cos**2) / r1**2
-         - (x * sin * cos + y * sin**2) / r0**2)
-    f = (
-        (x**2 * sin**2 - 2 * x * y * sin * cos + y**2 * cos**2) / r1**2
-        + (x**2 * cos**2 + 2 * x * y * sin * cos + y**2 * sin**2) / r0**2
-    )
+    d = (-x * sin**2 + y * sin * cos) / r1**2 - (x * cos**2 + y * sin * cos) / r0**2
+    e = (x * sin * cos - y * cos**2) / r1**2 - (x * sin * cos + y * sin**2) / r0**2
+    f = (x**2 * sin**2 - 2 * x * y * sin * cos + y**2 * cos**2) / r1**2 + (
+        x**2 * cos**2 + 2 * x * y * sin * cos + y**2 * sin**2
+    ) / r0**2
     return numpy.stack([a, b, c, d, e, f], axis=-1)  # (..., 6)
 
 
 # ------------------------------------------------------------------
 # Public façade
 # ------------------------------------------------------------------
-def coef_from_axes(
-        X: float,
-        r0: float,
-        r1: float,
-        theta: float
-) -> numpy.ndarray:
+def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
     """Centre & axes → conic coefficient array (6,)."""
     return _coef_core(X, r0, r1, numpy.cos(theta), numpy.sin(theta))
 
@@ -101,13 +93,16 @@ def coef_from_cov(
         cov = cov[None, :, :]  # Extend if single observation
     centers = X[:, :, None]
     matrices = numpy.linalg.inv(cov) / scale**2
-    coef_b = - matrices @ centers
+    coef_b = -matrices @ centers
     coef_c = centers.transpose(0, 2, 1) @ matrices @ centers
-    return numpy.stack([
-        matrices[:, 0, 0],
-        matrices[:, 0, 1],
-        matrices[:, 1, 1],
-        coef_b[:, 0].ravel(),
-        coef_b[:, 1].ravel(),
-        coef_c.ravel()
-    ], axis=-1)
+    return numpy.stack(
+        [
+            matrices[:, 0, 0],
+            matrices[:, 0, 1],
+            matrices[:, 1, 1],
+            coef_b[:, 0].ravel(),
+            coef_b[:, 1].ravel(),
+            coef_c.ravel(),
+        ],
+        axis=-1,
+    )

@@ -1,4 +1,3 @@
-
 import numpy as np
 import pytest
 from ellphi import coef_from_axes, tangency

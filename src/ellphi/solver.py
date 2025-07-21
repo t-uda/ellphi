@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 """Tangency solver – consolidated version with correct derivative formula."""
@@ -8,6 +7,7 @@ from typing import Sequence, Tuple
 
 import numpy
 from scipy.optimize import root_scalar
+
 # from .ellcloud import EllipseCloud
 
 __all__ = [
@@ -23,9 +23,10 @@ __all__ = [
 # Core utilities
 # ---------------------------------------------------------------------------
 
+
 def quad_eval(
-        a: float, b: float, c: float, d: float, e: float, f: float,
-        x: float, y: float) -> float:
+    a: float, b: float, c: float, d: float, e: float, f: float, x: float, y: float
+) -> float:
     """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*"""
     return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
 
@@ -89,25 +90,37 @@ def _solve_mu(
     x0: float | None = None,
 ) -> float:
     if method == "brentq+newton":
-        mu0 = root_scalar(_target, args=(p, q), bracket=bracket,
-                          method="brentq", maxiter=8).root
-        mu = root_scalar(_target, args=(p, q), x0=mu0,
-                         method="newton", fprime=_target_prime, maxiter=3).root
+        mu0 = root_scalar(
+            _target, args=(p, q), bracket=bracket, method="brentq", maxiter=8
+        ).root
+        mu = root_scalar(
+            _target,
+            args=(p, q),
+            x0=mu0,
+            method="newton",
+            fprime=_target_prime,
+            maxiter=3,
+        ).root
         return float(mu)
     if method in {"bisect", "brentq", "brenth"}:
-        return float(root_scalar(_target, args=(p, q), bracket=bracket,
-                                 method=method).root)
+        return float(
+            root_scalar(_target, args=(p, q), bracket=bracket, method=method).root
+        )
     if method == "newton":
         if x0 is None:
             raise ValueError("x0 must be provided for Newton method")
-        return float(root_scalar(_target, args=(p, q), x0=x0,
-                                 method="newton", fprime=_target_prime).root)
+        return float(
+            root_scalar(
+                _target, args=(p, q), x0=x0, method="newton", fprime=_target_prime
+            ).root
+        )
     raise ValueError(f"Unknown method: {method}")
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def tangency(
     pcoef: numpy.ndarray,

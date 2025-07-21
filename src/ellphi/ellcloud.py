@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence, Iterator, Optional
@@ -10,22 +9,19 @@ from scipy.spatial.distance import squareform, pdist
 from .geometry import axes_from_cov, coef_from_cov
 from .solver import pdist_tangency
 
-__all__ = [
-    "ellipse_cloud",
-    "EllipseCloud",
-    "LocalCov"
-]
+__all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
 
 
 @dataclass
 class EllipseCloud:
     """Container for an ellipse cloud with convenience methods."""
+
     coef: numpy.ndarray  # (N, 6)
     mean: numpy.ndarray  # (N, 2)
-    cov:  numpy.ndarray  # (N, 2, 2)
-    k:    int
-    nbd:  numpy.ndarray  # (N, k)  k-NN indices
-    n:    int = field(init=False)
+    cov: numpy.ndarray  # (N, 2, 2)
+    k: int
+    nbd: numpy.ndarray  # (N, k)  k-NN indices
+    n: int = field(init=False)
 
     # ---- automatic field from coef.shape ---------------------------------
     def __post_init__(self):
@@ -48,9 +44,7 @@ class EllipseCloud:
         cov_str = f"cov=array<{self.cov.shape}>"
         k_str = f"k={self.k}"
         nbd_str = f"nbd=array<{self.nbd.shape}>"
-        param_str = ', '.join([
-            coef_str, mean_str, cov_str, k_str, nbd_str
-        ])
+        param_str = ", ".join([coef_str, mean_str, cov_str, k_str, nbd_str])
         return f"EllipseCloud({param_str})"
 
     # ---- visualisation ---------------------------------------------------
@@ -75,6 +69,7 @@ class EllipseCloud:
             Existing axes; if None, creates a new figure.
         """
         from .visualization import ellipse_patch
+
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -82,8 +77,8 @@ class EllipseCloud:
         axes = axes_from_cov(self.cov[ids])
         for i, r_major, r_minor, theta in zip(ids, *axes):
             ellpatch = ellipse_patch(
-                    self.mean[i], r_major, r_minor, theta,
-                    scale=scale, **kwgs)
+                self.mean[i], r_major, r_minor, theta, scale=scale, **kwgs
+            )
             ax.add_patch(ellpatch)
         return ax
 
@@ -92,18 +87,18 @@ class EllipseCloud:
 
     @classmethod
     def from_point_cloud(
-            cls: EllipseCloud,
-            X: numpy.ndarray,
-            *,
-            method="local_cov",
-            rescaling="none",
-            **kwgs) -> EllipseCloud:
+        cls: EllipseCloud,
+        X: numpy.ndarray,
+        *,
+        method="local_cov",
+        rescaling="none",
+        **kwgs,
+    ) -> EllipseCloud:
         if method == "local_cov":
             ellcloud = cls.from_local_cov(X, **kwgs)
         else:
             raise NotImplementedError(
-                f"Unknown method '{method}':\n" +
-                "The supported method is 'local_cov'."
+                f"Unknown method '{method}':\n" + "The supported method is 'local_cov'."
             )
         if rescaling != "none":
             ellcloud.rescale(method=rescaling)
@@ -111,8 +106,8 @@ class EllipseCloud:
 
     @classmethod
     def from_local_cov(
-            cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5
-            ) -> EllipseCloud:
+        cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5
+    ) -> EllipseCloud:
         return LocalCov(k=k)(X)
 
     def rescale(self, *, method="median") -> float:
@@ -123,10 +118,10 @@ class EllipseCloud:
             ell_scales = numpy.average(scales, axis=0)
         else:
             raise NotImplementedError(
-                f"Unknown method '{method}':\n" +
-                "The supported method is 'median' or 'average'."
+                f"Unknown method '{method}':\n"
+                + "The supported method is 'median' or 'average'."
             )
-        ell_scale = ell_scales[1]**2 / ell_scales[0]
+        ell_scale = ell_scales[1] ** 2 / ell_scales[0]
         self.cov /= ell_scale**2
         self.coef *= ell_scale**2
         return ell_scale
@@ -139,6 +134,7 @@ ellipse_cloud = EllipseCloud.from_point_cloud
 @dataclass(frozen=True)
 class LocalCov:
     """Algorithm creating Ellipse Cloud from k-nearest neighbours."""
+
     k: int = 5  # 近傍点数
 
     # 将来オプションが増えても dataclass なので拡張しやすい
