@@ -48,9 +48,9 @@ jobs:
     - name: black check
       run: poetry run black --check src tests
 
-    # -- Tests & coverage -------------------------------------------
+    # -- Tests ------------------------------------------------------
     - name: pytest
-      run: poetry run pytest --cov=ellphi -q
+      run: poetry run pytest -q
 
   # 3.11 限定で mypy
   typecheck:
