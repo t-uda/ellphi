@@ -7,7 +7,13 @@ from typing import Sequence, Tuple
 
 import numpy
 from scipy.optimize import root_scalar
+from functools import partial
+from typing import Callable, Literal, cast
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ellphi.ellcloud import EllipseCloud
 # from .ellcloud import EllipseCloud
 
 __all__ = [
@@ -25,9 +31,13 @@ __all__ = [
 
 
 def quad_eval(
-    a: float, b: float, c: float, d: float, e: float, f: float, x: float, y: float
+    coef: numpy.ndarray,
+    center: Tuple[float, float]
 ) -> float:
     """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*"""
+    assert coef.shape == (6,)
+    a, b, c, d, e, f = coef[:6]
+    x, y = center
     return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
 
 
@@ -56,7 +66,7 @@ def _center(coef: numpy.ndarray) -> Tuple[float, float]:
 def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
     coef = pencil(p, q, mu)
     xc = _center(coef)
-    return quad_eval(*p, *xc) - quad_eval(*q, *xc)
+    return quad_eval(p, xc) - quad_eval(q, xc)
 
 
 def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
@@ -86,32 +96,39 @@ def _solve_mu(
     q: numpy.ndarray,
     *,
     method: str = "brentq+newton",
-    bracket: Sequence[float] = (0.0, 1.0),
+    bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> float:
+    # curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
+    # curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
+    curry_f : Callable[[float], float] = lambda mu: _target(mu, p, q)
+    curry_df : Callable[[float], float] = lambda mu: _target_prime(mu, p, q)
     if method == "brentq+newton":
         mu0 = root_scalar(
-            _target, args=(p, q), bracket=bracket, method="brentq", maxiter=8
+            curry_f, bracket=bracket, method="brentq", maxiter=8
         ).root
         mu = root_scalar(
-            _target,
-            args=(p, q),
+            curry_f,
             x0=mu0,
             method="newton",
-            fprime=_target_prime,
+            fprime=curry_df,
             maxiter=3,
         ).root
         return float(mu)
     if method in {"bisect", "brentq", "brenth"}:
         return float(
-            root_scalar(_target, args=(p, q), bracket=bracket, method=method).root
+            root_scalar(
+                curry_f, bracket=bracket,
+                method=cast(Literal["bisect", "brentq", "brenth"], method)
+            ).root
         )
     if method == "newton":
         if x0 is None:
             raise ValueError("x0 must be provided for Newton method")
         return float(
             root_scalar(
-                _target, args=(p, q), x0=x0, method="newton", fprime=_target_prime
+                curry_f, x0=x0, method="newton",
+                fprime=curry_df
             ).root
         )
     raise ValueError(f"Unknown method: {method}")
@@ -127,18 +144,18 @@ def tangency(
     qcoef: numpy.ndarray,
     *,
     method: str = "brentq+newton",
-    bracket: Sequence[float] = (0.0, 1.0),
+    bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
     mu = _solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
     coef = pencil(pcoef, qcoef, mu)
-    point = numpy.asarray(_center(coef))
-    t = float(numpy.sqrt(quad_eval(*coef, *point)))
-    return TangencyResult(t, point, mu)
+    point = _center(coef)
+    t = float(numpy.sqrt(quad_eval(coef, point)))
+    return TangencyResult(t, numpy.asarray(point), mu)
 
 
-def pdist_tangency(ellcloud) -> numpy.ndarray:
+def pdist_tangency(ellcloud: EllipseCloud) -> numpy.ndarray:
     """
     The pairwise tangency is computed and stored in entry
     ``m * i + j - ((i + 2) * (i + 1)) // 2``,

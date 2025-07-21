@@ -34,7 +34,7 @@ class EllipseCloud:
     def __iter__(self) -> Iterator[numpy.ndarray]:
         return iter(self.coef)
 
-    def __getitem__(self, idx) -> EllipseCloud:
+    def __getitem__(self, idx) -> numpy.ndarray:
         """Return a *view* (not copy) subset as a new EllipseCloud."""
         return self.coef[idx]
 
@@ -73,9 +73,9 @@ class EllipseCloud:
         if ax is None:
             fig, ax = plt.subplots()
 
-        ids = numpy.arange(self.n) if ids is None else numpy.asarray(ids)
-        axes = axes_from_cov(self.cov[ids])
-        for i, r_major, r_minor, theta in zip(ids, *axes):
+        idarr = numpy.arange(self.n) if ids is None else numpy.asarray(ids)
+        axes = axes_from_cov(self.cov[idarr])
+        for i, r_major, r_minor, theta in zip(idarr, *axes):
             ellpatch = ellipse_patch(
                 self.mean[i], r_major, r_minor, theta, scale=scale, **kwgs
             )
@@ -87,7 +87,7 @@ class EllipseCloud:
 
     @classmethod
     def from_point_cloud(
-        cls: EllipseCloud,
+        cls: type[EllipseCloud],
         X: numpy.ndarray,
         *,
         method="local_cov",
@@ -106,7 +106,7 @@ class EllipseCloud:
 
     @classmethod
     def from_local_cov(
-        cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5
+        cls: type[EllipseCloud], X: numpy.ndarray, *, k: int = 5
     ) -> EllipseCloud:
         return LocalCov(k=k)(X)
 

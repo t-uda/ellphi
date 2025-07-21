@@ -37,6 +37,8 @@ homcloud = "^4.8.0"
 tqdm = "^4.67.1"
 flake8 = "^7.3.0"
 black = "^25.1.0"
+mypy = "^1.8"
+scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
