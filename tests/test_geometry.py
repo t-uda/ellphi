@@ -9,6 +9,7 @@ from ellphi.geometry import (
     coef_from_cov,
 )
 
+
 # ------------------------------------------------------------
 # 1. unit_vector basics
 # ------------------------------------------------------------
@@ -35,6 +36,7 @@ def test_axes_order():
     r1, r2, _ = axes_from_cov(cov)
     assert r1 >= r2, "r1 should be the major semi-axis"
 
+
 # ------------------------------------------------------------
 # 3. coef_from_cov agrees with coef_from_axes
 # ------------------------------------------------------------
@@ -45,4 +47,3 @@ def test_coef_from_cov():
     coef1 = coef_from_axes([x0, y0], r1, r2, th)
     coef2 = coef_from_cov([x0, y0], cov)
     assert np.allclose(coef1, coef2, rtol=1e-12, atol=1e-12)
-

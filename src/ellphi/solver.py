@@ -18,18 +18,22 @@ __all__ = [
     "pdist_tangency",
 ]
 
+
 # ---------------------------------------------------------------------------
-# Core utilities (formerly in core.py)
+# Core utilities
 # ---------------------------------------------------------------------------
 
-def quad_eval(a: float, b: float, c: float, d: float, e: float, f: float, x: float, y: float) -> float:
-    """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f* at *(x, y)*."""
+def quad_eval(
+        a: float, b: float, c: float, d: float, e: float, f: float,
+        x: float, y: float) -> float:
+    """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*"""
     return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
 
 
 def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
     """Linear blend ``(1-μ) p + μ q`` of two conic-coefficient arrays."""
     return (1.0 - mu) * p + mu * q
+
 
 # ---------------------------------------------------------------------------
 # Tangency solver internals
@@ -55,7 +59,7 @@ def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
 
 
 def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
-    """Exact derivative of `_target` following the original epencil.py logic."""
+    """Exact derivative of `_target`."""
     coef = pencil(p, q, mu)
     diff = p - q  # derivative of pencil wrt mu is (q-p); sign handled below
 
@@ -85,15 +89,19 @@ def _solve_mu(
     x0: float | None = None,
 ) -> float:
     if method == "brentq+newton":
-        mu0 = root_scalar(_target, args=(p, q), bracket=bracket, method="brentq", maxiter=8).root
-        mu = root_scalar(_target, args=(p, q), x0=mu0, method="newton", fprime=_target_prime, maxiter=3).root
+        mu0 = root_scalar(_target, args=(p, q), bracket=bracket,
+                          method="brentq", maxiter=8).root
+        mu = root_scalar(_target, args=(p, q), x0=mu0,
+                         method="newton", fprime=_target_prime, maxiter=3).root
         return float(mu)
     if method in {"bisect", "brentq", "brenth"}:
-        return float(root_scalar(_target, args=(p, q), bracket=bracket, method=method).root)
+        return float(root_scalar(_target, args=(p, q), bracket=bracket,
+                                 method=method).root)
     if method == "newton":
         if x0 is None:
             raise ValueError("x0 must be provided for Newton method")
-        return float(root_scalar(_target, args=(p, q), x0=x0, method="newton", fprime=_target_prime).root)
+        return float(root_scalar(_target, args=(p, q), x0=x0,
+                                 method="newton", fprime=_target_prime).root)
     raise ValueError(f"Unknown method: {method}")
 
 
@@ -116,9 +124,11 @@ def tangency(
     t = float(numpy.sqrt(quad_eval(*coef, *point)))
     return TangencyResult(t, point, mu)
 
-def pdist_tangency(ellcloud: "EllipseCloud") -> numpy.ndarray:
+
+def pdist_tangency(ellcloud) -> numpy.ndarray:
     """
-    The pairwise tangency is computed and stored in entry ``m * i + j - ((i + 2) * (i + 1)) // 2``,
+    The pairwise tangency is computed and stored in entry
+    ``m * i + j - ((i + 2) * (i + 1)) // 2``,
     where m is the number of ellipses.
     """
     m = len(ellcloud)
@@ -129,4 +139,3 @@ def pdist_tangency(ellcloud: "EllipseCloud") -> numpy.ndarray:
             k = m * i + j - ((i + 2) * (i + 1)) // 2
             d[k] = tangency(ellcloud[i], ellcloud[j]).t
     return d
-

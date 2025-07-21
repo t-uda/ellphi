@@ -52,4 +52,3 @@ __all__ = [
 ]
 
 __version__ = _version(__name__)
-

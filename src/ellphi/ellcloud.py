@@ -5,7 +5,6 @@ from typing import Sequence, Iterator, Optional
 
 import numpy
 import matplotlib.pyplot as plt
-import matplotlib.patches
 from scipy.spatial.distance import squareform, pdist
 
 from .geometry import axes_from_cov, coef_from_cov
@@ -17,14 +16,15 @@ __all__ = [
     "LocalCov"
 ]
 
+
 @dataclass
 class EllipseCloud:
     """Container for an ellipse cloud with convenience methods."""
-    coef: numpy.ndarray # (N, 6)
-    mean: numpy.ndarray # (N, 2)
-    cov:  numpy.ndarray # (N, 2, 2)
+    coef: numpy.ndarray  # (N, 6)
+    mean: numpy.ndarray  # (N, 2)
+    cov:  numpy.ndarray  # (N, 2, 2)
     k:    int
-    nbd:  numpy.ndarray # (N, k)  k-NN indices
+    nbd:  numpy.ndarray  # (N, k)  k-NN indices
     n:    int = field(init=False)
 
     # ---- automatic field from coef.shape ---------------------------------
@@ -43,7 +43,6 @@ class EllipseCloud:
         return self.coef[idx]
 
     def __str__(self):
-        n = len(self)
         coef_str = f"coef=array<{self.coef.shape}>"
         mean_str = f"mean=array<{self.mean.shape}>"
         cov_str = f"cov=array<{self.cov.shape}>"
@@ -103,14 +102,17 @@ class EllipseCloud:
             ellcloud = cls.from_local_cov(X, **kwgs)
         else:
             raise NotImplementedError(
-                f"Unknown method '{method}'; the supported method is 'local_cov'."
+                f"Unknown method '{method}':\n" +
+                "The supported method is 'local_cov'."
             )
         if rescaling != "none":
             ellcloud.rescale(method=rescaling)
         return ellcloud
 
     @classmethod
-    def from_local_cov(cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5) -> EllipseCloud:
+    def from_local_cov(
+            cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5
+            ) -> EllipseCloud:
         return LocalCov(k=k)(X)
 
     def rescale(self, *, method="median") -> float:
@@ -121,26 +123,29 @@ class EllipseCloud:
             ell_scales = numpy.average(scales, axis=0)
         else:
             raise NotImplementedError(
-                f"Unknown method '{method}'; the supported method is 'median' or 'average'."
+                f"Unknown method '{method}':\n" +
+                "The supported method is 'median' or 'average'."
             )
         ell_scale = ell_scales[1]**2 / ell_scales[0]
         self.cov /= ell_scale**2
         self.coef *= ell_scale**2
         return ell_scale
 
+
 # alias
 ellipse_cloud = EllipseCloud.from_point_cloud
+
 
 @dataclass(frozen=True)
 class LocalCov:
     """Algorithm creating Ellipse Cloud from k-nearest neighbours."""
-    k: int = 5 # 近傍点数
+    k: int = 5  # 近傍点数
 
     # 将来オプションが増えても dataclass なので拡張しやすい
     # 例: weight_func: Literal["uniform", "distance"]
 
     # main entry: make EllipseCloud from raw Nx2 points -----------------
-    def __call__(self, X: np.ndarray) -> "EllipseCloud":
+    def __call__(self, X: numpy.ndarray) -> EllipseCloud:
         """
         Parameters
         ----------
@@ -153,17 +158,15 @@ class LocalCov:
             centres, covs, coeffs などを含むクラウドオブジェクト
         """
         k = self.k
-        d = squareform(pdist(X)) # Euclidean distance matrix
+        d = squareform(pdist(X))  # Euclidean distance matrix
         # argsort したものから :near だけとると重複が生じるので削る
         near_subsets = numpy.unique(numpy.argsort(d, axis=1)[:, :k], axis=0)
         # 各サブセットをソートしてタプルに変換
         sorted_subsets = [tuple(sorted(subset)) for subset in near_subsets]
-        unique_subsets = numpy.unique(sorted_subsets, axis=0) # 重複を取り除く
-        num_ellipses = unique_subsets.shape[0]
+        unique_subsets = numpy.unique(sorted_subsets, axis=0)  # 重複を取り除く
         knbd = X[unique_subsets]
         means = numpy.mean(knbd, axis=1)
         rel_nbd = knbd - means[:, None, :]
         covs = rel_nbd.transpose(0, 2, 1) @ rel_nbd / (k - 1)
         coefs = coef_from_cov(means, covs)
         return EllipseCloud(coefs, means, covs, k, unique_subsets)
-
