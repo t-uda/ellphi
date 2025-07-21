@@ -3,11 +3,10 @@ from __future__ import annotations
 """Tangency solver – consolidated version with correct derivative formula."""
 
 from collections import namedtuple
-from typing import Sequence, Tuple
+from typing import Tuple
 
 import numpy
 from scipy.optimize import root_scalar
-from functools import partial
 from typing import Callable, Literal, cast
 
 from typing import TYPE_CHECKING
@@ -30,10 +29,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def quad_eval(
-    coef: numpy.ndarray,
-    center: Tuple[float, float]
-) -> float:
+def quad_eval(coef: numpy.ndarray, center: Tuple[float, float]) -> float:
     """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*"""
     assert coef.shape == (6,)
     a, b, c, d, e, f = coef[:6]
@@ -99,14 +95,10 @@ def _solve_mu(
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> float:
-    # curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
-    # curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
-    curry_f : Callable[[float], float] = lambda mu: _target(mu, p, q)
-    curry_df : Callable[[float], float] = lambda mu: _target_prime(mu, p, q)
+    curry_f: Callable[[float], float] = lambda mu: _target(mu, p, q)
+    curry_df: Callable[[float], float] = lambda mu: _target_prime(mu, p, q)
     if method == "brentq+newton":
-        mu0 = root_scalar(
-            curry_f, bracket=bracket, method="brentq", maxiter=8
-        ).root
+        mu0 = root_scalar(curry_f, bracket=bracket, method="brentq", maxiter=8).root
         mu = root_scalar(
             curry_f,
             x0=mu0,
@@ -118,19 +110,15 @@ def _solve_mu(
     if method in {"bisect", "brentq", "brenth"}:
         return float(
             root_scalar(
-                curry_f, bracket=bracket,
-                method=cast(Literal["bisect", "brentq", "brenth"], method)
+                curry_f,
+                bracket=bracket,
+                method=cast(Literal["bisect", "brentq", "brenth"], method),
             ).root
         )
     if method == "newton":
         if x0 is None:
             raise ValueError("x0 must be provided for Newton method")
-        return float(
-            root_scalar(
-                curry_f, x0=x0, method="newton",
-                fprime=curry_df
-            ).root
-        )
+        return float(root_scalar(curry_f, x0=x0, method="newton", fprime=curry_df).root)
     raise ValueError(f"Unknown method: {method}")
 
 
