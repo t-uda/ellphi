@@ -48,10 +48,33 @@ jobs:
     - name: black check
       run: poetry run black --check src tests
 
-    # -- Type-check --------------------------------------------------
-    - name: mypy
-      run: poetry run mypy src
-
     # -- Tests & coverage -------------------------------------------
     - name: pytest
       run: poetry run pytest --cov=ellphi -q
+
+  # 3.11 限定で mypy
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Cache Poetry env
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+
+    - name: Install project (dev extras)
+      run: poetry install --with dev      # stub も OK
+
+    - name: mypy
+      run: poetry run mypy src
