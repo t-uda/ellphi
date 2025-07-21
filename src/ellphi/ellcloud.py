@@ -97,17 +97,36 @@ class EllipseCloud:
             X: numpy.ndarray,
             *,
             method="local_cov",
+            rescaling="none",
             **kwgs) -> EllipseCloud:
         if method == "local_cov":
-            return cls.from_local_cov(X, **kwgs)
+            ellcloud = cls.from_local_cov(X, **kwgs)
         else:
             raise NotImplementedError(
                 f"Unknown method '{method}'; the supported method is 'local_cov'."
             )
+        if rescaling != "none":
+            ellcloud.rescale(method=rescaling)
+        return ellcloud
 
     @classmethod
     def from_local_cov(cls: EllipseCloud, X: numpy.ndarray, *, k: int = 5) -> EllipseCloud:
         return LocalCov(k=k)(X)
+
+    def rescale(self, *, method="median") -> float:
+        scales = numpy.sqrt(numpy.linalg.eigh(self.cov).eigenvalues)
+        if method == "median":
+            ell_scales = numpy.median(scales, axis=0)
+        elif method == "average":
+            ell_scales = numpy.average(scales, axis=0)
+        else:
+            raise NotImplementedError(
+                f"Unknown method '{method}'; the supported method is 'median' or 'average'."
+            )
+        ell_scale = ell_scales[1]**2 / ell_scales[0]
+        self.cov /= ell_scale**2
+        self.coef *= ell_scale**2
+        return ell_scale
 
 # alias
 ellipse_cloud = EllipseCloud.from_point_cloud

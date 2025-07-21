@@ -34,6 +34,7 @@ package-mode = true
 
 [tool.poetry.group.dev.dependencies]
 homcloud = "^4.8.0"
+tqdm = "^4.67.1"
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
