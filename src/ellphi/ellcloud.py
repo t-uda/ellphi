@@ -1,3 +1,13 @@
+"""
+ellphi.ellcloud  –  ellipse cloud interfaces
+=============================================================
+
+- ellipse_cloud(X, method="local_cov", rescaling="none", k=5)
+- class EllipseCloud
+- class LocalCov
+
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence, Iterator, Optional
@@ -94,6 +104,24 @@ class EllipseCloud:
         rescaling="none",
         **kwgs,
     ) -> EllipseCloud:
+        """
+        Parameters
+        ----------
+        X : ndarray, shape (N, 2)
+            Input point cloud (x, y)
+        method : str
+            Conversion algorithm. The supported method is "local_cov".
+        rescaling : str
+            The supported rescaling method is "none", "median", or "average".
+            See also `EllipseCloud.rescale`
+        **kwgs :
+            Passed to the corresponding algorithm specified by `method`.
+
+        Returns
+        -------
+        EllipseCloud
+            Resulting ellipse cloud constructed by `method`
+        """
         if method == "local_cov":
             ellcloud = cls.from_local_cov(X, **kwgs)
         else:
@@ -111,6 +139,10 @@ class EllipseCloud:
         return LocalCov(k=k)(X)
 
     def rescale(self, *, method="median") -> float:
+        """
+        Apply rescaling to all the ellipses.
+        The supported method is "median" or "average".
+        """
         scales = numpy.sqrt(numpy.linalg.eigh(self.cov).eigenvalues)
         if method == "median":
             ell_scales = numpy.median(scales, axis=0)
@@ -146,12 +178,12 @@ class LocalCov:
         Parameters
         ----------
         X : ndarray, shape (N, 2)
-            入力点群（x,y）
+            Input point cloud (x, y)
 
         Returns
         -------
         EllipseCloud
-            centres, covs, coeffs などを含むクラウドオブジェクト
+            Resulting ellipse cloud constructed by local covariance
         """
         k = self.k
         d = squareform(pdist(X))  # Euclidean distance matrix
