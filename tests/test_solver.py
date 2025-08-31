@@ -13,8 +13,9 @@ def generate_ellipses(n_ellipses, seed=42):
         a = np.random.rand() * 5 + 1
         b = np.random.rand() * 5 + 1
         angle = np.random.rand() * np.pi
-        rot = np.array([[np.cos(angle), -np.sin(angle)],
-                        [np.sin(angle), np.cos(angle)]])
+        rot = np.array(
+            [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+        )
         cov = rot @ np.diag([a, b]) @ rot.T
         covs_list.append(cov)
     covs = np.array(covs_list)
@@ -35,6 +36,7 @@ def test_pdist_tangency_consistency():
     parallel_result = pdist_tangency(ellipses, parallel=True)
 
     np.testing.assert_allclose(
-        serial_result, parallel_result,
-        err_msg="Serial and parallel results are not close enough."
+        serial_result,
+        parallel_result,
+        err_msg="Serial and parallel results are not close enough.",
     )
