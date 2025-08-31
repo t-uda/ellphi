@@ -8,7 +8,7 @@ from typing import Tuple
 import numpy
 from scipy.optimize import root_scalar
 from typing import Callable, Literal, cast
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed  # type: ignore
 
 from typing import TYPE_CHECKING
 
