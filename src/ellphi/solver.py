@@ -8,6 +8,7 @@ from typing import Tuple
 import numpy
 from scipy.optimize import root_scalar
 from typing import Callable, Literal, cast
+from joblib import Parallel, delayed  # type: ignore
 
 from typing import TYPE_CHECKING
 
@@ -143,12 +144,8 @@ def tangency(
     return TangencyResult(t, numpy.asarray(point), mu)
 
 
-def pdist_tangency(ellcloud: EllipseCloud) -> numpy.ndarray:
-    """
-    The pairwise tangency is computed and stored in entry
-    ``m * i + j - ((i + 2) * (i + 1)) // 2``,
-    where m is the number of ellipses.
-    """
+def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
+    """Serial implementation of pdist_tangency."""
     m = len(ellcloud)
     n = m * (m - 1) // 2
     d = numpy.zeros((n,), dtype=float)
@@ -157,3 +154,41 @@ def pdist_tangency(ellcloud: EllipseCloud) -> numpy.ndarray:
             k = m * i + j - ((i + 2) * (i + 1)) // 2
             d[k] = tangency(ellcloud[i], ellcloud[j]).t
     return d
+
+
+def _pdist_tangency_parallel(
+    ellcloud: EllipseCloud, n_jobs: int | None = -1
+) -> numpy.ndarray:
+    """Parallel implementation of pdist_tangency."""
+    m = len(ellcloud)
+
+    def get_pair_tangency(i, j):
+        return tangency(ellcloud[i], ellcloud[j]).t
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(get_pair_tangency)(i, j) for i in range(m) for j in range(i + 1, m)
+    )
+    return numpy.array(results, dtype=float)
+
+
+def pdist_tangency(
+    ellcloud: EllipseCloud, *, parallel: bool = False, n_jobs: int | None = -1
+) -> numpy.ndarray:
+    """
+    The pairwise tangency is computed and stored in entry
+    ``m * i + j - ((i + 2) * (i + 1)) // 2``,
+    where m is the number of ellipses.
+
+    Parameters
+    ----------
+    ellcloud : EllipseCloud
+        The collection of ellipses.
+    parallel : bool, optional
+        If True, compute the tangencies in parallel using joblib. Default is False.
+    n_jobs : int or None, optional
+        Number of jobs to run in parallel. -1 means using all available CPUs.
+        This is only used if parallel is True. Default is -1.
+    """
+    if parallel:
+        return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
+    return _pdist_tangency_serial(ellcloud)
