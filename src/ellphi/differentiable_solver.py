@@ -5,6 +5,7 @@ from .solver import solve_mu
 
 __all__ = ["solve_mu_numerical_diff"]
 
+
 def solve_mu_numerical_diff(
     p: np.ndarray, q: np.ndarray, h: float = 1e-6
 ) -> Tuple[np.ndarray, np.ndarray]:
