@@ -20,6 +20,7 @@ __all__ = [
     "quad_eval",
     "pencil",
     "TangencyResult",
+    "solve_mu",
     "tangency",
     "pdist_tangency",
 ]
@@ -88,7 +89,7 @@ def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
     return float(2.0 * (A_xprime.T @ A_mu_inv @ A_xprime))
 
 
-def _solve_mu(
+def solve_mu(
     p: numpy.ndarray,
     q: numpy.ndarray,
     *,
@@ -137,7 +138,7 @@ def tangency(
     x0: float | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
-    mu = _solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
+    mu = solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
     coef = pencil(pcoef, qcoef, mu)
     point = _center(coef)
     t = float(numpy.sqrt(quad_eval(coef, point)))
