@@ -45,7 +45,7 @@ class EllipseCloud:
         return iter(self.coef)
 
     def __getitem__(self, idx) -> numpy.ndarray:
-        """Return a *view* (not copy) subset as a new EllipseCloud."""
+        """Return the conic coefficient array (6,) for a single ellipse."""
         return self.coef[idx]
 
     def __str__(self):
@@ -92,8 +92,25 @@ class EllipseCloud:
             ax.add_patch(ellpatch)
         return ax
 
-    def pdist_tangency(self):
-        return pdist_tangency(self)
+    def pdist_tangency(self, *, parallel: bool = True, n_jobs: int | None = -1):
+        """
+        Compute pairwise tangency distances for the ellipse cloud.
+
+        This is a convenience method that calls `ellphi.solver.pdist_tangency`.
+
+        Parameters
+        ----------
+        parallel : bool, optional
+            If True (default), compute the tangencies in parallel.
+        n_jobs : int or None, optional
+            Number of jobs to run in parallel. See `ellphi.solver.pdist_tangency`.
+
+        Returns
+        -------
+        numpy.ndarray
+            A condensed distance matrix of tangency distances.
+        """
+        return pdist_tangency(self, parallel=parallel, n_jobs=n_jobs)
 
     @classmethod
     def from_point_cloud(
@@ -183,7 +200,10 @@ class LocalCov:
         Returns
         -------
         EllipseCloud
-            Resulting ellipse cloud constructed by local covariance
+            Resulting ellipse cloud constructed by local covariance.
+            Note that the number of ellipses can be less than the number of
+            input points `N` because point subsets with identical k-NN are
+            merged into a single ellipse.
         """
         k = self.k
         d = squareform(pdist(X))  # Euclidean distance matrix
