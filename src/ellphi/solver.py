@@ -173,22 +173,23 @@ def _pdist_tangency_parallel(
 
 
 def pdist_tangency(
-    ellcloud: EllipseCloud, *, parallel: bool = False, n_jobs: int | None = -1
+    ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: int | None = -1
 ) -> numpy.ndarray:
     """
-    The pairwise tangency is computed and stored in entry
-    ``m * i + j - ((i + 2) * (i + 1)) // 2``,
-    where m is the number of ellipses.
+    Compute pairwise tangency distances for a cloud of ellipses.
+
+    The distances are returned as a condensed distance matrix, which can be
+    converted to a square matrix using `scipy.spatial.distance.squareform`.
 
     Parameters
     ----------
     ellcloud : EllipseCloud
         The collection of ellipses.
     parallel : bool, optional
-        If True, compute the tangencies in parallel using joblib. Default is False.
+        If True (default), compute the tangencies in parallel using joblib.
     n_jobs : int or None, optional
         Number of jobs to run in parallel. -1 means using all available CPUs.
-        This is only used if parallel is True. Default is -1.
+        This is only used if `parallel` is True. Default is -1.
     """
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
