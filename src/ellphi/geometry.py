@@ -62,20 +62,24 @@ def _coef_core(X, r0, r1, cos, sin):
 # ------------------------------------------------------------------
 # Public façade
 # ------------------------------------------------------------------
+
+
+def _inv_broadcast(cov: numpy.ndarray) -> numpy.ndarray:
+    """Vectorized inverse of a batch of 2x2 matrices."""
+    a, b, c, d = cov[:, 0, 0], cov[:, 0, 1], cov[:, 1, 0], cov[:, 1, 1]
+    det = a * d - b * c
+    inv_det = 1.0 / det
+    inv_cov = numpy.empty_like(cov)
+    inv_cov[:, 0, 0] = d * inv_det
+    inv_cov[:, 0, 1] = -b * inv_det
+    inv_cov[:, 1, 0] = -c * inv_det
+    inv_cov[:, 1, 1] = a * inv_det
+    return inv_cov
+
+
 def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
     """Centre & axes → conic coefficient array (6,)."""
     return _coef_core(X, r0, r1, numpy.cos(theta), numpy.sin(theta))
-
-
-def coef_from_cov_composed(
-    X: float,
-    cov: numpy.ndarray,
-    /,
-    *,
-    scale: float = 1.0,
-) -> numpy.ndarray:
-    """Centre + covariance → conic coefficients."""
-    return coef_from_axes(X, *axes_from_cov(cov, scale=scale))
 
 
 def coef_from_cov(
@@ -92,7 +96,7 @@ def coef_from_cov(
     if len(cov.shape) <= 2:
         cov = cov[None, :, :]  # Extend if single observation
     centers = X[:, :, None]
-    matrices = numpy.linalg.inv(cov) / scale**2
+    matrices = _inv_broadcast(cov) / scale**2
     coef_b = -matrices @ centers
     coef_c = centers.transpose(0, 2, 1) @ matrices @ centers
     return numpy.stack(

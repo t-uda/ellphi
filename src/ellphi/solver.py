@@ -70,23 +70,23 @@ def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
 def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
     """Exact derivative of `_target`."""
     coef = pencil(p, q, mu)
-    diff = p - q  # derivative of pencil wrt mu is (q-p); sign handled below
+    a, b, c, d, e, _ = coef
+    diff = p - q
 
-    # Centre of blended ellipse
-    xc = _center(coef)
+    # Centre of blended ellipse, and determinant of its quadratic part
+    det = a * c - b**2
+    if det == 0:
+        raise ZeroDivisionError("Degenerate conic (determinant zero)")
+    xc = numpy.array([(b * e - c * d) / det, (b * d - a * e) / det])
 
-    # Build 2×2 matrices
-    A_mu = numpy.array([[coef[0], coef[1]], [coef[1], coef[2]]])
+    # Build 2x2 matrix from diff
     diff_mat = numpy.array([[diff[0], diff[1]], [diff[1], diff[2]]])
-
-    # A_xprime = -(diff_mat @ xc + diff[3:5])
     A_xprime = -(diff_mat @ xc + diff[3:5])
 
-    # Inverse of A_mu
-    A_mu_inv = numpy.linalg.inv(A_mu)
-
-    # 2 * A_xprimeᵀ · A_mu_inv · A_xprime
-    return float(2.0 * (A_xprime.T @ A_mu_inv @ A_xprime))
+    # Explicit formula for vᵀ · A⁻¹ · v, where A is symmetric
+    v0, v1 = A_xprime
+    numerator = c * v0**2 - 2 * b * v0 * v1 + a * v1**2
+    return 2.0 * numerator / det
 
 
 def solve_mu(
