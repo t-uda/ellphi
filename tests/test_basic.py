@@ -46,3 +46,46 @@ def test_newton_requires_x0():
     q = coef_from_axes([1, 0], 1, 1, 0)
     with pytest.raises(ValueError):
         tangency(p, q, method="newton")
+
+
+# -----------------------------------------------------------------------------
+# 4. Edge cases for tangency
+# -----------------------------------------------------------------------------
+def test_tangency_identical_ellipses():
+    """Test tangency between two identical ellipses."""
+    p = coef_from_axes([0, 0], 2, 1, 0)
+    res = tangency(p, p)
+    assert res.t == pytest.approx(0.0)
+
+
+def test_tangency_contained_ellipses():
+    """
+    Test tangency with one ellipse contained within another.
+    The tangency scaling factor `t` should be in the range [0, 1).
+    """
+    p = coef_from_axes([0, 0], 5, 5, 0)  # Larger ellipse
+    q = coef_from_axes([1, 1], 1, 1, 0)  # Smaller ellipse inside
+    res = tangency(p, q)
+    assert 0 <= res.t < 1
+
+
+def test_tangency_overlapping_ellipses():
+    """
+    Test tangency between two overlapping ellipses.
+    The tangency scaling factor `t` should be in the range [0, 1).
+    """
+    p = coef_from_axes([0, 0], 3, 2, 0)
+    q = coef_from_axes([1, 0], 3, 2, 0)
+    res = tangency(p, q)
+    assert 0 <= res.t < 1
+
+
+@pytest.mark.xfail(reason="Concentric ellipses are not handled correctly")
+def test_tangency_concentric_ellipses():
+    """Test tangency between two concentric ellipses."""
+    p = coef_from_axes([0, 0], 2, 1, 0)
+    q = coef_from_axes([0, 0], 1, 0.5, 0)  # Smaller, concentric
+    res = tangency(p, q)
+    # The closest points are along the minor axis
+    assert res.t == pytest.approx(0.5)
+    assert res.point.tolist() == pytest.approx([0.0, 0.75])
