@@ -206,6 +206,11 @@ class LocalCov:
             merged into a single ellipse.
         """
         k = self.k
+        if k < 2:
+            raise ValueError(
+                "Local covariance requires at least two neighbours (k >= 2); "
+                f"got k={k}."
+            )
         d = squareform(pdist(X))  # Euclidean distance matrix
         # argsort したものから :near だけとると重複が生じるので削る
         near_subsets = numpy.unique(numpy.argsort(d, axis=1)[:, :k], axis=0)
@@ -215,6 +220,12 @@ class LocalCov:
         knbd = X[unique_subsets]
         means = numpy.mean(knbd, axis=1)
         rel_nbd = knbd - means[:, None, :]
-        covs = rel_nbd.transpose(0, 2, 1) @ rel_nbd / (k - 1)
+        nbd_size = knbd.shape[1]
+        if nbd_size < 2:
+            raise ValueError(
+                "Local covariance requires neighbourhoods with at least two "
+                f"points; got {nbd_size}."
+            )
+        covs = rel_nbd.transpose(0, 2, 1) @ rel_nbd / (nbd_size - 1)
         coefs = coef_from_cov(means, covs)
         return EllipseCloud(coefs, means, covs, k, unique_subsets)
