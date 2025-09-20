@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import subprocess
 import sysconfig
 import threading
 from pathlib import Path
@@ -32,33 +31,6 @@ def _shared_library_path() -> Path:
     source = Path(__file__).with_name("_tangency_cpp_impl.cpp")
     suffix = sysconfig.get_config_var("SHLIB_SUFFIX") or ".so"
     return source.with_suffix(suffix)
-
-
-def _needs_recompile(source: Path, library: Path) -> bool:
-    if not library.exists():
-        return True
-    return library.stat().st_mtime < source.stat().st_mtime
-
-
-def _compile_library() -> Path:
-    source = Path(__file__).with_name("_tangency_cpp_impl.cpp")
-    library = _shared_library_path()
-
-    if not _needs_recompile(source, library):
-        return library
-
-    cmd = [
-        "g++",
-        "-std=c++17",
-        "-O3",
-        "-shared",
-        "-fPIC",
-        str(source),
-        "-o",
-        str(library),
-    ]
-    subprocess.run(cmd, check=True)
-    return library
 
 
 def _error_from_code(code: int) -> Exception:
@@ -180,12 +152,18 @@ def load() -> ModuleType:
         if _ERROR is not None:
             raise _ERROR
         try:
-            library_path = _compile_library()
+            library_path = _shared_library_path()
             lib = ctypes.CDLL(str(library_path))
             _MODULE = _wrap_library(lib)
-        except Exception as exc:  # pragma: no cover - exercised via Python fallback
-            _ERROR = exc
-            raise
+        except OSError as exc:  # pragma: no cover - exercised via Python fallback
+            library_str = str(library_path)
+            error = ImportError(
+                "Compiled C++ tangency backend is missing. "
+                f"Expected shared library at '{library_str}'."
+            )
+            error.__cause__ = exc
+            _ERROR = error
+            raise error
     return _MODULE
 
 
