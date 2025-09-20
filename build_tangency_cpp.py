@@ -59,8 +59,7 @@ class _BuildTangency(build_ext):
     l_opts = {"msvc": [], "unix": []}
 
     if sys.platform == "darwin":
-        c_opts["unix"].extend(["-stdlib=libc++", "-mmacosx-version-min=10.15"])
-        l_opts["unix"].append("-stdlib=libc++")
+        c_opts["unix"].append("-mmacosx-version-min=10.15")
 
     def build_extension(self, ext: Extension) -> None:  # type: ignore[override]
         compiler = self.compiler

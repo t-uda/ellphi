@@ -122,7 +122,6 @@ double bisect(
     double left = a;
     double right = b;
     double f_left = fa;
-    double f_right = fb;
     double mid = left;
     for (int iter = 0; iter < maxiter; ++iter) {
         mid = 0.5 * (left + right);
@@ -132,7 +131,6 @@ double bisect(
         }
         if (f_left * f_mid < 0.0) {
             right = mid;
-            f_right = f_mid;
         } else {
             left = mid;
             f_left = f_mid;
@@ -400,4 +398,3 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
         return 1;
     }
 }
-
