@@ -27,7 +27,12 @@ def generate_ellipses(n_ellipses, seed=42):
         a = np.random.rand() * 5 + 1
         b = np.random.rand() * 5 + 1
         angle = np.random.rand() * np.pi
-        rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+        rot = np.array(
+            [
+                [np.cos(angle), -np.sin(angle)],
+                [np.sin(angle), np.cos(angle)],
+            ]
+        )
         cov = rot @ np.diag([a, b]) @ rot.T
         covs_list.append(cov)
     covs = np.array(covs_list)
@@ -44,26 +49,25 @@ ellipse_counts = [10, 50, 100, 150, 200]
 results = []
 
 for n in ellipse_counts:
-    print(f'Running benchmark for {n} ellipses...')
+    print(f"Running benchmark for {n} ellipses...")
     ellipses = generate_ellipses(n)
 
     # Time serial execution
-    serial_time = timeit.timeit(
-        lambda: pdist_tangency(ellipses, parallel=False),
-        number=5
-    ) / 5
+    serial_time = (
+        timeit.timeit(lambda: pdist_tangency(ellipses, parallel=False), number=5) / 5
+    )
 
     # Time parallel execution
-    parallel_time = timeit.timeit(
-        lambda: pdist_tangency(ellipses, parallel=True, n_jobs=-1),
-        number=5
-    ) / 5
+    parallel_time = (
+        timeit.timeit(
+            lambda: pdist_tangency(ellipses, parallel=True, n_jobs=-1), number=5
+        )
+        / 5
+    )
 
-    results.append({
-        'n_ellipses': n,
-        'serial_time': serial_time,
-        'parallel_time': parallel_time
-    })
+    results.append(
+        {"n_ellipses": n, "serial_time": serial_time, "parallel_time": parallel_time}
+    )
 
 df_results = pd.DataFrame(results)
 print(df_results)
@@ -73,11 +77,21 @@ print(df_results)
 
 
 plt.figure(figsize=(10, 6))
-plt.plot(df_results['n_ellipses'], df_results['serial_time'], marker='o', label='Serial')
-plt.plot(df_results['n_ellipses'], df_results['parallel_time'], marker='o', label='Parallel (all cores)')
-plt.title('pdist_tangency Performance: Serial vs. Parallel')
-plt.xlabel('Number of Ellipses')
-plt.ylabel('Execution Time (seconds)')
+plt.plot(
+    df_results["n_ellipses"],
+    df_results["serial_time"],
+    marker="o",
+    label="Serial",
+)
+plt.plot(
+    df_results["n_ellipses"],
+    df_results["parallel_time"],
+    marker="o",
+    label="Parallel (all cores)",
+)
+plt.title("pdist_tangency Performance: Serial vs. Parallel")
+plt.xlabel("Number of Ellipses")
+plt.ylabel("Execution Time (seconds)")
 plt.legend()
 plt.grid(True)
 plt.show()
