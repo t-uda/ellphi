@@ -280,7 +280,7 @@ def test_newton_method_with_initial_guess():
     assert res.mu == pytest.approx(baseline.mu, rel=1e-9)
     assert res.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
 
-    
+
 # -----------------------------------------------------------------------------
 # 14. Edge cases for tangency
 # -----------------------------------------------------------------------------
