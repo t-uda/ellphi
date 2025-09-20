@@ -27,6 +27,7 @@ from .solver import (
     tangency,
     pdist_tangency,
     TangencyResult,
+    has_cpp_backend,
 )
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "tangency",
     "pdist_tangency",
     "TangencyResult",
+    "has_cpp_backend",
 ]
 
 try:

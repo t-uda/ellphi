@@ -32,6 +32,12 @@ dev = [
 [tool.poetry]
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
+include = [
+  { path = "src/ellphi/_tangency_cpp_impl.*", format = ["sdist", "wheel"] },
+]
+
+[tool.poetry.build]
+script = "build_tangency_cpp.py"
 
 [tool.poetry.group.dev.dependencies]
 pandas = "^2.2.0"
@@ -44,6 +50,6 @@ scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 pytest = "^8.4.1"
 
 [build-system]
-requires = ["poetry-core>=1.9.0"]
+requires = ["poetry-core>=1.9.0", "setuptools>=65"]
 build-backend = "poetry.core.masonry.api"
 
