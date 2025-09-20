@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from ellphi.ellcloud import EllipseCloud
 # from .ellcloud import EllipseCloud
 
+from . import _backend
+
 __all__ = [
     "quad_eval",
     "pencil",
@@ -23,6 +25,12 @@ __all__ = [
     "solve_mu",
     "tangency",
     "pdist_tangency",
+    "available_backends",
+    "get_backend",
+    "set_backend",
+    "has_cpp_backend",
+    "tangency_python",
+    "pdist_tangency_python",
 ]
 
 
@@ -129,7 +137,7 @@ def solve_mu(
 # ---------------------------------------------------------------------------
 
 
-def tangency(
+def tangency_python(
     pcoef: numpy.ndarray,
     qcoef: numpy.ndarray,
     *,
@@ -145,7 +153,40 @@ def tangency(
     return TangencyResult(t, numpy.asarray(point), mu)
 
 
-def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
+def tangency(
+    pcoef: numpy.ndarray,
+    qcoef: numpy.ndarray,
+    *,
+    method: str = "brentq+newton",
+    bracket: Tuple[float, float] = (0.0, 1.0),
+    x0: float | None = None,
+    backend: str | None = None,
+) -> TangencyResult:
+    """Return the tangency result, dispatching to the selected backend."""
+
+    backend_name = _backend.resolve_backend(backend)
+    if backend_name == "cpp":
+        if method == "newton" and x0 is None:
+            raise ValueError("x0 must be provided for Newton method")
+        module = _backend.require_cpp_backend()
+        pcoef_arr = numpy.asarray(pcoef, dtype=float)
+        qcoef_arr = numpy.asarray(qcoef, dtype=float)
+        bracket_tuple = (float(bracket[0]), float(bracket[1]))
+        t_val, point_arr, mu_val = module.tangency(
+            pcoef_arr,
+            qcoef_arr,
+            method=method,
+            bracket=bracket_tuple,
+            x0=x0,
+        )
+        return TangencyResult(
+            float(t_val), numpy.asarray(point_arr, dtype=float), float(mu_val)
+        )
+
+    return tangency_python(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
+
+
+def _pdist_tangency_serial_python(ellcloud: EllipseCloud) -> numpy.ndarray:
     """Serial implementation of pdist_tangency."""
     m = len(ellcloud)
     n = m * (m - 1) // 2
@@ -153,18 +194,18 @@ def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
     for i in range(m):
         for j in range(i + 1, m):
             k = m * i + j - ((i + 2) * (i + 1)) // 2
-            d[k] = tangency(ellcloud[i], ellcloud[j]).t
+            d[k] = tangency_python(ellcloud[i], ellcloud[j]).t
     return d
 
 
-def _pdist_tangency_parallel(
+def _pdist_tangency_parallel_python(
     ellcloud: EllipseCloud, n_jobs: int | None = -1
 ) -> numpy.ndarray:
     """Parallel implementation of pdist_tangency."""
     m = len(ellcloud)
 
     def get_pair_tangency(i, j):
-        return tangency(ellcloud[i], ellcloud[j]).t
+        return tangency_python(ellcloud[i], ellcloud[j]).t
 
     results = Parallel(n_jobs=n_jobs)(
         delayed(get_pair_tangency)(i, j) for i in range(m) for j in range(i + 1, m)
@@ -172,7 +213,7 @@ def _pdist_tangency_parallel(
     return numpy.array(results, dtype=float)
 
 
-def pdist_tangency(
+def pdist_tangency_python(
     ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: int | None = -1
 ) -> numpy.ndarray:
     """
@@ -192,5 +233,48 @@ def pdist_tangency(
         This is only used if `parallel` is True. Default is -1.
     """
     if parallel:
-        return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
-    return _pdist_tangency_serial(ellcloud)
+        return _pdist_tangency_parallel_python(ellcloud, n_jobs=n_jobs)
+    return _pdist_tangency_serial_python(ellcloud)
+
+
+def _coef_array_from_cloud(ellcloud: EllipseCloud | numpy.ndarray) -> numpy.ndarray:
+    """Return a ``(N, 6)`` array of coefficients from an ellipse cloud."""
+    if isinstance(ellcloud, numpy.ndarray):
+        arr = numpy.asarray(ellcloud, dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != 6:
+            raise ValueError("Coefficient matrix must have shape (N, 6)")
+        return arr
+    if hasattr(ellcloud, "coef"):
+        return numpy.asarray(ellcloud.coef, dtype=float)
+
+    m = len(ellcloud)
+    coef = numpy.empty((m, 6), dtype=float)
+    for i in range(m):
+        coef[i] = numpy.asarray(ellcloud[i], dtype=float)
+    return coef
+
+
+def pdist_tangency(
+    ellcloud: EllipseCloud,
+    *,
+    parallel: bool = True,
+    n_jobs: int | None = -1,
+    backend: str | None = None,
+) -> numpy.ndarray:
+    """Compute pairwise tangency distances using the requested backend."""
+
+    backend_name = _backend.resolve_backend(backend)
+    if backend_name == "cpp":
+        module = _backend.require_cpp_backend()
+        coef = _coef_array_from_cloud(ellcloud)
+        result = module.pdist_tangency(coef, method="brentq+newton", bracket=(0.0, 1.0))
+        return numpy.asarray(result, dtype=float)
+
+    return pdist_tangency_python(ellcloud, parallel=parallel, n_jobs=n_jobs)
+
+
+# Re-export backend utilities for callers who need explicit control.
+available_backends = _backend.available_backends
+get_backend = _backend.get_backend
+set_backend = _backend.set_backend
+has_cpp_backend = _backend.has_cpp_backend
