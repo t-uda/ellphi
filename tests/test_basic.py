@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from ellphi import coef_from_axes, tangency
@@ -180,3 +182,100 @@ def test_tangency_point_satisfies_quadratic_and_normal_alignment():
         cross = grad_p[0] * grad_q[1] - grad_p[1] * grad_q[0]
         assert cross == pytest.approx(0.0, abs=1e-8)
         assert np.dot(grad_p, grad_q) <= 1e-8
+
+
+# -----------------------------------------------------------------------------
+# 8. Axis-aligned ellipses: tangency time matches analytic distance formula
+# -----------------------------------------------------------------------------
+def test_axis_aligned_scaling_matches_sum_of_axes():
+    p = coef_from_axes([0.0, 0.0], 0.5, 1.0, 0.0)
+    q = coef_from_axes([5.0, 0.0], 2.0, 1.0, 0.0)
+
+    res = tangency(p, q)
+
+    expected_t = 5.0 / (0.5 + 2.0)
+    assert res.t == pytest.approx(expected_t, rel=1e-9)
+
+    expected_point = np.array([res.t * 0.5, 0.0])
+    assert res.point == pytest.approx(expected_point, abs=1e-12)
+
+
+# -----------------------------------------------------------------------------
+# 9. Tangency point must lie on both scaled ellipses
+# -----------------------------------------------------------------------------
+def test_tangency_point_satisfies_both_ellipses():
+    p = coef_from_axes([0.4, -0.5], 1.1, 0.6, 0.8)
+    q = coef_from_axes([-1.3, 0.9], 0.7, 1.4, -0.3)
+
+    res = tangency(p, q)
+    expected = res.t**2
+
+    assert res.t >= 0.0
+    assert quad_eval(p, res.point) == pytest.approx(expected, rel=1e-9, abs=1e-9)
+    assert quad_eval(q, res.point) == pytest.approx(expected, rel=1e-9, abs=1e-9)
+
+
+# -----------------------------------------------------------------------------
+# 10. Translating both ellipses should translate the solution
+# -----------------------------------------------------------------------------
+def test_tangency_translation_invariance():
+    c_p = np.array([-0.2, 0.3])
+    c_q = np.array([1.8, -1.1])
+
+    p = coef_from_axes(c_p, 0.9, 0.5, 0.2)
+    q = coef_from_axes(c_q, 1.2, 0.7, -0.4)
+    base = tangency(p, q)
+
+    shift = np.array([1.1, 0.5])
+    p_shift = coef_from_axes(c_p + shift, 0.9, 0.5, 0.2)
+    q_shift = coef_from_axes(c_q + shift, 1.2, 0.7, -0.4)
+    shifted = tangency(p_shift, q_shift)
+
+    assert shifted.t == pytest.approx(base.t, rel=1e-9)
+    assert shifted.mu == pytest.approx(base.mu, rel=1e-9)
+    assert shifted.point == pytest.approx(base.point + shift, rel=1e-9, abs=1e-9)
+
+
+# -----------------------------------------------------------------------------
+# 11. Identical ellipses touch immediately (t ≈ 0)
+# -----------------------------------------------------------------------------
+def test_identical_ellipses_touch_at_zero_time():
+    center = np.array([2.3, -1.1])
+    ellipse = coef_from_axes(center, 1.0, 0.6, 0.7)
+
+    res = tangency(ellipse, ellipse)
+
+    assert res.t == pytest.approx(0.0, abs=1e-7)
+    assert res.point == pytest.approx(center, abs=1e-9)
+    assert res.mu == pytest.approx(0.0, abs=1e-12)
+
+
+# -----------------------------------------------------------------------------
+# 12. Alternative scalar-root methods agree with the default strategy
+# -----------------------------------------------------------------------------
+@pytest.mark.parametrize("method", ["bisect", "brentq", "brenth"])
+def test_scalar_root_methods_match_default(method: str):
+    p = coef_from_axes(cast(Any, [0.3, -0.7]), 1.2, 0.9, 0.4)
+    q = coef_from_axes(cast(Any, [-1.1, 1.4]), 0.8, 1.5, 1.0)
+
+    baseline = tangency(p, q)
+    alt = tangency(p, q, method=method)
+
+    assert alt.t == pytest.approx(baseline.t, rel=1e-9)
+    assert alt.mu == pytest.approx(baseline.mu, rel=1e-9)
+    assert alt.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
+
+
+# -----------------------------------------------------------------------------
+# 13. Newton method works when supplied with an initial guess
+# -----------------------------------------------------------------------------
+def test_newton_method_with_initial_guess():
+    p = coef_from_axes([0.3, -0.7], 1.2, 0.9, 0.4)
+    q = coef_from_axes([-1.1, 1.4], 0.8, 1.5, 1.0)
+
+    baseline = tangency(p, q)
+    res = tangency(p, q, method="newton", x0=0.5)
+
+    assert res.t == pytest.approx(baseline.t, rel=1e-9)
+    assert res.mu == pytest.approx(baseline.mu, rel=1e-9)
+    assert res.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
