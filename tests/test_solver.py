@@ -13,10 +13,14 @@ def ellipse_cloud(rng):
     return random_cloud(rng, n_ellipses=32)
 
 
-def test_pdist_tangency_consistency(ellipse_cloud):
+def test_pdist_tangency_consistency(ellipse_cloud, solver_backend):
     """Serial and parallel ``pdist_tangency`` implementations agree."""
-    serial_result = pdist_tangency(ellipse_cloud, parallel=False)
-    parallel_result = pdist_tangency(ellipse_cloud, parallel=True)
+    serial_result = pdist_tangency(
+        ellipse_cloud, parallel=False, backend=solver_backend
+    )
+    parallel_result = pdist_tangency(
+        ellipse_cloud, parallel=True, backend=solver_backend
+    )
 
     np.testing.assert_allclose(
         serial_result,

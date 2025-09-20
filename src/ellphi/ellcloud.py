@@ -92,7 +92,13 @@ class EllipseCloud:
             ax.add_patch(ellpatch)
         return ax
 
-    def pdist_tangency(self, *, parallel: bool = True, n_jobs: int | None = -1):
+    def pdist_tangency(
+        self,
+        *,
+        parallel: bool = True,
+        n_jobs: int | None = -1,
+        backend: str = "auto",
+    ):
         """
         Compute pairwise tangency distances for the ellipse cloud.
 
@@ -104,13 +110,20 @@ class EllipseCloud:
             If True (default), compute the tangencies in parallel.
         n_jobs : int or None, optional
             Number of jobs to run in parallel. See `ellphi.solver.pdist_tangency`.
+        backend : {"auto", "python", "cpp"}
+            Backend used for the tangency computation.
 
         Returns
         -------
         numpy.ndarray
             A condensed distance matrix of tangency distances.
         """
-        return pdist_tangency(self, parallel=parallel, n_jobs=n_jobs)
+        return pdist_tangency(
+            self,
+            parallel=parallel,
+            n_jobs=n_jobs,
+            backend=backend,
+        )
 
     @classmethod
     def from_point_cloud(

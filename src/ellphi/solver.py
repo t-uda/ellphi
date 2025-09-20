@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-"""Tangency solver – consolidated version with correct derivative formula."""
+"""Tangency solver dispatching between Python and C++ backends."""
 
-from collections import namedtuple
-from typing import Tuple
+from typing import Iterable, Tuple
 
 import numpy
-from scipy.optimize import root_scalar
-from typing import Callable, Literal, cast
-from joblib import Parallel, delayed  # type: ignore
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ellphi.ellcloud import EllipseCloud
-# from .ellcloud import EllipseCloud
+from . import _solver_python as _py
+from . import _tangency_cpp as _cpp
 
 __all__ = [
     "quad_eval",
@@ -23,110 +16,53 @@ __all__ = [
     "solve_mu",
     "tangency",
     "pdist_tangency",
+    "tangency_python",
+    "pdist_tangency_python",
+    "has_cpp_backend",
 ]
 
 
-# ---------------------------------------------------------------------------
-# Core utilities
-# ---------------------------------------------------------------------------
+quad_eval = _py.quad_eval
+pencil = _py.pencil
+TangencyResult = _py.TangencyResult
+solve_mu = _py.solve_mu
+
+tangency_python = _py.tangency
+pdist_tangency_python = _py.pdist_tangency
+_pdist_tangency_serial = _py._pdist_tangency_serial
+_pdist_tangency_parallel = _py._pdist_tangency_parallel
 
 
-def quad_eval(coef: numpy.ndarray, center: Tuple[float, float]) -> float:
-    """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*"""
-    assert coef.shape == (6,)
-    a, b, c, d, e, f = coef[:6]
-    x, y = center
-    return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
+BackendLiteral = tuple[str, ...]
+_BACKEND_NAMES: BackendLiteral = ("auto", "python", "cpp")
 
 
-def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
-    """Linear blend ``(1-μ) p + μ q`` of two conic-coefficient arrays."""
-    return (1.0 - mu) * p + mu * q
+def has_cpp_backend() -> bool:
+    """Return True if the compiled tangency backend is available."""
+
+    return _cpp.is_available()
 
 
-# ---------------------------------------------------------------------------
-# Tangency solver internals
-# ---------------------------------------------------------------------------
-
-TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
-
-
-def _center(coef: numpy.ndarray) -> Tuple[float, float]:
-    a, b, c, d, e, _ = coef
-    det = a * c - b**2
-    if det == 0:
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    x = (b * e - c * d) / det
-    y = (b * d - a * e) / det
-    return (x, y)
+def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
+    coef = getattr(ellcloud, "coef", ellcloud)
+    array = numpy.asarray(coef, dtype=float)
+    if array.ndim != 2 or array.shape[1] != 6:
+        raise ValueError("Expected ellipse coefficients with shape (n, 6)")
+    return array
 
 
-def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
-    coef = pencil(p, q, mu)
-    xc = _center(coef)
-    return quad_eval(p, xc) - quad_eval(q, xc)
-
-
-def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
-    """Exact derivative of `_target`."""
-    coef = pencil(p, q, mu)
-    a, b, c, d, e, _ = coef
-    diff = p - q
-
-    # Centre of blended ellipse, and determinant of its quadratic part
-    det = a * c - b**2
-    if det == 0:
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    xc = numpy.array([(b * e - c * d) / det, (b * d - a * e) / det])
-
-    # Build 2x2 matrix from diff
-    diff_mat = numpy.array([[diff[0], diff[1]], [diff[1], diff[2]]])
-    A_xprime = -(diff_mat @ xc + diff[3:5])
-
-    # Explicit formula for vᵀ · A⁻¹ · v, where A is symmetric
-    v0, v1 = A_xprime
-    numerator = c * v0**2 - 2 * b * v0 * v1 + a * v1**2
-    return 2.0 * numerator / det
-
-
-def solve_mu(
-    p: numpy.ndarray,
-    q: numpy.ndarray,
-    *,
-    method: str = "brentq+newton",
-    bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: float | None = None,
-) -> float:
-    curry_f: Callable[[float], float] = lambda mu: _target(mu, p, q)
-    curry_df: Callable[[float], float] = lambda mu: _target_prime(mu, p, q)
-    if method == "brentq+newton":
-        mu0 = root_scalar(curry_f, bracket=bracket, method="brentq", maxiter=8).root
-        mu = root_scalar(
-            curry_f,
-            x0=mu0,
-            method="newton",
-            fprime=curry_df,
-            maxiter=3,
-        ).root
-        return float(mu)
-    if method in {"bisect", "brentq", "brenth"}:
-        return float(
-            root_scalar(
-                curry_f,
-                bracket=bracket,
-                method=cast(Literal["bisect", "brentq", "brenth"], method),
-            ).root
+def _should_use_cpp(backend: str) -> bool:
+    if backend not in _BACKEND_NAMES:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
         )
-    if method == "newton":
-        if x0 is None:
-            raise ValueError("x0 must be provided for Newton method")
-        return float(root_scalar(curry_f, x0=x0, method="newton", fprime=curry_df).root)
-    raise ValueError(f"Unknown method: {method}")
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+    if backend == "cpp":
+        if not has_cpp_backend():
+            raise RuntimeError("C++ backend requested but not available")
+        return True
+    if backend == "auto":
+        return has_cpp_backend()
+    return False
 
 
 def tangency(
@@ -136,61 +72,46 @@ def tangency(
     method: str = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    backend: str = "auto",
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
-    mu = solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
-    coef = pencil(pcoef, qcoef, mu)
-    point = _center(coef)
-    t = float(numpy.sqrt(quad_eval(coef, point)))
-    return TangencyResult(t, numpy.asarray(point), mu)
 
-
-def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
-    """Serial implementation of pdist_tangency."""
-    m = len(ellcloud)
-    n = m * (m - 1) // 2
-    d = numpy.zeros((n,), dtype=float)
-    for i in range(m):
-        for j in range(i + 1, m):
-            k = m * i + j - ((i + 2) * (i + 1)) // 2
-            d[k] = tangency(ellcloud[i], ellcloud[j]).t
-    return d
-
-
-def _pdist_tangency_parallel(
-    ellcloud: EllipseCloud, n_jobs: int | None = -1
-) -> numpy.ndarray:
-    """Parallel implementation of pdist_tangency."""
-    m = len(ellcloud)
-
-    def get_pair_tangency(i, j):
-        return tangency(ellcloud[i], ellcloud[j]).t
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(get_pair_tangency)(i, j) for i in range(m) for j in range(i + 1, m)
-    )
-    return numpy.array(results, dtype=float)
+    if _should_use_cpp(backend):
+        return _cpp.tangency(
+            pcoef,
+            qcoef,
+            method=method,
+            bracket=bracket,
+            x0=x0,
+        )
+    return tangency_python(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
 
 
 def pdist_tangency(
-    ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: int | None = -1
+    ellcloud,
+    *,
+    parallel: bool = True,
+    n_jobs: int | None = -1,
+    backend: str = "auto",
 ) -> numpy.ndarray:
-    """
-    Compute pairwise tangency distances for a cloud of ellipses.
-
-    The distances are returned as a condensed distance matrix, which can be
-    converted to a square matrix using `scipy.spatial.distance.squareform`.
+    """Compute pairwise tangency distances for a cloud of ellipses.
 
     Parameters
     ----------
-    ellcloud : EllipseCloud
-        The collection of ellipses.
+    ellcloud
+        Collection of ellipse coefficient arrays or an `EllipseCloud`.
     parallel : bool, optional
-        If True (default), compute the tangencies in parallel using joblib.
+        If True (default), compute the tangencies in parallel when using the
+        Python backend.
     n_jobs : int or None, optional
-        Number of jobs to run in parallel. -1 means using all available CPUs.
-        This is only used if `parallel` is True. Default is -1.
+        Number of jobs passed to the Python parallel backend.
+    backend : {"auto", "python", "cpp"}
+        Backend used for the tangency computation.
     """
+
+    if _should_use_cpp(backend):
+        coef = _extract_coef_array(ellcloud)
+        return _cpp.pdist_tangency(coef)
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
     return _pdist_tangency_serial(ellcloud)
