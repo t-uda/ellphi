@@ -8,7 +8,7 @@ Re-exports the most frequently used symbols so users can::
     el.tangency(...)
 """
 
-from importlib.metadata import version as _version
+from importlib.metadata import PackageNotFoundError, version as _version
 
 # geometry
 from .geometry import (
@@ -47,4 +47,7 @@ __all__ = [
     "TangencyResult",
 ]
 
-__version__ = _version(__name__)
+try:
+    __version__ = _version(__name__)
+except PackageNotFoundError:
+    __version__ = "0+unknown"
