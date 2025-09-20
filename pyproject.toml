@@ -8,7 +8,6 @@ authors = [
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
-dynamic = ["dependencies", "optional-dependencies"]
 
 dependencies = [
   "numpy>=1.26",
@@ -32,6 +31,10 @@ dev = [
 [tool.poetry]
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
+include = ["src/ellphi/_tangency_cpp_impl.*"]
+
+[tool.poetry.build]
+script = "build.py"
 
 [tool.poetry.group.dev.dependencies]
 pandas = "^2.2.0"
@@ -43,17 +46,8 @@ mypy = "^1.8"
 scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 pytest = "^8.4.1"
 
-[tool.setuptools]
-package-dir = { "" = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["ellphi*"]
-
-[tool.setuptools.package-data]
-ellphi = ["_tangency_cpp_impl.*"]
-
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = []
+build-backend = "build_backend"
+backend-path = ["."]
 
