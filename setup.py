@@ -2,12 +2,18 @@ from __future__ import annotations
 
 """Setuptools configuration with a custom C++ build step."""
 
-import os
-import subprocess
+import sys
 import sysconfig
 from pathlib import Path
 
 from setuptools import setup
+from setuptools._distutils import ccompiler as distutils_ccompiler
+from setuptools._distutils.errors import (
+    CompileError,
+    DistutilsExecError,
+    LinkError,
+)
+from setuptools._distutils.sysconfig import customize_compiler
 from setuptools.command.build_py import build_py as build_py_orig
 from setuptools.command.develop import develop as develop_orig
 from setuptools.command.sdist import sdist as sdist_orig
@@ -37,24 +43,55 @@ def _compile_cpp_backend(force: bool = False) -> Path:
 
     library.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "g++",
-        "-std=c++17",
-        "-O3",
-        "-shared",
-        str(SOURCE_FILE),
-        "-o",
-        str(library),
-    ]
-    if os.name != "nt":
-        cmd.insert(4, "-fPIC")
+    compiler = distutils_ccompiler.new_compiler()
+    customize_compiler(compiler)
+
+    build_temp = PROJECT_ROOT / "build" / "temp"
+    build_temp.mkdir(parents=True, exist_ok=True)
+
+    extra_compile_args: list[str]
+    extra_link_args: list[str] = []
+
+    if compiler.compiler_type == "msvc":
+        extra_compile_args = ["/std:c++17", "/O2"]
+        extra_link_args = ["/LD"]
+    else:
+        extra_compile_args = ["-std=c++17", "-O3"]
+        if sys.platform == "darwin":
+            raw_linker = getattr(compiler, "linker_so", [])
+            if isinstance(raw_linker, str):
+                linker_so = raw_linker.split()
+            else:
+                linker_so = list(raw_linker)
+            linker_so = [arg for arg in linker_so if arg not in {"-bundle", "-shared"}]
+            if "-dynamiclib" not in linker_so:
+                linker_so.insert(1, "-dynamiclib")
+            if "-undefined" not in linker_so:
+                linker_so.extend(["-undefined", "dynamic_lookup"])
+            compiler.linker_so = linker_so
+        else:
+            extra_compile_args.append("-fPIC")
+            extra_link_args = ["-shared"]
 
     try:
-        subprocess.run(cmd, check=True)
+        objects = compiler.compile(
+            [str(SOURCE_FILE)],
+            output_dir=str(build_temp),
+            extra_postargs=extra_compile_args,
+        )
+        compiler.link_shared_object(
+            objects,
+            str(library),
+            extra_postargs=extra_link_args,
+        )
     except FileNotFoundError as exc:  # pragma: no cover - build environment issue
-        msg = "g++ compiler is required to build the C++ backend"
+        msg = "C++ compiler is required to build the C++ backend"
         raise RuntimeError(msg) from exc
-    except subprocess.CalledProcessError as exc:  # pragma: no cover - build failure
+    except (
+        CompileError,
+        LinkError,
+        DistutilsExecError,
+    ) as exc:  # pragma: no cover - build failure
         msg = "Failed to compile the C++ tangency backend"
         raise RuntimeError(msg) from exc
 

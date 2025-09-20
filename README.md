@@ -22,3 +22,21 @@ A PyPI release is in progress. Until then, install from GitHub:
 ```bash
 pip install git+https://github.com/t-uda/ellphi.git
 ```
+
+### C++ toolchain support
+
+EllPHi ships a prebuilt C++ backend when you install from source. The build
+step now relies on Python's compiler configuration, and our GitHub Actions
+matrix exercises Linux, macOS, and Windows builds on every push. You will need
+one of the following toolchains if you compile locally:
+
+* **Linux** – GCC or Clang with support for `-std=c++17`, `-O3`, `-fPIC`, and
+  shared libraries (`-shared`).
+* **macOS** – Apple Clang (Xcode 15 or newer) with `-dynamiclib` and
+  `-undefined dynamic_lookup`.
+* **Windows** – Microsoft Visual C++ 2019+ (MSVC) or compatible toolchains with
+  `/std:c++17` and `/LD`.
+
+The CI smoke tests ensure the packaged wheel loads the compiled backend on all
+three platforms, so end users installing via `pip` receive a working shared
+library by default.
