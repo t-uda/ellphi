@@ -13,7 +13,7 @@ try:  # pragma: no cover - import guard is environment dependent
     from setuptools.command.build_ext import build_ext
 except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for users
     raise RuntimeError(
-        "setuptools is required to build the C++ backend. Install it with 'pip install setuptools'."
+        "setuptools is required to build the C++ backend. "
     ) from exc
 
 _LIB_NAME = "_tangency_cpp_impl"
