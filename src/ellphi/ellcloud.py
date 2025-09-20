@@ -160,7 +160,8 @@ class EllipseCloud:
         Apply rescaling to all the ellipses.
         The supported method is "median" or "average".
         """
-        scales = numpy.sqrt(numpy.linalg.eigh(self.cov).eigenvalues)
+        eigvals = numpy.linalg.eigvalsh(self.cov)
+        scales = numpy.sqrt(eigvals)
         if method == "median":
             ell_scales = numpy.median(scales, axis=0)
         elif method == "average":
@@ -173,7 +174,7 @@ class EllipseCloud:
         ell_scale = ell_scales[1] ** 2 / ell_scales[0]
         self.cov /= ell_scale**2
         self.coef *= ell_scale**2
-        return ell_scale
+        return float(ell_scale)
 
 
 # alias
