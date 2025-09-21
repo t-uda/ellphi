@@ -11,6 +11,8 @@ import numpy
 from joblib import Parallel, delayed  # type: ignore
 from scipy.optimize import root_scalar
 
+from ._tangent_pencil import build_tangent_pencil, target_prime_from_pencil
+
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ellphi.ellcloud import EllipseCloud
 
@@ -62,21 +64,8 @@ def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
 def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
     """Exact derivative of `_target`."""
 
-    coef = pencil(p, q, mu)
-    a, b, c, d, e, _ = coef
-    diff = p - q
-
-    det = a * c - b**2
-    if det == 0:
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    xc = numpy.array([(b * e - c * d) / det, (b * d - a * e) / det])
-
-    diff_mat = numpy.array([[diff[0], diff[1]], [diff[1], diff[2]]])
-    A_xprime = -(diff_mat @ xc + diff[3:5])
-
-    v0, v1 = A_xprime
-    numerator = c * v0**2 - 2 * b * v0 * v1 + a * v1**2
-    return 2.0 * numerator / det
+    pencil = build_tangent_pencil(mu, p, q)
+    return target_prime_from_pencil(pencil, p, q)
 
 
 SingleStageMethodName = Literal["bisect", "brentq", "brenth", "newton"]

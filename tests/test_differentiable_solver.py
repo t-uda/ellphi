@@ -1,6 +1,10 @@
 import numpy as np
+import pytest
 
-from ellphi.differentiable_solver import solve_mu_numerical_diff
+from ellphi.differentiable_solver import (
+    solve_mu_gradients,
+    solve_mu_numerical_diff,
+)
 from ellphi.solver import solve_mu
 
 from .factories import random_coef_pair
@@ -50,3 +54,30 @@ def test_numerical_differentiation(rng):
         atol=1e-8,
         err_msg="Central and forward difference for dq are not close enough.",
     )
+
+
+def test_analytic_gradients_match_central_difference(rng):
+    """The analytic gradients agree with central differences."""
+
+    for _ in range(5):
+        p, q = random_coef_pair(rng)
+        mu, d_mu_dp, d_mu_dq = solve_mu_gradients(p, q)
+        d_mu_dp_num, d_mu_dq_num = solve_mu_numerical_diff(p, q)
+
+        np.testing.assert_allclose(
+            d_mu_dp,
+            d_mu_dp_num,
+            rtol=1e-6,
+            atol=1e-8,
+            err_msg="Analytic and numerical gradients w.r.t. p differ.",
+        )
+        np.testing.assert_allclose(
+            d_mu_dq,
+            d_mu_dq_num,
+            rtol=1e-6,
+            atol=1e-8,
+            err_msg="Analytic and numerical gradients w.r.t. q differ.",
+        )
+
+        mu_direct = solve_mu(p, q)
+        assert mu == pytest.approx(mu_direct)
