@@ -41,6 +41,12 @@ jobs:
     - name: Install project (dev extras)
       run: poetry install --with dev
 
+    - name: Ensure build toolchain
+      run: poetry run python -m pip install --upgrade pip setuptools
+
+    - name: Build tangency C++ backend
+      run: poetry run python build_tangency_cpp.py
+
     # -- Lint / Format ----------------------------------------------
     - name: flake8
       run: poetry run flake8 src tests

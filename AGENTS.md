@@ -20,7 +20,21 @@ poetry lock
 
 This ensures that the project's dependencies remain consistent and reproducible. After running the command, remember to commit both the `pyproject.toml` and `poetry.lock` files.
 
-### 2. Run Test and Lint
+### 2. Build the C++ tangency backend
+
+The Python tests depend on the compiled shared library generated from `src/ellphi/_tangency_cpp_impl.cpp`. After installing the
+Poetry environment, always build (or rebuild when the C++ source changes) the backend by running:
+
+```bash
+poetry run python -m pip install --upgrade pip setuptools
+poetry run python build_tangency_cpp.py
+```
+
+If `setuptools` is already present the first command is a no-op, but including it guarantees that the build script can import the
+required tooling. The build must succeed before executing pytest locally or in CI; otherwise, all tangency-related tests will be
+skipped and the results will be invalid.
+
+### 3. Run Test and Lint
 
 In this repository, all CI tests must pass before PRs are merged. Therefore, before pushing you must have run all relevant tests.
 
