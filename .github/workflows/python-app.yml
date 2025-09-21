@@ -41,6 +41,9 @@ jobs:
     - name: Install project (dev extras)
       run: poetry install --with dev
 
+    - name: Build C++ tangency backend
+      run: poetry run python build_tangency_cpp.py
+
     # -- Lint / Format ----------------------------------------------
     - name: flake8
       run: poetry run flake8 src tests
@@ -75,6 +78,9 @@ jobs:
 
     - name: Install project (dev extras)
       run: poetry install --with dev      # stub も OK
+
+    - name: Build C++ tangency backend
+      run: poetry run python build_tangency_cpp.py
 
     - name: mypy
       run: poetry run mypy src

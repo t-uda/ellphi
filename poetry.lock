@@ -3552,8 +3552,7 @@ version = "80.9.0"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
 optional = true
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "extra == \"dev\""
+groups = ["dev"]
 files = [
     {file = "setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"},
     {file = "setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c"},
@@ -4053,4 +4052,4 @@ dev = ["ipykernel", "jupyterlab", "matplotlib", "nbformat", "plotly"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "568efd2bd0e7ba57b84182666628a56fe601bdce927c61ea8e3bad0e0603cd98"
+content-hash = "d7a54c3e70f1f62e83308c886d925bf0de43b8a7daf283005cbe47f325c053ee"
