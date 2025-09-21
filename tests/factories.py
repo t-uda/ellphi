@@ -9,7 +9,7 @@ from ellphi.ellcloud import EllipseCloud
 from ellphi.geometry import coef_from_cov
 
 
-def _rotation_matrix(angle: float) -> NDArray[np.float64]:
+def rotation_matrix(angle: float) -> NDArray[np.float64]:
     """Return a 2D rotation matrix for the given angle in radians."""
     cos, sin = np.cos(angle), np.sin(angle)
     return np.array([[cos, -sin], [sin, cos]], dtype=float)
@@ -18,7 +18,7 @@ def _rotation_matrix(angle: float) -> NDArray[np.float64]:
 def random_covariance(rng: np.random.Generator) -> NDArray[np.float64]:
     """Draw a random, symmetric positive-definite 2×2 covariance matrix."""
     axes = rng.uniform(1.0, 6.0, size=2)
-    rot = _rotation_matrix(rng.uniform(0.0, np.pi))
+    rot = rotation_matrix(rng.uniform(0.0, np.pi))
     return rot @ np.diag(axes) @ rot.T
 
 
