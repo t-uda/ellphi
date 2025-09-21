@@ -126,6 +126,15 @@ def test_circle_center_and_gradients_match_hand_solution(case: CircleTangencyCas
 
 
 @pytest.mark.parametrize("case", CIRCLE_CASES)
+def test_solver_mu_matches_circle_formula(case: CircleTangencyCase):
+    """`solve_mu` reproduces the closed-form μ for analytic circles."""
+
+    p, q = case.coefficients()
+    mu_numeric = solve_mu(p, q)
+    assert mu_numeric == pytest.approx(case.mu, rel=1e-12, abs=1e-12)
+
+
+@pytest.mark.parametrize("case", CIRCLE_CASES)
 def test_circle_target_prime_matches_closed_form(case: CircleTangencyCase):
     """`target_prime_from_pencil` agrees with the analytic derivative."""
 
@@ -191,6 +200,28 @@ def _target_value(mu: float, p: np.ndarray, q: np.ndarray) -> float:
     pencil = build_tangent_pencil(mu, p, q)
     center = _as_point(pencil.center)
     return float(quad_eval(p, center) - quad_eval(q, center))
+
+
+def test_target_prime_chain_rule_matches_closed_form(rng: np.random.Generator):
+    """Chain rule using `center_jacobian` reproduces the cached derivative."""
+
+    for _ in range(5):
+        p, q = random_coef_pair(rng)
+        mu = solve_mu(p, q)
+        pencil = build_tangent_pencil(mu, p, q)
+        jac = center_jacobian(pencil)
+
+        diff_coef = q - p
+        center_prime = diff_coef @ jac
+
+        diff = p - q
+        grad_diff = 2.0 * (quad_matrix(diff) @ pencil.center + linear_vector(diff))
+        derivative_chain = float(grad_diff @ center_prime)
+
+        derivative_cached = target_prime_from_pencil(pencil, p, q)
+        assert derivative_chain == pytest.approx(
+            derivative_cached, rel=1e-10, abs=1e-10
+        )
 
 
 def test_target_prime_matches_finite_difference(rng: np.random.Generator):
@@ -260,3 +291,23 @@ def test_saddle_point_behaviour(rng: np.random.Generator):
 
         derivative = target_prime_from_pencil(pencil, p, q)
         assert derivative > 0.0
+
+
+def test_target_prime_vanishes_for_identical_conics() -> None:
+    """Derivative of the tangency target is zero when the conics coincide."""
+
+    coef = coef_from_axes(cast(Any, np.array([0.25, -0.75])), 1.5, 0.5, 0.3)
+    mu = 0.37
+    pencil = build_tangent_pencil(mu, coef, coef)
+    derivative = target_prime_from_pencil(pencil, coef, coef)
+    assert derivative == pytest.approx(0.0, abs=1e-15)
+
+
+def test_build_tangent_pencil_raises_on_singular_quadratic() -> None:
+    """`build_tangent_pencil` fails when the quadratic form is singular."""
+
+    p = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    q = np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+
+    with pytest.raises(ZeroDivisionError):
+        build_tangent_pencil(0.0, p, q)
