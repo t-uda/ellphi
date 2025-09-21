@@ -3,7 +3,8 @@ from __future__ import annotations
 """Pure Python tangency solver backend."""
 
 from collections import namedtuple
-from typing import TYPE_CHECKING, Callable, Literal, Tuple, cast
+from itertools import combinations
+from typing import TYPE_CHECKING, Callable, Iterator, Literal, Tuple, cast
 
 import numpy
 from joblib import Parallel, delayed  # type: ignore
@@ -129,16 +130,20 @@ def tangency(
     return TangencyResult(t, numpy.asarray(point), mu)
 
 
+def _indexed_pairs(size: int) -> Iterator[tuple[int, tuple[int, int]]]:
+    """Return ordered ellipse index pairs with their position."""
+
+    return enumerate(combinations(range(size), 2))
+
+
 def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
     """Serial implementation of pdist_tangency."""
 
     m = len(ellcloud)
     n = m * (m - 1) // 2
     d = numpy.zeros((n,), dtype=float)
-    for i in range(m):
-        for j in range(i + 1, m):
-            k = m * i + j - ((i + 2) * (i + 1)) // 2
-            d[k] = tangency(ellcloud[i], ellcloud[j]).t
+    for k, (i, j) in _indexed_pairs(m):
+        d[k] = tangency(ellcloud[i], ellcloud[j]).t
     return d
 
 
@@ -148,14 +153,19 @@ def _pdist_tangency_parallel(
     """Parallel implementation of pdist_tangency."""
 
     m = len(ellcloud)
+    n = m * (m - 1) // 2
+    if n == 0:
+        return numpy.zeros((0,), dtype=float)
 
-    def get_pair_tangency(i, j):
+    pairs = _indexed_pairs(m)
+
+    def get_pair_tangency(i: int, j: int) -> float:
         return tangency(ellcloud[i], ellcloud[j]).t
 
     results = Parallel(n_jobs=n_jobs)(
-        delayed(get_pair_tangency)(i, j) for i in range(m) for j in range(i + 1, m)
+        delayed(get_pair_tangency)(i, j) for _, (i, j) in pairs
     )
-    return numpy.array(results, dtype=float)
+    return numpy.asarray(results, dtype=float)
 
 
 def pdist_tangency(
