@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tangency solver dispatching between Python and C++ backends."""
 
-from typing import Iterable, Tuple, cast
+from typing import Iterable, Tuple, cast, get_args
 
 import numpy
 
@@ -31,6 +31,10 @@ tangency_python = _py.tangency
 pdist_tangency_python = _py.pdist_tangency
 _pdist_tangency_serial = _py._pdist_tangency_serial
 _pdist_tangency_parallel = _py._pdist_tangency_parallel
+
+
+MethodName = _py.MethodName
+_METHOD_NAMES: tuple[str, ...] = tuple(get_args(MethodName))
 
 
 BackendLiteral = tuple[str, ...]
@@ -65,29 +69,36 @@ def _should_use_cpp(backend: str) -> bool:
     return False
 
 
+def _normalize_method(method: MethodName | str) -> MethodName:
+    if method not in _METHOD_NAMES:
+        raise ValueError(f"Unknown method: {method}")
+    return cast(MethodName, method)
+
+
 def tangency(
     pcoef: numpy.ndarray,
     qcoef: numpy.ndarray,
     *,
-    method: str = "brentq+newton",
+    method: MethodName | str = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
     backend: str = "auto",
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
 
+    method_literal = _normalize_method(method)
     if _should_use_cpp(backend):
         return _cpp.tangency(
             pcoef,
             qcoef,
-            method=method,
+            method=method_literal,
             bracket=bracket,
             x0=x0,
         )
     return tangency_python(
         pcoef,
         qcoef,
-        method=cast(_py.MethodName, method),
+        method=method_literal,
         bracket=bracket,
         x0=x0,
     )
