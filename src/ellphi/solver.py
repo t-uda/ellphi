@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tangency solver dispatching between Python and C++ backends."""
 
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, cast
 
 import numpy
 
@@ -84,7 +84,13 @@ def tangency(
             bracket=bracket,
             x0=x0,
         )
-    return tangency_python(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
+    return tangency_python(
+        pcoef,
+        qcoef,
+        method=cast(_py.MethodName, method),
+        bracket=bracket,
+        x0=x0,
+    )
 
 
 def pdist_tangency(
