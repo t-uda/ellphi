@@ -1,9 +1,112 @@
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
 import pytest
 from ellphi import coef_from_axes, tangency
 from ellphi.solver import quad_eval
+from tests.factories import random_coef_pair, rotation_matrix
+
+
+@dataclass(frozen=True)
+class CircleCase:
+    """Represent a pair of circles with analytic tangency expectations."""
+
+    center_p: np.ndarray
+    center_q: np.ndarray
+    radius_p: float
+    radius_q: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "center_p", np.asarray(self.center_p, dtype=float))
+        object.__setattr__(self, "center_q", np.asarray(self.center_q, dtype=float))
+
+    def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return quadratic coefficients for the stored circles."""
+        return (
+            coef_from_axes(cast(Any, self.center_p), self.radius_p, self.radius_p, 0.0),
+            coef_from_axes(cast(Any, self.center_q), self.radius_q, self.radius_q, 0.0),
+        )
+
+    @property
+    def distance(self) -> float:
+        return float(np.linalg.norm(self.center_p - self.center_q))
+
+    @property
+    def expected_t(self) -> float:
+        distance = self.distance
+        if distance == 0.0:
+            return 0.0
+        return distance / (self.radius_p + self.radius_q)
+
+    @property
+    def expected_point(self) -> np.ndarray:
+        distance = self.distance
+        if distance == 0.0:
+            return self.center_p
+        direction = (self.center_q - self.center_p) / distance
+        return self.center_p + direction * (self.radius_p * self.expected_t)
+
+
+@dataclass(frozen=True)
+class AxisAlignedCase:
+    """Represent an axis-aligned ellipse pair used to probe invariance properties."""
+
+    center_p: np.ndarray
+    center_q: np.ndarray
+    axes_p: tuple[float, float]
+    axes_q: tuple[float, float]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "center_p", np.asarray(self.center_p, dtype=float))
+        object.__setattr__(self, "center_q", np.asarray(self.center_q, dtype=float))
+
+    @property
+    def distance(self) -> float:
+        return float(np.linalg.norm(self.center_q - self.center_p))
+
+    @property
+    def expected_t(self) -> float:
+        return self.distance / (self.axes_p[0] + self.axes_q[0])
+
+    @property
+    def expected_mu(self) -> float:
+        return self.axes_q[0] / (self.axes_p[0] + self.axes_q[0])
+
+    @property
+    def expected_point(self) -> np.ndarray:
+        if self.distance == 0.0:
+            return self.center_p
+        direction = (self.center_q - self.center_p) / self.distance
+        return self.center_p + direction * (self.axes_p[0] * self.expected_t)
+
+    def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return coefficients for the default axis-aligned configuration."""
+        return self.coefficients_with_orientation()
+
+    def coefficients_with_orientation(
+        self,
+        *,
+        angle_p: float = 0.0,
+        angle_q: float = 0.0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return coefficients after applying optional rotations."""
+        r0_p, r1_p = self.axes_p
+        r0_q, r1_q = self.axes_q
+        return (
+            coef_from_axes(cast(Any, self.center_p), r0_p, r1_p, angle_p),
+            coef_from_axes(cast(Any, self.center_q), r0_q, r1_q, angle_q),
+        )
+
+
+@pytest.fixture
+def axis_aligned_case() -> AxisAlignedCase:
+    return AxisAlignedCase(
+        center_p=np.array([0.0, 0.0], dtype=float),
+        center_q=np.array([10.0, 0.0], dtype=float),
+        axes_p=(3.0, 1.0),
+        axes_q=(1.0, 0.75),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -55,83 +158,83 @@ def test_newton_requires_x0(solver_backend):
 # 4. Analytic checks for circles (closed form available)
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize(
-    "center_p, center_q, radius_p, radius_q",
+    "case",
     [
-        ((0.0, 0.0), (2.0, 0.0), 1.0, 1.0),
-        ((1.5, -0.5), (5.5, -0.5), 0.5, 1.5),
-        ((-1.0, 3.0), (-1.0, -1.0), 2.5, 0.5),
-        ((0.0, 0.0), (0.0, 0.0), 1.0, 2.0),
+        CircleCase(
+            np.array([0.0, 0.0], dtype=float),
+            np.array([2.0, 0.0], dtype=float),
+            1.0,
+            1.0,
+        ),
+        CircleCase(
+            np.array([1.5, -0.5], dtype=float),
+            np.array([5.5, -0.5], dtype=float),
+            0.5,
+            1.5,
+        ),
+        CircleCase(
+            np.array([-1.0, 3.0], dtype=float),
+            np.array([-1.0, -1.0], dtype=float),
+            2.5,
+            0.5,
+        ),
+        CircleCase(
+            np.array([0.0, 0.0], dtype=float),
+            np.array([0.0, 0.0], dtype=float),
+            1.0,
+            2.0,
+        ),
     ],
 )
-def test_circle_tangency_matches_closed_form(
-    center_p, center_q, radius_p, radius_q, solver_backend
-):
-    center_p = np.asarray(center_p, dtype=float)
-    center_q = np.asarray(center_q, dtype=float)
-    p = coef_from_axes(center_p, radius_p, radius_p, 0.0)
-    q = coef_from_axes(center_q, radius_q, radius_q, 0.0)
-
+def test_circle_tangency_matches_closed_form(case: CircleCase, solver_backend):
+    p, q = case.coefficients()
     res = tangency(p, q, backend=solver_backend)
 
-    distance = np.linalg.norm(center_p - center_q)
-    expected_t = distance / (radius_p + radius_q) if distance else 0.0
-    assert res.t == pytest.approx(expected_t, rel=1e-9, abs=1e-12)
-
-    if distance == 0.0:
-        assert res.point.tolist() == pytest.approx(center_p.tolist(), rel=1e-9)
-    else:
-        direction = (center_q - center_p) / distance
-        expected_point = center_p + direction * (radius_p * expected_t)
-        assert res.point.tolist() == pytest.approx(
-            expected_point.tolist(), rel=1e-9, abs=1e-12
-        )
+    assert res.t == pytest.approx(case.expected_t, rel=1e-9, abs=1e-12)
+    expected_point = case.expected_point
+    assert res.point.tolist() == pytest.approx(
+        expected_point.tolist(), rel=1e-9, abs=1e-12
+    )
 
 
 # -----------------------------------------------------------------------------
 # 5. Axis-aligned ellipses: tangency along the major axis direction
 # -----------------------------------------------------------------------------
-def test_axis_aligned_ellipses_have_expected_t(solver_backend):
-    center_p = np.array([0.0, 0.0])
-    center_q = np.array([10.0, 0.0])
-    r0_p, r1_p = 3.0, 1.0
-    r0_q, r1_q = 1.0, 0.75
-
-    p = coef_from_axes(center_p, r0_p, r1_p, 0.0)
-    q = coef_from_axes(center_q, r0_q, r1_q, 0.0)
-
+def test_axis_aligned_ellipses_have_expected_t(
+    axis_aligned_case: AxisAlignedCase, solver_backend
+):
+    p, q = axis_aligned_case.coefficients()
     res = tangency(p, q, backend=solver_backend)
 
-    expected_t = np.linalg.norm(center_q - center_p) / (r0_p + r0_q)
-    assert res.t == pytest.approx(expected_t, rel=1e-12)
-    assert res.point.tolist() == pytest.approx([7.5, 0.0], rel=1e-12)
-    assert res.mu == pytest.approx(r0_q / (r0_p + r0_q), rel=1e-12)
+    assert res.t == pytest.approx(axis_aligned_case.expected_t, rel=1e-12)
+    assert res.point.tolist() == pytest.approx(
+        axis_aligned_case.expected_point.tolist(), rel=1e-12
+    )
+    assert res.mu == pytest.approx(axis_aligned_case.expected_mu, rel=1e-12)
 
 
 # -----------------------------------------------------------------------------
 # 6. Rotating the entire configuration does not change the tangency scale
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize("angle", [0.2, 0.8, 1.3])
-def test_rotational_invariance(angle, solver_backend):
-    base_center_p = np.array([0.0, 0.0])
-    base_center_q = np.array([10.0, 0.0])
-    r0_p, r1_p = 3.0, 1.0
-    r0_q, r1_q = 1.0, 0.75
-    base_t = np.linalg.norm(base_center_q - base_center_p) / (r0_p + r0_q)
-    base_point = np.array([base_t * r0_p, 0.0])
+def test_rotational_invariance(
+    angle: float, axis_aligned_case: AxisAlignedCase, solver_backend
+):
+    rot = rotation_matrix(angle)
+    center_p = axis_aligned_case.center_p @ rot.T
+    center_q = axis_aligned_case.center_q @ rot.T
+    expected_point = axis_aligned_case.expected_point @ rot.T
 
-    rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-    center_p = base_center_p @ rot.T
-    center_q = base_center_q @ rot.T
-    expected_point = base_point @ rot.T
-
-    p = coef_from_axes(center_p, r0_p, r1_p, angle)
-    q = coef_from_axes(center_q, r0_q, r1_q, angle)
+    r0_p, r1_p = axis_aligned_case.axes_p
+    r0_q, r1_q = axis_aligned_case.axes_q
+    p = coef_from_axes(cast(Any, center_p), r0_p, r1_p, angle)
+    q = coef_from_axes(cast(Any, center_q), r0_q, r1_q, angle)
 
     res = tangency(p, q, backend=solver_backend)
 
-    assert res.t == pytest.approx(base_t, rel=1e-12)
+    assert res.t == pytest.approx(axis_aligned_case.expected_t, rel=1e-12)
     assert res.point.tolist() == pytest.approx(expected_point.tolist(), rel=1e-12)
-    assert res.mu == pytest.approx(r0_q / (r0_p + r0_q), rel=1e-12)
+    assert res.mu == pytest.approx(axis_aligned_case.expected_mu, rel=1e-12)
 
 
 # -----------------------------------------------------------------------------
@@ -149,25 +252,7 @@ def test_tangency_point_satisfies_quadratic_and_normal_alignment(solver_backend)
     rng = np.random.default_rng(2024)
 
     for _ in range(10):
-        center_p = rng.uniform(-2.0, 2.0, size=2)
-
-        # Draw a direction vector ensuring sufficient separation between centres
-        while True:
-            direction = rng.normal(size=2)
-            norm = np.linalg.norm(direction)
-            if norm > 1e-8:
-                direction /= norm
-                break
-
-        distance = rng.uniform(0.5, 3.0)
-        center_q = center_p + direction * distance
-
-        r0_p, r1_p = rng.uniform(0.5, 2.0, size=2)
-        r0_q, r1_q = rng.uniform(0.5, 2.0, size=2)
-        theta_p, theta_q = rng.uniform(0.0, np.pi, size=2)
-
-        p = coef_from_axes(center_p, r0_p, r1_p, theta_p)
-        q = coef_from_axes(center_q, r0_q, r1_q, theta_q)
+        p, q = random_coef_pair(rng)
 
         res = tangency(p, q, backend=solver_backend)
 
@@ -190,16 +275,18 @@ def test_tangency_point_satisfies_quadratic_and_normal_alignment(solver_backend)
 # 8. Axis-aligned ellipses: tangency time matches analytic distance formula
 # -----------------------------------------------------------------------------
 def test_axis_aligned_scaling_matches_sum_of_axes(solver_backend):
-    p = coef_from_axes([0.0, 0.0], 0.5, 1.0, 0.0)
-    q = coef_from_axes([5.0, 0.0], 2.0, 1.0, 0.0)
+    case = AxisAlignedCase(
+        center_p=np.array([0.0, 0.0], dtype=float),
+        center_q=np.array([5.0, 0.0], dtype=float),
+        axes_p=(0.5, 1.0),
+        axes_q=(2.0, 1.0),
+    )
+    p, q = case.coefficients()
 
     res = tangency(p, q, backend=solver_backend)
 
-    expected_t = 5.0 / (0.5 + 2.0)
-    assert res.t == pytest.approx(expected_t, rel=1e-9)
-
-    expected_point = np.array([res.t * 0.5, 0.0])
-    assert res.point == pytest.approx(expected_point, abs=1e-12)
+    assert res.t == pytest.approx(case.expected_t, rel=1e-9)
+    assert res.point.tolist() == pytest.approx(case.expected_point.tolist(), abs=1e-12)
 
 
 # -----------------------------------------------------------------------------
