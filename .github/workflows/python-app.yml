@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -31,6 +31,8 @@ jobs:
     # -- Poetry ------------------------------------------------------
     - name: Install Poetry
       run: pip install --upgrade poetry
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: Cache Poetry env
       uses: actions/cache@v3
@@ -40,23 +42,35 @@ jobs:
 
     - name: Install project (dev extras)
       run: poetry install --with dev
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: Ensure build toolchain
       run: poetry run python -m pip install --upgrade pip setuptools
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: Build tangency C++ backend
       run: poetry run python build_tangency_cpp.py
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
       run: poetry run flake8 src tests
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: black check
       run: poetry run black --check src tests
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     # -- Tests ------------------------------------------------------
     - name: pytest
       run: poetry run pytest -q
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
   # 3.11 限定で mypy
   typecheck:
@@ -72,6 +86,8 @@ jobs:
 
     - name: Install Poetry
       run: pip install --upgrade poetry
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: Cache Poetry env
       uses: actions/cache@v3
@@ -81,6 +97,10 @@ jobs:
 
     - name: Install project (dev extras)
       run: poetry install --with dev      # stub も OK
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
 
     - name: mypy
       run: poetry run mypy src
+      env:
+        POETRY_VIRTUALENVS_PREFER_ACTIVE_PYTHON: "true"
