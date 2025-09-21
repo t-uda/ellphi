@@ -44,10 +44,15 @@ def _ensure_parent(path: Path) -> None:
 
 class _TangencyExtension(Extension):
     def __init__(self) -> None:
+        libraries: list[str] = []
+        if sys.platform.startswith("linux"):
+            libraries.append("stdc++")
+
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
+            libraries=libraries,
         )
 
 
