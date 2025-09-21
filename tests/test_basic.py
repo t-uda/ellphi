@@ -10,6 +10,8 @@ from tests.factories import random_coef_pair, rotation_matrix
 
 @dataclass(frozen=True)
 class CircleCase:
+    """Represent a pair of circles with analytic tangency expectations."""
+
     center_p: np.ndarray
     center_q: np.ndarray
     radius_p: float
@@ -20,6 +22,7 @@ class CircleCase:
         object.__setattr__(self, "center_q", np.asarray(self.center_q, dtype=float))
 
     def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return quadratic coefficients for the stored circles."""
         return (
             coef_from_axes(cast(Any, self.center_p), self.radius_p, self.radius_p, 0.0),
             coef_from_axes(cast(Any, self.center_q), self.radius_q, self.radius_q, 0.0),
@@ -47,6 +50,8 @@ class CircleCase:
 
 @dataclass(frozen=True)
 class AxisAlignedCase:
+    """Represent an axis-aligned ellipse pair used to probe invariance properties."""
+
     center_p: np.ndarray
     center_q: np.ndarray
     axes_p: tuple[float, float]
@@ -75,7 +80,11 @@ class AxisAlignedCase:
         direction = (self.center_q - self.center_p) / self.distance
         return self.center_p + direction * (self.axes_p[0] * self.expected_t)
 
-    def coefficients(
+    def coefficients(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return coefficients for the default axis-aligned configuration."""
+        return self.coefficients_with_orientation()
+
+    def coefficients_with_orientation(
         self,
         *,
         center_p: np.ndarray | None = None,
@@ -83,6 +92,7 @@ class AxisAlignedCase:
         angle_p: float = 0.0,
         angle_q: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
+        """Return coefficients after applying optional center shifts and rotations."""
         r0_p, r1_p = self.axes_p
         r0_q, r1_q = self.axes_q
         center_p = (
@@ -223,7 +233,7 @@ def test_rotational_invariance(
     center_q = axis_aligned_case.center_q @ rot.T
     expected_point = axis_aligned_case.expected_point @ rot.T
 
-    p, q = axis_aligned_case.coefficients(
+    p, q = axis_aligned_case.coefficients_with_orientation(
         center_p=center_p, center_q=center_q, angle_p=angle, angle_q=angle
     )
 
