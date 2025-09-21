@@ -10,6 +10,8 @@ Before you start working, set up your environment by running the following comma
 poetry install
 ```
 
+This command installs all Python dependencies and also compiles the C++ backend for the tangency solver. If the C++ code (`src/ellphi/_tangency_cpp_impl.cpp`) is modified, the backend will be automatically rebuilt the next time you run `poetry install`.
+
 ### A Note on Managing Dependencies
 
 If you need to add, remove, or update dependencies in `pyproject.toml`, you must also update the `poetry.lock` file to reflect these changes. After modifying `pyproject.toml`, run the following command:

@@ -56,7 +56,7 @@ class _BuildTangency(build_ext):
         "msvc": ["/std:c++17", "/O2", "/EHsc"],
         "unix": ["-std=c++17", "-O3", "-fPIC"],
     }
-    l_opts = {"msvc": [], "unix": []}
+    l_opts = {"msvc": [], "unix": ["-lstdc++"]}
 
     if sys.platform == "darwin":
         c_opts["unix"].append("-mmacosx-version-min=10.15")
