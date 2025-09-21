@@ -226,11 +226,9 @@ class LocalCov:
                 f"got k={k}."
             )
         d = squareform(pdist(X))  # Euclidean distance matrix
-        # argsort したものから :near だけとると重複が生じるので削る
-        near_subsets = numpy.unique(numpy.argsort(d, axis=1)[:, :k], axis=0)
-        # 各サブセットをソートしてタプルに変換
-        sorted_subsets = [tuple(sorted(subset)) for subset in near_subsets]
-        unique_subsets = numpy.unique(sorted_subsets, axis=0)  # 重複を取り除く
+        neighbour_indices = numpy.argsort(d, axis=1)[:, :k]
+        sorted_subsets = numpy.sort(neighbour_indices, axis=1)
+        unique_subsets = numpy.unique(sorted_subsets, axis=0)
         knbd = X[unique_subsets]
         means = numpy.mean(knbd, axis=1)
         rel_nbd = knbd - means[:, None, :]

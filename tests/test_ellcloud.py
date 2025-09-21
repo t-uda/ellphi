@@ -28,3 +28,37 @@ def test_local_cov_requires_two_point_neighbourhood():
 
     with pytest.raises(ValueError, match="at least two points"):
         EllipseCloud.from_local_cov(X, k=2)
+
+
+def test_local_cov_merges_permuted_neighbourhoods():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.5, np.sqrt(3.0) / 2.0],
+        ]
+    )
+
+    ellcloud = EllipseCloud.from_local_cov(X, k=3)
+
+    assert ellcloud.nbd.shape == (1, 3)
+    assert np.array_equal(ellcloud.nbd[0], np.array([0, 1, 2]))
+
+
+def test_local_cov_merges_identical_neighbourhoods():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.5, np.sqrt(3.0) / 2.0],
+            [5.0, 0.0],
+            [6.0, 0.0],
+            [5.5, np.sqrt(3.0) / 2.0],
+        ]
+    )
+
+    ellcloud = EllipseCloud.from_local_cov(X, k=3)
+
+    assert ellcloud.nbd.shape == (2, 3)
+    assert np.array_equal(ellcloud.nbd, np.array([[0, 1, 2], [3, 4, 5]]))
+    assert np.array_equal(ellcloud.nbd, np.sort(ellcloud.nbd, axis=1))
