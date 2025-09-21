@@ -3,8 +3,9 @@ from __future__ import annotations
 """Pure Python tangency solver backend."""
 
 from collections import namedtuple
+from functools import partial
 from itertools import combinations
-from typing import TYPE_CHECKING, Callable, Iterator, Literal, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Tuple, cast
 
 import numpy
 from joblib import Parallel, delayed  # type: ignore
@@ -78,38 +79,37 @@ def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
     return 2.0 * numerator / det
 
 
+SingleStageMethodName = Literal["bisect", "brentq", "brenth", "newton"]
+MethodName = Literal["brentq+newton", "bisect", "brentq", "brenth", "newton"]
+_BRACKET_METHODS: tuple[SingleStageMethodName, ...] = ("bisect", "brentq", "brenth")
+
+
 def solve_mu(
     p: numpy.ndarray,
     q: numpy.ndarray,
     *,
-    method: str = "brentq+newton",
+    method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> float:
-    curry_f: Callable[[float], float] = lambda mu: _target(mu, p, q)
-    curry_df: Callable[[float], float] = lambda mu: _target_prime(mu, p, q)
+    curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
+    curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
+
+    def solve_single_stage(method_name: SingleStageMethodName, **kwargs: Any) -> float:
+        if method_name == "newton":
+            kwargs.setdefault("fprime", curry_df)
+        result = root_scalar(curry_f, method=method_name, **kwargs)
+        return float(result.root)
+
     if method == "brentq+newton":
-        mu0 = root_scalar(curry_f, bracket=bracket, method="brentq", maxiter=8).root
-        mu = root_scalar(
-            curry_f,
-            x0=mu0,
-            method="newton",
-            fprime=curry_df,
-            maxiter=3,
-        ).root
-        return float(mu)
-    if method in {"bisect", "brentq", "brenth"}:
-        return float(
-            root_scalar(
-                curry_f,
-                bracket=bracket,
-                method=cast(Literal["bisect", "brentq", "brenth"], method),
-            ).root
-        )
+        mu0 = solve_single_stage("brentq", bracket=bracket, maxiter=8)
+        return solve_single_stage("newton", x0=mu0, maxiter=3)
+    if method in _BRACKET_METHODS:
+        return solve_single_stage(cast(SingleStageMethodName, method), bracket=bracket)
     if method == "newton":
         if x0 is None:
             raise ValueError("x0 must be provided for Newton method")
-        return float(root_scalar(curry_f, x0=x0, method="newton", fprime=curry_df).root)
+        return solve_single_stage("newton", x0=x0)
     raise ValueError(f"Unknown method: {method}")
 
 
@@ -117,7 +117,7 @@ def tangency(
     pcoef: numpy.ndarray,
     qcoef: numpy.ndarray,
     *,
-    method: str = "brentq+newton",
+    method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> TangencyResult:
