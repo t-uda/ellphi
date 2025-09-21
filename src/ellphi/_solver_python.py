@@ -90,13 +90,13 @@ def solve_mu(
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> float:
-    target = cast(Callable[[float], float], partial(_target, p=p, q=q))
-    target_prime = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
+    curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
+    curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
 
     def solve_single_stage(method_name: MethodName, **kwargs: Any) -> float:
         if method_name == "newton":
-            kwargs.setdefault("fprime", target_prime)
-        result = root_scalar(target, method=method_name, **kwargs)
+            kwargs.setdefault("fprime", curry_df)
+        result = root_scalar(curry_f, method=method_name, **kwargs)
         return float(result.root)
 
     if method == "brentq+newton":
