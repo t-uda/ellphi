@@ -87,23 +87,15 @@ class AxisAlignedCase:
     def coefficients_with_orientation(
         self,
         *,
-        center_p: np.ndarray | None = None,
-        center_q: np.ndarray | None = None,
         angle_p: float = 0.0,
         angle_q: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Return coefficients after applying optional center shifts and rotations."""
+        """Return coefficients after applying optional rotations."""
         r0_p, r1_p = self.axes_p
         r0_q, r1_q = self.axes_q
-        center_p = (
-            self.center_p if center_p is None else np.asarray(center_p, dtype=float)
-        )
-        center_q = (
-            self.center_q if center_q is None else np.asarray(center_q, dtype=float)
-        )
         return (
-            coef_from_axes(cast(Any, center_p), r0_p, r1_p, angle_p),
-            coef_from_axes(cast(Any, center_q), r0_q, r1_q, angle_q),
+            coef_from_axes(cast(Any, self.center_p), r0_p, r1_p, angle_p),
+            coef_from_axes(cast(Any, self.center_q), r0_q, r1_q, angle_q),
         )
 
 
@@ -233,9 +225,10 @@ def test_rotational_invariance(
     center_q = axis_aligned_case.center_q @ rot.T
     expected_point = axis_aligned_case.expected_point @ rot.T
 
-    p, q = axis_aligned_case.coefficients_with_orientation(
-        center_p=center_p, center_q=center_q, angle_p=angle, angle_q=angle
-    )
+    r0_p, r1_p = axis_aligned_case.axes_p
+    r0_q, r1_q = axis_aligned_case.axes_q
+    p = coef_from_axes(cast(Any, center_p), r0_p, r1_p, angle)
+    q = coef_from_axes(cast(Any, center_q), r0_q, r1_q, angle)
 
     res = tangency(p, q, backend=solver_backend)
 
