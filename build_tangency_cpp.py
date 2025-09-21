@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 import sysconfig
+from importlib import util as importlib_util
 from pathlib import Path
 from typing import Iterable
 
@@ -30,12 +32,41 @@ def _library_suffix() -> str:
     return ".so"
 
 
+def _source_dir() -> Path:
+    return Path(__file__).resolve().parent / "src" / "ellphi"
+
+
 def _source_path() -> Path:
-    return Path(__file__).resolve().parent / "src" / "ellphi" / f"{_LIB_NAME}.cpp"
+    return _source_dir() / f"{_LIB_NAME}.cpp"
 
 
 def _output_path() -> Path:
     return _source_path().with_suffix(_library_suffix())
+
+
+def _installed_package_dirs() -> list[Path]:
+    spec = importlib_util.find_spec("ellphi")
+    if not spec or not spec.submodule_search_locations:
+        return []
+
+    source_dir = _source_dir().resolve()
+    locations: list[Path] = []
+    for location in spec.submodule_search_locations:
+        package_dir = Path(location).resolve()
+        if package_dir == source_dir or package_dir in locations:
+            continue
+        locations.append(package_dir)
+    return locations
+
+
+def _copy_to_installed_packages(output_path: Path) -> list[Path]:
+    destinations: list[Path] = []
+    for package_dir in _installed_package_dirs():
+        destination = package_dir / output_path.name
+        _ensure_parent(destination)
+        shutil.copy2(output_path, destination)
+        destinations.append(destination)
+    return destinations
 
 
 def _ensure_parent(path: Path) -> None:
@@ -122,9 +153,15 @@ def build() -> Path:
     outputs = list(build_cmd.get_outputs())
     if not outputs:
         raise RuntimeError("Tangency backend build produced no outputs")
-    return Path(outputs[0])
+
+    output_path = Path(outputs[0])
+    _copy_to_installed_packages(output_path)
+    return output_path
 
 
 if __name__ == "__main__":
     path = build()
     print(f"Built tangency backend: {path}")
+    for package_dir in _installed_package_dirs():
+        destination = package_dir / path.name
+        print(f"Copied tangency backend to: {destination}")

@@ -44,6 +44,10 @@ jobs:
     - name: Build C++ tangency backend
       run: poetry run python build_tangency_cpp.py
 
+    - name: Verify C++ tangency backend availability
+      run: >-
+        poetry run python -c "import ellphi, sys; sys.exit(0 if ellphi.has_cpp_backend() else 'C++ backend not available')"
+
     # -- Lint / Format ----------------------------------------------
     - name: flake8
       run: poetry run flake8 src tests
@@ -81,6 +85,10 @@ jobs:
 
     - name: Build C++ tangency backend
       run: poetry run python build_tangency_cpp.py
+
+    - name: Verify C++ tangency backend availability
+      run: >-
+        poetry run python -c "import ellphi, sys; sys.exit(0 if ellphi.has_cpp_backend() else 'C++ backend not available')"
 
     - name: mypy
       run: poetry run mypy src
