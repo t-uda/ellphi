@@ -154,9 +154,12 @@ class EllipseCloud:
         """
         if method == "local_cov":
             ellcloud = cls.from_local_cov(X, **kwgs)
+        elif method == "nstage_local_cov":
+            ellcloud = cls.from_nstage_local_cov(X, **kwgs)
         else:
             raise NotImplementedError(
-                f"Unknown method '{method}':\n" + "The supported method is 'local_cov'."
+                f"Unknown method '{method}':\n"
+                + "The supported methods are 'local_cov', 'nstage_local_cov'."
             )
         if rescaling != "none":
             ellcloud.rescale(method=rescaling)
@@ -167,6 +170,12 @@ class EllipseCloud:
         cls: type[EllipseCloud], X: numpy.ndarray, *, k: int = 5
     ) -> EllipseCloud:
         return LocalCov(k=k)(X)
+
+    @classmethod
+    def from_nstage_local_cov(
+        cls: type[EllipseCloud], X: numpy.ndarray, *, k: int = 5, n_stages: int = 2
+    ) -> EllipseCloud:
+        return nstage_local_cov(X, k=k, n_stages=n_stages)
 
     def rescale(self, *, method="median") -> float:
         """
@@ -194,6 +203,45 @@ class EllipseCloud:
 ellipse_cloud = EllipseCloud.from_point_cloud
 
 
+def nstage_local_cov(X, *, k, n_stages) -> EllipseCloud:
+    """
+    N-stage LocalCov algorithm.
+
+    Parameters
+    ----------
+    X : ndarray, shape (N, 2)
+        Input point cloud (x, y)
+    k : int
+        Number of nearest neighbours
+    n_stages : int
+        Number of stages
+
+    Returns
+    -------
+    EllipseCloud
+        Resulting ellipse cloud
+    """
+    if n_stages < 1:
+        raise ValueError(f"n_stages must be >= 1, but got {n_stages}")
+
+    # Stage 1: Standard LocalCov with Euclidean distance
+    ellcloud = LocalCov(k=k)(X)
+
+    # Stages 2 to n_stages
+    for _ in range(n_stages - 1):
+        # Compute tangency distance matrix
+        d_tan = ellcloud.pdist_tangency()
+        d_tan_sq = squareform(d_tan)
+
+        # The "points" for the next stage are the means of the current ellipses
+        current_means = ellcloud.mean
+
+        # Run LocalCov with the tangency distance matrix
+        ellcloud = LocalCov(k=k)(current_means, d=d_tan_sq)
+
+    return ellcloud
+
+
 @dataclass(frozen=True)
 class LocalCov:
     """Algorithm creating Ellipse Cloud from k-nearest neighbours."""
@@ -204,12 +252,17 @@ class LocalCov:
     # 例: weight_func: Literal["uniform", "distance"]
 
     # main entry: make EllipseCloud from raw Nx2 points -----------------
-    def __call__(self, X: numpy.ndarray) -> EllipseCloud:
+    def __call__(
+        self, X: numpy.ndarray, *, d: Optional[numpy.ndarray] = None
+    ) -> EllipseCloud:
         """
         Parameters
         ----------
         X : ndarray, shape (N, 2)
             Input point cloud (x, y)
+        d : ndarray, shape (N, N), optional
+            Pre-computed distance matrix. If None (default), the Euclidean
+            distance matrix is computed from `X`.
 
         Returns
         -------
@@ -225,7 +278,8 @@ class LocalCov:
                 "Local covariance requires at least two neighbours (k >= 2); "
                 f"got k={k}."
             )
-        d = squareform(pdist(X))  # Euclidean distance matrix
+        if d is None:
+            d = squareform(pdist(X))  # Euclidean distance matrix
         neighbour_indices = numpy.argsort(d, axis=1)[:, :k]
         sorted_subsets = numpy.sort(neighbour_indices, axis=1)
         unique_subsets = numpy.unique(sorted_subsets, axis=0)
