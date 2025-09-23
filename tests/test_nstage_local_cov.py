@@ -43,22 +43,14 @@ def test_nstage_one_stage_is_equivalent_to_local_cov():
     k = 4
 
     # Run the 1-stage n-stage local covariance
-    ellcloud_nstage = ellipse_cloud(
-        X, method="nstage_local_cov", k=k, n_stages=1
-    )
+    ellcloud_nstage = ellipse_cloud(X, method="nstage_local_cov", k=k, n_stages=1)
 
     # Run the standard local covariance
     ellcloud_local_cov = ellipse_cloud(X, method="local_cov", k=k)
 
     # Check that the results are identical
-    np.testing.assert_array_almost_equal(
-        ellcloud_nstage.coef, ellcloud_local_cov.coef
-    )
-    np.testing.assert_array_almost_equal(
-        ellcloud_nstage.mean, ellcloud_local_cov.mean
-    )
-    np.testing.assert_array_almost_equal(
-        ellcloud_nstage.cov, ellcloud_local_cov.cov
-    )
+    np.testing.assert_array_almost_equal(ellcloud_nstage.coef, ellcloud_local_cov.coef)
+    np.testing.assert_array_almost_equal(ellcloud_nstage.mean, ellcloud_local_cov.mean)
+    np.testing.assert_array_almost_equal(ellcloud_nstage.cov, ellcloud_local_cov.cov)
     assert ellcloud_nstage.k == ellcloud_local_cov.k
     np.testing.assert_array_equal(ellcloud_nstage.nbd, ellcloud_local_cov.nbd)
