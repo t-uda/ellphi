@@ -5,9 +5,13 @@
 
 Starting from an ordinary 2-D point cloud, it estimates local covariance, inflates **ellipses** instead of balls, and feeds the resulting *tangency distance* into your favourite PH backend (HomCloud, Ripser, and so on). The result: cleaner barcodes, longer lifetimes, and ring structures that survive heavy noise — all without rewriting your topology code.
 
-> **For ATMCS 2025 attendees**  
-> See **[`eph-6rings-PH-figures.ipynb`](notebooks/eph-6rings-PH-figures.ipynb)**  
-> which accompanies the conference poster.
+## Installation
+
+A PyPI release is in progress. Until then, install from GitHub:
+
+```bash
+pip install ellphi
+```
 
 ## Quick start (under construction)
 
@@ -15,10 +19,7 @@ Starting from an ordinary 2-D point cloud, it estimates local covariance, inflat
 * [`eph-6rings-PH.ipynb`](notebooks/eph-6rings-PH.ipynb) – full pipeline  
 * [`eph-6rings-PH-figures.ipynb`](notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
 
-## Installation (under construction 🚧)
+> **For ATMCS 2025 attendees**  
+> See **[`eph-6rings-PH-figures.ipynb`](notebooks/eph-6rings-PH-figures.ipynb)**  
+> which accompanies the conference poster.
 
-A PyPI release is in progress. Until then, install from GitHub:
-
-```bash
-pip install git+https://github.com/t-uda/ellphi.git
-```
