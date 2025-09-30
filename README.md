@@ -7,7 +7,7 @@ Starting from an ordinary 2-D point cloud, it estimates local covariance, inflat
 
 ## Installation
 
-A PyPI release is in progress. Until then, install from GitHub:
+Install from PyPI:
 
 ```bash
 pip install ellphi
