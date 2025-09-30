@@ -1,4 +1,5 @@
 # EllPHi – a fast ellipse-tangency solver for anisotropic persistent homology
+[![CI](https://github.com/t-uda/ellphi/actions/workflows/python-app.yml/badge.svg)](https://github.com/t-uda/ellphi/actions/workflows/python-app.yml)
 <img src="https://github.com/t-uda/ellphi/raw/main/ellphi-logo.png" alt="ellphi-logo" width="256" />
 
 **EllPHi** brings anisotropy to persistent-homology workflows.
@@ -22,4 +23,3 @@ pip install ellphi
 > **For ATMCS 2025 attendees**  
 > See **[`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb)**  
 > which accompanies the conference poster.
-
