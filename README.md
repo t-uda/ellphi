@@ -15,11 +15,11 @@ pip install ellphi
 
 ## Quick start (under construction)
 
-* [`quickstart.ipynb`](notebooks/quickstart.ipynb) – 5-minute tour  
-* [`eph-6rings-PH.ipynb`](notebooks/eph-6rings-PH.ipynb) – full pipeline  
-* [`eph-6rings-PH-figures.ipynb`](notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
+* [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour  
+* [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline  
+* [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
 
 > **For ATMCS 2025 attendees**  
-> See **[`eph-6rings-PH-figures.ipynb`](notebooks/eph-6rings-PH-figures.ipynb)**  
+> See **[`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb)**  
 > which accompanies the conference poster.
 
