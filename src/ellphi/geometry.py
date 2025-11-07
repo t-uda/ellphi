@@ -90,18 +90,21 @@ def infer_dim_from_coef_length(length: int) -> int:
     sqrt_disc = int(round(numpy.sqrt(disc)))
     if sqrt_disc * sqrt_disc != disc:
         raise ValueError(
-            f"Coefficient length {length} does not correspond to a symmetric quadratic form"
+            f"Coefficient length {length} does not correspond to a symmetric "
+            "quadratic form"
         )
     n = (sqrt_disc - 3) // 2
     if n < 2 or ((n + 1) * (n + 2)) // 2 != length:
         raise ValueError(
-            f"Coefficient length {length} does not correspond to a valid dimension"
+            f"Coefficient length {length} does not correspond to a valid " "dimension"
         )
     return int(n)
 
 
 def _broadcast_shapes(
-    quad_shape: Tuple[int, ...], linear_shape: Tuple[int, ...], const_shape: Tuple[int, ...]
+    quad_shape: Tuple[int, ...],
+    linear_shape: Tuple[int, ...],
+    const_shape: Tuple[int, ...],
 ) -> Tuple[int, ...]:
     """Return the shared broadcast shape for quadratic, linear and constant terms."""
 
@@ -155,7 +158,9 @@ def pack_conic(
     return packed
 
 
-def unpack_conic(coef: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+def unpack_conic(
+    coef: numpy.ndarray,
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Inverse of :func:`pack_conic` returning ``(A, b, c)``."""
 
     coef = numpy.asarray(coef, dtype=float)

@@ -45,16 +45,18 @@ class EllipseCloud:
         expected_cov_shape = (self.n, self.n_dim, self.n_dim)
         if self.mean.shape != expected_mean_shape:
             raise ValueError(
-                f"Mean array has shape {self.mean.shape}, expected {expected_mean_shape}"
+                "Mean array has shape "
+                f"{self.mean.shape}, expected {expected_mean_shape}"
             )
         if self.cov.shape != expected_cov_shape:
             raise ValueError(
-                f"Covariance array has shape {self.cov.shape}, expected {expected_cov_shape}"
+                "Covariance array has shape "
+                f"{self.cov.shape}, expected {expected_cov_shape}"
             )
         if self.nbd.shape and self.nbd.shape[0] != self.n:
             raise ValueError(
-                f"Neighbourhood index array must have first dimension {self.n}, "
-                f"got {self.nbd.shape}"
+                "Neighbourhood index array must have first dimension "
+                f"{self.n}, got {self.nbd.shape}"
             )
 
     # ---- basic Python protocol ------------------------------------------
@@ -197,7 +199,9 @@ class EllipseCloud:
         The supported method is "median" or "average".
         """
         if self.n_dim != 2:
-            raise NotImplementedError("Rescaling is currently implemented for 2D ellipses only")
+            raise NotImplementedError(
+                "Rescaling is currently implemented for 2D ellipses only"
+            )
         eigvals = numpy.linalg.eigvalsh(self.cov)
         scales = numpy.sqrt(eigvals)
         if method == "median":
