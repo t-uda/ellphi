@@ -27,3 +27,11 @@ def test_pdist_tangency_consistency(ellipse_cloud, solver_backend):
         parallel_result,
         err_msg="Serial and parallel results are not close enough.",
     )
+
+
+def test_pdist_tangency_high_dimension(rng):
+    cloud = random_cloud(rng, n_ellipses=5, dim=3)
+    serial_python = pdist_tangency(cloud, parallel=False, backend="python")
+    serial_auto = pdist_tangency(cloud, parallel=False, backend="auto")
+    assert serial_python.shape == serial_auto.shape == (5 * 4 // 2,)
+    np.testing.assert_allclose(serial_python, serial_auto)

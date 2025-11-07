@@ -1,16 +1,24 @@
-"""
-ellphi.geometry  –  geometric helpers for ellipse cloud
-=======================================================
+"""Geometry helpers shared across the :mod:`ellphi` package.
 
-Key API (all return NumPy float64):
+This module historically provided 2D-only utilities for working with
+ellipses represented as quadratic forms.  For the n-dimensional extension
+the public façade is kept backwards compatible while the core routines now
+work with generic symmetric positive-definite matrices.
 
-- unit_vector(theta)
-- axes_from_cov(cov, scale=1.0)
-- coef_from_axes(X, r0, r1, theta)  # centre+axes → (6,)
-- coef_from_cov(X, cov, scale=1.0)  # centre+cov → (6,)
+Key API (all return ``numpy.float64`` arrays):
+
+* :func:`unit_vector`
+* :func:`axes_from_cov`
+* :func:`coef_from_axes`
+* :func:`coef_from_cov`
+* :func:`pack_conic`
+* :func:`unpack_conic`
+* :func:`infer_dim_from_coef_length`
 """
 
 from __future__ import annotations
+
+from typing import Tuple
 
 import numpy
 
@@ -19,6 +27,9 @@ __all__ = [
     "axes_from_cov",
     "coef_from_axes",
     "coef_from_cov",
+    "pack_conic",
+    "unpack_conic",
+    "infer_dim_from_coef_length",
 ]
 
 
@@ -64,17 +75,113 @@ def _coef_core(X, r0, r1, cos, sin):
 # ------------------------------------------------------------------
 
 
-def _inv_broadcast(cov: numpy.ndarray) -> numpy.ndarray:
-    """Vectorized inverse of a batch of 2x2 matrices."""
-    a, b, c, d = cov[:, 0, 0], cov[:, 0, 1], cov[:, 1, 0], cov[:, 1, 1]
-    det = a * d - b * c
-    inv_det = 1.0 / det
-    inv_cov = numpy.empty_like(cov)
-    inv_cov[:, 0, 0] = d * inv_det
-    inv_cov[:, 0, 1] = -b * inv_det
-    inv_cov[:, 1, 0] = -c * inv_det
-    inv_cov[:, 1, 1] = a * inv_det
-    return inv_cov
+def infer_dim_from_coef_length(length: int) -> int:
+    """Infer the ambient dimension ``n`` from the flattened coefficient length.
+
+    The coefficient vector stores the upper triangular part of the quadratic
+    matrix, followed by the linear term and the constant term.  Its length is
+    therefore ``m = (n + 1)(n + 2) / 2``.  The function validates that the
+    supplied length matches this formula and returns ``n``.
+    """
+
+    if length < 6:
+        raise ValueError("Coefficient vector too short to represent a conic")
+    disc = 1 + 8 * length
+    sqrt_disc = int(round(numpy.sqrt(disc)))
+    if sqrt_disc * sqrt_disc != disc:
+        raise ValueError(
+            f"Coefficient length {length} does not correspond to a symmetric quadratic form"
+        )
+    n = (sqrt_disc - 3) // 2
+    if n < 2 or ((n + 1) * (n + 2)) // 2 != length:
+        raise ValueError(
+            f"Coefficient length {length} does not correspond to a valid dimension"
+        )
+    return int(n)
+
+
+def _broadcast_shapes(
+    quad_shape: Tuple[int, ...], linear_shape: Tuple[int, ...], const_shape: Tuple[int, ...]
+) -> Tuple[int, ...]:
+    """Return the shared broadcast shape for quadratic, linear and constant terms."""
+
+    return numpy.broadcast_shapes(quad_shape, linear_shape, const_shape)
+
+
+def pack_conic(
+    matrices: numpy.ndarray, linear: numpy.ndarray, constant: numpy.ndarray
+) -> numpy.ndarray:
+    """Pack ``(A, b, c)`` into the flattened coefficient representation.
+
+    Parameters
+    ----------
+    matrices
+        Symmetric positive-definite matrices ``A`` with shape ``(..., n, n)``.
+    linear
+        Linear coefficients ``b`` with shape ``(..., n)``.
+    constant
+        Constant term ``c`` with shape ``(...)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(..., m)`` with ``m = (n + 1)(n + 2) / 2``.
+    """
+
+    matrices = numpy.asarray(matrices, dtype=float)
+    linear = numpy.asarray(linear, dtype=float)
+    constant = numpy.asarray(constant, dtype=float)
+
+    if matrices.ndim < 2 or matrices.shape[-1] != matrices.shape[-2]:
+        raise ValueError("Quadratic matrices must have shape (..., n, n)")
+    n = matrices.shape[-1]
+    if linear.shape[-1] != n:
+        raise ValueError("Linear term incompatible with quadratic matrix dimension")
+
+    quad_shape = matrices.shape[:-2]
+    linear_shape = linear.shape[:-1]
+    const_shape = constant.shape
+    broadcast_shape = _broadcast_shapes(quad_shape, linear_shape, const_shape)
+
+    matrices = numpy.broadcast_to(matrices, broadcast_shape + (n, n))
+    linear = numpy.broadcast_to(linear, broadcast_shape + (n,))
+    constant = numpy.broadcast_to(constant, broadcast_shape)
+
+    tri_i, tri_j = numpy.triu_indices(n)
+    quad_entries = matrices[..., tri_i, tri_j]
+    packed = numpy.concatenate(
+        [quad_entries, linear, constant[..., numpy.newaxis]], axis=-1
+    )
+    return packed
+
+
+def unpack_conic(coef: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """Inverse of :func:`pack_conic` returning ``(A, b, c)``."""
+
+    coef = numpy.asarray(coef, dtype=float)
+    squeeze = False
+    if coef.ndim == 1:
+        coef = coef[numpy.newaxis, :]
+        squeeze = True
+    if coef.ndim != 2:
+        raise ValueError("Coefficient array must be one- or two-dimensional")
+
+    length = coef.shape[-1]
+    n = infer_dim_from_coef_length(length)
+    tri_i, tri_j = numpy.triu_indices(n)
+    n_quad = tri_i.size
+
+    quad_entries = coef[:, :n_quad]
+    linear = coef[:, n_quad : n_quad + n]
+    constant = coef[:, n_quad + n]
+
+    matrices = numpy.zeros((coef.shape[0], n, n), dtype=float)
+    matrices[:, tri_i, tri_j] = quad_entries
+    matrices[:, tri_j, tri_i] = quad_entries
+
+    if squeeze:
+        return matrices[0], linear[0], constant[0]
+    return matrices, linear, constant
 
 
 def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
@@ -89,24 +196,33 @@ def coef_from_cov(
     *,
     scale: float = 1.0,
 ) -> numpy.ndarray:
-    """Centre + covariance → conic coefficients."""
-    X = numpy.array(X)
-    if len(X.shape) <= 1:
-        X = X[None, :]  # Extend if single observation
-    if len(cov.shape) <= 2:
-        cov = cov[None, :, :]  # Extend if single observation
-    centers = X[:, :, None]
-    matrices = _inv_broadcast(cov) / scale**2
-    coef_b = -matrices @ centers
-    coef_c = centers.transpose(0, 2, 1) @ matrices @ centers
-    return numpy.stack(
-        [
-            matrices[:, 0, 0],
-            matrices[:, 0, 1],
-            matrices[:, 1, 1],
-            coef_b[:, 0].ravel(),
-            coef_b[:, 1].ravel(),
-            coef_c.ravel(),
-        ],
-        axis=-1,
-    )
+    """Centre + covariance → conic coefficients for arbitrary dimensions."""
+
+    centers = numpy.asarray(X, dtype=float)
+    cov = numpy.asarray(cov, dtype=float)
+
+    squeeze = False
+    if centers.ndim == 1:
+        centers = centers[numpy.newaxis, :]
+        squeeze = True
+    if cov.ndim == 2:
+        cov = cov[numpy.newaxis, :, :]
+        squeeze = True if squeeze else False
+
+    if centers.shape[0] != cov.shape[0]:
+        raise ValueError("Mismatch between number of centres and covariance matrices")
+    if cov.shape[-1] != cov.shape[-2]:
+        raise ValueError("Covariance matrices must be square")
+
+    n_dim = centers.shape[-1]
+    if cov.shape[-1] != n_dim:
+        raise ValueError("Centre dimensionality and covariance size must agree")
+
+    inv_cov = numpy.linalg.inv(cov)
+    matrices = inv_cov / (scale**2)
+    b = -(matrices @ centers[..., None])[..., 0]
+    c = numpy.einsum("...i,...ij,...j->...", centers, matrices, centers)
+    packed = pack_conic(matrices, b, c)
+    if squeeze:
+        return packed[0]
+    return packed

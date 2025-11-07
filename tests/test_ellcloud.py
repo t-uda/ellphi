@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from ellphi.ellcloud import EllipseCloud
+from ellphi.geometry import coef_from_cov
 
 
 def test_local_cov_uses_actual_neighbourhood_size():
@@ -62,3 +63,19 @@ def test_local_cov_merges_identical_neighbourhoods():
     assert ellcloud.nbd.shape == (2, 3)
     assert np.array_equal(ellcloud.nbd, np.array([[0, 1, 2], [3, 4, 5]]))
     assert np.array_equal(ellcloud.nbd, np.sort(ellcloud.nbd, axis=1))
+
+
+def test_ellipse_cloud_records_dimension_and_guards_plot():
+    rng = np.random.default_rng(0)
+    means = rng.standard_normal((4, 3))
+    mats = rng.standard_normal((4, 3, 3))
+    covs = np.empty((4, 3, 3))
+    for idx in range(4):
+        covs[idx] = mats[idx] @ mats[idx].T + np.eye(3)
+    coefs = coef_from_cov(means, covs)
+    cloud = EllipseCloud(coefs, means, covs, k=2, nbd=np.zeros((4, 0), dtype=int))
+    assert cloud.n_dim == 3
+    with pytest.raises(NotImplementedError):
+        cloud.plot()
+    with pytest.raises(NotImplementedError):
+        cloud.rescale()
