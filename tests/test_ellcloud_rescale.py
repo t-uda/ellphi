@@ -21,3 +21,16 @@ def test_rescale_returns_float_and_updates_arrays():
     assert isinstance(scale, float)
     np.testing.assert_allclose(cloud.cov, cov_before / scale**2)
     np.testing.assert_allclose(cloud.coef, coef_before * scale**2)
+
+
+def test_rescale_three_dimensional_cloud():
+    rng = np.random.default_rng(7)
+    cloud = random_cloud(rng, n_ellipses=4, dim=3)
+    cov_before = cloud.cov.copy()
+    coef_before = cloud.coef.copy()
+
+    scale = cloud.rescale()
+
+    assert isinstance(scale, float)
+    np.testing.assert_allclose(cloud.cov, cov_before / scale**2)
+    np.testing.assert_allclose(cloud.coef, coef_before * scale**2)

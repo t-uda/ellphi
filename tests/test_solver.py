@@ -27,3 +27,12 @@ def test_pdist_tangency_consistency(ellipse_cloud, solver_backend):
         parallel_result,
         err_msg="Serial and parallel results are not close enough.",
     )
+
+
+def test_pdist_tangency_three_dimensions(rng):
+    """pdist_tangency works for 3D ellipsoids using the Python backend."""
+
+    cloud = random_cloud(rng, n_ellipses=8, dim=3)
+    serial = pdist_tangency(cloud, parallel=False, backend="python")
+    parallel = pdist_tangency(cloud, parallel=True, backend="python")
+    np.testing.assert_allclose(serial, parallel)

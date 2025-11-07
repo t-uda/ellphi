@@ -16,7 +16,7 @@ import numpy
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import squareform, pdist
 
-from .geometry import axes_from_cov, coef_from_cov
+from .geometry import axes_from_cov, coef_from_cov, infer_dim_from_coef_length
 from .solver import pdist_tangency
 
 __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
@@ -26,16 +26,25 @@ __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
 class EllipseCloud:
     """Container for an ellipse cloud with convenience methods."""
 
-    coef: numpy.ndarray  # (N, 6)
-    mean: numpy.ndarray  # (N, 2)
-    cov: numpy.ndarray  # (N, 2, 2)
+    coef: numpy.ndarray  # (N, m)
+    mean: numpy.ndarray  # (N, n)
+    cov: numpy.ndarray  # (N, n, n)
     k: int
     nbd: numpy.ndarray  # (N, k)  k-NN indices
     n: int = field(init=False)
+    n_dim: int = field(init=False)
 
     # ---- automatic field from coef.shape ---------------------------------
     def __post_init__(self):
         self.n = self.coef.shape[0]
+        try:
+            self.n_dim = infer_dim_from_coef_length(self.coef.shape[1])
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise ValueError("Invalid conic coefficients for EllipseCloud") from exc
+        if self.mean.shape != (self.n, self.n_dim):
+            raise ValueError("Mean array shape does not match coefficient count")
+        if self.cov.shape != (self.n, self.n_dim, self.n_dim):
+            raise ValueError("Covariance array shape does not match coefficient count")
 
     # ---- basic Python protocol ------------------------------------------
     def __len__(self) -> int:
@@ -45,7 +54,7 @@ class EllipseCloud:
         return iter(self.coef)
 
     def __getitem__(self, idx) -> numpy.ndarray:
-        """Return the conic coefficient array (6,) for a single ellipse."""
+        """Return the conic coefficient array for a single ellipsoid."""
         return self.coef[idx]
 
     def __str__(self):
@@ -79,6 +88,9 @@ class EllipseCloud:
             Existing axes; if None, creates a new figure.
         """
         from .visualization import ellipse_patch
+
+        if self.n_dim != 2:
+            raise NotImplementedError("plot is only implemented for 2D ellipses")
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -137,8 +149,8 @@ class EllipseCloud:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, n)
+            Input point cloud in ``n`` dimensions.
         method : str
             Conversion algorithm. The supported method is "local_cov".
         rescaling : str
@@ -184,7 +196,7 @@ class EllipseCloud:
                 f"Unknown method '{method}':\n"
                 + "The supported method is 'median' or 'average'."
             )
-        ell_scale = ell_scales[1] ** 2 / ell_scales[0]
+        ell_scale = ell_scales[-1] ** 2 / ell_scales[0]
         self.cov /= ell_scale**2
         self.coef *= ell_scale**2
         return float(ell_scale)
@@ -208,8 +220,8 @@ class LocalCov:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, n)
+            Input point cloud in ``n`` dimensions.
 
         Returns
         -------

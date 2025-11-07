@@ -100,8 +100,16 @@ def solve_mu_gradients(
         raise ZeroDivisionError("Derivative with respect to mu is numerically zero")
 
     phi_x = -2.0 * residual
-    xc0, xc1 = pencil.center
-    base = np.array([xc0**2, 2.0 * xc0 * xc1, xc1**2, 2.0 * xc0, 2.0 * xc1, 1.0])
+    center = pencil.center
+    dim = center.size
+    tri_i, tri_j = np.triu_indices(dim)
+    quad_grad = np.where(
+        tri_i == tri_j,
+        center[tri_i] ** 2,
+        2.0 * center[tri_i] * center[tri_j],
+    )
+    linear_grad = 2.0 * center
+    base = np.concatenate([quad_grad, linear_grad, np.array([1.0])])
 
     jac_center = center_jacobian(pencil)
     dx_dp = (1.0 - mu) * jac_center

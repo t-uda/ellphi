@@ -1,16 +1,8 @@
-"""
-ellphi.geometry  –  geometric helpers for ellipse cloud
-=======================================================
-
-Key API (all return NumPy float64):
-
-- unit_vector(theta)
-- axes_from_cov(cov, scale=1.0)
-- coef_from_axes(X, r0, r1, theta)  # centre+axes → (6,)
-- coef_from_cov(X, cov, scale=1.0)  # centre+cov → (6,)
-"""
+"""Geometric helpers for ellipse and ellipsoid clouds."""
 
 from __future__ import annotations
+
+from typing import Tuple
 
 import numpy
 
@@ -19,12 +11,16 @@ __all__ = [
     "axes_from_cov",
     "coef_from_axes",
     "coef_from_cov",
+    "pack_conic",
+    "unpack_conic",
+    "infer_dim_from_coef_length",
 ]
 
 
 # ------------------------------------------------------------------
 # Pure helpers
 # ------------------------------------------------------------------
+
 def unit_vector(theta: float) -> numpy.ndarray:  # noqa: D401
     """Return the unit vector (cosθ, sinθ)."""
     return numpy.transpose([numpy.cos(theta), numpy.sin(theta)])
@@ -45,6 +41,7 @@ def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
 # ------------------------------------------------------------------
 # Shared core formula (broadcast-friendly)
 # ------------------------------------------------------------------
+
 def _coef_core(X, r0, r1, cos, sin):
     """Return stacked [a,b,c,d,e,f] along last dimension."""
     x, y = numpy.transpose(X)
@@ -60,22 +57,98 @@ def _coef_core(X, r0, r1, cos, sin):
 
 
 # ------------------------------------------------------------------
-# Public façade
+# Symmetric quadratic-form utilities (n-dimensional)
 # ------------------------------------------------------------------
+
+def infer_dim_from_coef_length(length: int) -> int:
+    """Return the dimensionality ``n`` encoded by a coefficient vector."""
+
+    if length < 3:
+        raise ValueError("Coefficient length must encode at least a 2D conic")
+    root = numpy.sqrt(8 * length + 1.0)
+    n = int(round((root - 3.0) / 2.0))
+    if (n + 1) * (n + 2) // 2 != length:
+        raise ValueError(f"Coefficient length {length} is not valid for a conic")
+    return n
+
+
+def _triangular_indices(n: int) -> Tuple[numpy.ndarray, numpy.ndarray]:
+    return numpy.triu_indices(n)
+
+
+def pack_conic(A: numpy.ndarray, b: numpy.ndarray, c: numpy.ndarray) -> numpy.ndarray:
+    """Pack ``(A, b, c)`` into flattened conic coefficients."""
+
+    A = numpy.asarray(A, dtype=float)
+    b = numpy.asarray(b, dtype=float)
+    c = numpy.asarray(c, dtype=float)
+
+    if A.ndim < 2:
+        raise ValueError("A must have at least two dimensions")
+    n = A.shape[-1]
+    if A.shape[-2] != n:
+        raise ValueError("A must be a square matrix")
+    if b.shape[-1] != n:
+        raise ValueError("Linear term dimensionality mismatch")
+
+    base_shape = numpy.broadcast_shapes(A.shape[:-2], b.shape[:-1], c.shape)
+    A = numpy.broadcast_to(A, base_shape + (n, n))
+    b = numpy.broadcast_to(b, base_shape + (n,))
+    c = numpy.broadcast_to(c, base_shape)
+
+    tri_i, tri_j = _triangular_indices(n)
+    tri_count = len(tri_i)
+    total = (n + 1) * (n + 2) // 2
+    out = numpy.empty(base_shape + (total,), dtype=float)
+
+    for idx, (i, j) in enumerate(zip(tri_i, tri_j)):
+        out[..., idx] = A[..., i, j]
+
+    out[..., tri_count : tri_count + n] = b
+    out[..., -1] = c
+    return out
+
+
+def unpack_conic(
+    coef: numpy.ndarray,
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """Return ``(A, b, c)`` for the supplied conic coefficients."""
+
+    coef = numpy.asarray(coef, dtype=float)
+    squeeze = coef.ndim == 1
+    if squeeze:
+        coef = coef[numpy.newaxis, :]
+
+    length = coef.shape[-1]
+    n = infer_dim_from_coef_length(length)
+    tri_i, tri_j = _triangular_indices(n)
+    tri_count = len(tri_i)
+
+    quad = coef[..., :tri_count]
+    linear = coef[..., tri_count : tri_count + n]
+    const = coef[..., -1]
+
+    shape = coef.shape[:-1]
+    A = numpy.zeros(shape + (n, n), dtype=float)
+    for idx, (i, j) in enumerate(zip(tri_i, tri_j)):
+        A[..., i, j] = quad[..., idx]
+        if i != j:
+            A[..., j, i] = quad[..., idx]
+
+    if squeeze:
+        return A[0], linear[0], numpy.asarray(const[0])
+    return A, linear, const
 
 
 def _inv_broadcast(cov: numpy.ndarray) -> numpy.ndarray:
-    """Vectorized inverse of a batch of 2x2 matrices."""
-    a, b, c, d = cov[:, 0, 0], cov[:, 0, 1], cov[:, 1, 0], cov[:, 1, 1]
-    det = a * d - b * c
-    inv_det = 1.0 / det
-    inv_cov = numpy.empty_like(cov)
-    inv_cov[:, 0, 0] = d * inv_det
-    inv_cov[:, 0, 1] = -b * inv_det
-    inv_cov[:, 1, 0] = -c * inv_det
-    inv_cov[:, 1, 1] = a * inv_det
-    return inv_cov
+    """Vectorized inverse of a batch of covariance matrices."""
 
+    return numpy.linalg.inv(cov)
+
+
+# ------------------------------------------------------------------
+# Public façade
+# ------------------------------------------------------------------
 
 def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
     """Centre & axes → conic coefficient array (6,)."""
@@ -90,23 +163,22 @@ def coef_from_cov(
     scale: float = 1.0,
 ) -> numpy.ndarray:
     """Centre + covariance → conic coefficients."""
-    X = numpy.array(X)
-    if len(X.shape) <= 1:
-        X = X[None, :]  # Extend if single observation
-    if len(cov.shape) <= 2:
-        cov = cov[None, :, :]  # Extend if single observation
-    centers = X[:, :, None]
+
+    X = numpy.asarray(X, dtype=float)
+    cov = numpy.asarray(cov, dtype=float)
+
+    if X.ndim == 1:
+        X = X[numpy.newaxis, :]
+    if cov.ndim == 2:
+        cov = cov[numpy.newaxis, :, :]
+
+    if X.shape[0] != cov.shape[0]:
+        raise ValueError("Number of centres and covariance matrices must match")
+    if X.shape[1] != cov.shape[1] or cov.shape[1] != cov.shape[2]:
+        raise ValueError("Covariance matrices must align with centre dimensions")
+
+    centers = X[..., :, None]
     matrices = _inv_broadcast(cov) / scale**2
-    coef_b = -matrices @ centers
-    coef_c = centers.transpose(0, 2, 1) @ matrices @ centers
-    return numpy.stack(
-        [
-            matrices[:, 0, 0],
-            matrices[:, 0, 1],
-            matrices[:, 1, 1],
-            coef_b[:, 0].ravel(),
-            coef_b[:, 1].ravel(),
-            coef_c.ravel(),
-        ],
-        axis=-1,
-    )
+    coef_b = -(matrices @ centers)[..., 0]
+    coef_c = numpy.einsum("...i,...i->...", X, -coef_b)
+    return pack_conic(matrices, coef_b, coef_c)

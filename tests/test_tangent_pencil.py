@@ -168,16 +168,19 @@ def test_circle_center_jacobian_matches_manual_formula(case: CircleTangencyCase)
     np.testing.assert_allclose(jac, expected, rtol=1e-12, atol=1e-12)
 
 
-def test_center_jacobian_matches_finite_difference(rng: np.random.Generator):
+@pytest.mark.parametrize("dim", [2, 3])
+def test_center_jacobian_matches_finite_difference(
+    rng: np.random.Generator, dim: int
+):
     """`center_jacobian` matches a central-difference approximation."""
 
     for _ in range(5):
-        p, q = random_coef_pair(rng)
+        p, q = random_coef_pair(rng, dim=dim)
         mu = solve_mu(p, q)
         pencil = build_tangent_pencil(mu, p, q)
         jac = center_jacobian(pencil)
 
-        for idx in range(6):
+        for idx in range(jac.shape[0]):
             step = 1e-6
             coef_plus = pencil.coef.copy()
             coef_minus = pencil.coef.copy()

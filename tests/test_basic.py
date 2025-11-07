@@ -4,6 +4,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from ellphi import coef_from_axes, tangency
+from ellphi.geometry import coef_from_cov
 from ellphi.solver import quad_eval
 from tests.factories import random_coef_pair, rotation_matrix
 
@@ -198,7 +199,30 @@ def test_circle_tangency_matches_closed_form(case: CircleCase, solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 5. Axis-aligned ellipses: tangency along the major axis direction
+# 5. Three-dimensional spheres (Python backend)
+# -----------------------------------------------------------------------------
+def test_sphere_tangency_matches_closed_form():
+    center_p = np.array([0.0, 0.0, 0.0], dtype=float)
+    center_q = np.array([4.0, 0.0, 0.0], dtype=float)
+    radius_p, radius_q = 1.0, 2.0
+
+    p = coef_from_cov(center_p, np.eye(3) * radius_p**2)[0]
+    q = coef_from_cov(center_q, np.eye(3) * radius_q**2)[0]
+
+    res = tangency(p, q, backend="python")
+
+    distance = np.linalg.norm(center_q - center_p)
+    expected_t = distance / (radius_p + radius_q)
+    expected_mu = radius_q / (radius_p + radius_q)
+    expected_point = center_p + (center_q - center_p) / distance * (radius_p * expected_t)
+
+    assert res.t == pytest.approx(expected_t, rel=1e-9, abs=1e-12)
+    assert res.mu == pytest.approx(expected_mu, rel=1e-9, abs=1e-12)
+    np.testing.assert_allclose(res.point, expected_point, rtol=1e-9, atol=1e-12)
+
+
+# -----------------------------------------------------------------------------
+# 6. Axis-aligned ellipses: tangency along the major axis direction
 # -----------------------------------------------------------------------------
 def test_axis_aligned_ellipses_have_expected_t(
     axis_aligned_case: AxisAlignedCase, solver_backend
@@ -214,7 +238,7 @@ def test_axis_aligned_ellipses_have_expected_t(
 
 
 # -----------------------------------------------------------------------------
-# 6. Rotating the entire configuration does not change the tangency scale
+# 7. Rotating the entire configuration does not change the tangency scale
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize("angle", [0.2, 0.8, 1.3])
 def test_rotational_invariance(
@@ -238,7 +262,7 @@ def test_rotational_invariance(
 
 
 # -----------------------------------------------------------------------------
-# 7. Generic properties at the tangency point
+# 8. Generic properties at the tangency point
 # -----------------------------------------------------------------------------
 
 
@@ -272,7 +296,7 @@ def test_tangency_point_satisfies_quadratic_and_normal_alignment(solver_backend)
 
 
 # -----------------------------------------------------------------------------
-# 8. Axis-aligned ellipses: tangency time matches analytic distance formula
+# 9. Axis-aligned ellipses: tangency time matches analytic distance formula
 # -----------------------------------------------------------------------------
 def test_axis_aligned_scaling_matches_sum_of_axes(solver_backend):
     case = AxisAlignedCase(
@@ -290,7 +314,7 @@ def test_axis_aligned_scaling_matches_sum_of_axes(solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 9. Tangency point must lie on both scaled ellipses
+# 10. Tangency point must lie on both scaled ellipses
 # -----------------------------------------------------------------------------
 def test_tangency_point_satisfies_both_ellipses(solver_backend):
     p = coef_from_axes([0.4, -0.5], 1.1, 0.6, 0.8)
@@ -305,7 +329,7 @@ def test_tangency_point_satisfies_both_ellipses(solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 10. Translating both ellipses should translate the solution
+# 11. Translating both ellipses should translate the solution
 # -----------------------------------------------------------------------------
 def test_tangency_translation_invariance(solver_backend):
     c_p = np.array([-0.2, 0.3])
@@ -326,7 +350,7 @@ def test_tangency_translation_invariance(solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 11. Identical ellipses touch immediately (t ≈ 0)
+# 12. Identical ellipses touch immediately (t ≈ 0)
 # -----------------------------------------------------------------------------
 def test_identical_ellipses_touch_at_zero_time(solver_backend):
     center = np.array([2.3, -1.1])
@@ -340,7 +364,7 @@ def test_identical_ellipses_touch_at_zero_time(solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 12. Alternative scalar-root methods agree with the default strategy
+# 13. Alternative scalar-root methods agree with the default strategy
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize("method", ["bisect", "brentq", "brenth"])
 def test_scalar_root_methods_match_default(method: str, solver_backend):
@@ -356,7 +380,7 @@ def test_scalar_root_methods_match_default(method: str, solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 13. Newton method works when supplied with an initial guess
+# 14. Newton method works when supplied with an initial guess
 # -----------------------------------------------------------------------------
 def test_newton_method_with_initial_guess(solver_backend):
     p = coef_from_axes([0.3, -0.7], 1.2, 0.9, 0.4)
@@ -371,7 +395,7 @@ def test_newton_method_with_initial_guess(solver_backend):
 
 
 # -----------------------------------------------------------------------------
-# 14. Edge cases for tangency
+# 15. Edge cases for tangency
 # -----------------------------------------------------------------------------
 def test_tangency_identical_ellipses(solver_backend):
     """Test tangency between two identical ellipses."""

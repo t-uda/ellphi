@@ -14,6 +14,7 @@ def test_local_cov_uses_actual_neighbourhood_size():
     assert ellcloud.cov.shape[0] == 1
     expected_cov = np.cov(X, rowvar=False, bias=False)
     assert ellcloud.cov[0] == pytest.approx(expected_cov)
+    assert ellcloud.n_dim == 2
 
 
 def test_local_cov_requires_k_at_least_two():
@@ -62,3 +63,22 @@ def test_local_cov_merges_identical_neighbourhoods():
     assert ellcloud.nbd.shape == (2, 3)
     assert np.array_equal(ellcloud.nbd, np.array([[0, 1, 2], [3, 4, 5]]))
     assert np.array_equal(ellcloud.nbd, np.sort(ellcloud.nbd, axis=1))
+
+
+def test_local_cov_handles_three_dimensions():
+    X = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+    ellcloud = EllipseCloud.from_local_cov(X, k=4)
+    assert ellcloud.n_dim == 3
+    assert ellcloud.mean.shape == (ellcloud.n, 3)
+    assert ellcloud.cov.shape == (ellcloud.n, 3, 3)
+
+    with pytest.raises(NotImplementedError):
+        ellcloud.plot()

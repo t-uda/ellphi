@@ -8,6 +8,7 @@ import numpy
 
 from . import _solver_python as _py
 from . import _tangency_cpp as _cpp
+from .geometry import infer_dim_from_coef_length
 
 __all__ = [
     "quad_eval",
@@ -50,16 +51,24 @@ def has_cpp_backend() -> bool:
 def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
     coef = getattr(ellcloud, "coef", ellcloud)
     array = numpy.asarray(coef, dtype=float)
-    if array.ndim != 2 or array.shape[1] != 6:
-        raise ValueError("Expected ellipse coefficients with shape (n, 6)")
+    if array.ndim != 2:
+        raise ValueError("Expected ellipse coefficients with shape (n, m)")
+    try:
+        infer_dim_from_coef_length(array.shape[1])
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise ValueError("Invalid conic coefficient length") from exc
     return array
 
 
-def _should_use_cpp(backend: str) -> bool:
+def _should_use_cpp(backend: str, *, dim: int | None = None) -> bool:
     if backend not in _BACKEND_NAMES:
         raise ValueError(
             f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
         )
+    if dim is not None and dim != 2:
+        if backend == "cpp":
+            raise RuntimeError("C++ backend currently supports only 2D conics")
+        return False
     if backend == "cpp":
         if not has_cpp_backend():
             raise RuntimeError("C++ backend requested but not available")
@@ -87,7 +96,11 @@ def tangency(
     """Return (t, point, μ) at which two ellipses are tangent."""
 
     method_literal = _normalize_method(method)
-    if _should_use_cpp(backend):
+    dim_p = infer_dim_from_coef_length(pcoef.shape[0])
+    dim_q = infer_dim_from_coef_length(qcoef.shape[0])
+    if dim_p != dim_q:
+        raise ValueError("Conics must have matching dimensionality")
+    if _should_use_cpp(backend, dim=dim_p):
         return _cpp.tangency(
             pcoef,
             qcoef,
@@ -126,8 +139,9 @@ def pdist_tangency(
         Backend used for the tangency computation.
     """
 
-    if _should_use_cpp(backend):
-        coef = _extract_coef_array(ellcloud)
+    coef = _extract_coef_array(ellcloud)
+    dim = infer_dim_from_coef_length(coef.shape[1])
+    if _should_use_cpp(backend, dim=dim):
         return _cpp.pdist_tangency(coef)
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
