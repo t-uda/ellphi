@@ -82,12 +82,6 @@ CIRCLE_CASES = [
 ]
 
 
-def _as_point(center: np.ndarray) -> tuple[float, float]:
-    """Return the center as a tuple compatible with `quad_eval`."""
-
-    return (float(center[0]), float(center[1]))
-
-
 @pytest.mark.parametrize("case", CIRCLE_CASES)
 def test_circle_center_and_gradients_match_hand_solution(case: CircleTangencyCase):
     """Circle cases exercise the full Lagrange conditions analytically."""
@@ -104,9 +98,8 @@ def test_circle_center_and_gradients_match_hand_solution(case: CircleTangencyCas
         pencil.center, case.contact_point, rtol=1e-12, atol=1e-12
     )
 
-    point = _as_point(pencil.center)
-    val_p = quad_eval(p, point)
-    val_q = quad_eval(q, point)
+    val_p = quad_eval(p, pencil.center)
+    val_q = quad_eval(q, pencil.center)
     assert val_p == pytest.approx(val_q, rel=1e-12, abs=1e-12)
 
     grad_combo = pencil.quad @ pencil.center + pencil.linear
@@ -168,16 +161,17 @@ def test_circle_center_jacobian_matches_manual_formula(case: CircleTangencyCase)
     np.testing.assert_allclose(jac, expected, rtol=1e-12, atol=1e-12)
 
 
-def test_center_jacobian_matches_finite_difference(rng: np.random.Generator):
+@pytest.mark.parametrize("dim", [2, 3])
+def test_center_jacobian_matches_finite_difference(rng: np.random.Generator, dim: int):
     """`center_jacobian` matches a central-difference approximation."""
 
     for _ in range(5):
-        p, q = random_coef_pair(rng)
+        p, q = random_coef_pair(rng, dim=dim)
         mu = solve_mu(p, q)
         pencil = build_tangent_pencil(mu, p, q)
         jac = center_jacobian(pencil)
 
-        for idx in range(6):
+        for idx in range(pencil.coef.shape[0]):
             step = 1e-6
             coef_plus = pencil.coef.copy()
             coef_minus = pencil.coef.copy()
@@ -198,15 +192,18 @@ def test_center_jacobian_matches_finite_difference(rng: np.random.Generator):
 
 def _target_value(mu: float, p: np.ndarray, q: np.ndarray) -> float:
     pencil = build_tangent_pencil(mu, p, q)
-    center = _as_point(pencil.center)
+    center = pencil.center
     return float(quad_eval(p, center) - quad_eval(q, center))
 
 
-def test_target_prime_chain_rule_matches_closed_form(rng: np.random.Generator):
+@pytest.mark.parametrize("dim", [2, 3])
+def test_target_prime_chain_rule_matches_closed_form(
+    rng: np.random.Generator, dim: int
+):
     """Chain rule using `center_jacobian` reproduces the cached derivative."""
 
     for _ in range(5):
-        p, q = random_coef_pair(rng)
+        p, q = random_coef_pair(rng, dim=dim)
         mu = solve_mu(p, q)
         pencil = build_tangent_pencil(mu, p, q)
         jac = center_jacobian(pencil)
@@ -224,11 +221,12 @@ def test_target_prime_chain_rule_matches_closed_form(rng: np.random.Generator):
         )
 
 
-def test_target_prime_matches_finite_difference(rng: np.random.Generator):
+@pytest.mark.parametrize("dim", [2, 3])
+def test_target_prime_matches_finite_difference(rng: np.random.Generator, dim: int):
     """`target_prime_from_pencil` matches a finite-difference baseline."""
 
     for _ in range(5):
-        p, q = random_coef_pair(rng)
+        p, q = random_coef_pair(rng, dim=dim)
         mu = solve_mu(p, q)
         pencil = build_tangent_pencil(mu, p, q)
 
@@ -244,20 +242,20 @@ def test_target_prime_matches_finite_difference(rng: np.random.Generator):
         assert deriv_exact == pytest.approx(deriv_fd, rel=1e-8, abs=1e-8)
 
 
-def test_lagrange_conditions_hold_for_random_pairs(rng: np.random.Generator):
+@pytest.mark.parametrize("dim", [2, 3])
+def test_lagrange_conditions_hold_for_random_pairs(rng: np.random.Generator, dim: int):
     """Random ellipses satisfy the Lagrange multiplier conditions."""
 
     for _ in range(5):
-        p, q = random_coef_pair(rng)
+        p, q = random_coef_pair(rng, dim=dim)
         mu = solve_mu(p, q)
         pencil = build_tangent_pencil(mu, p, q)
         center = pencil.center
 
         grad_combo = pencil.quad @ center + pencil.linear
-        np.testing.assert_allclose(grad_combo, np.zeros(2), atol=1e-10)
+        np.testing.assert_allclose(grad_combo, np.zeros_like(center), atol=1e-10)
 
-        center_point = _as_point(center)
-        val_diff = quad_eval(p, center_point) - quad_eval(q, center_point)
+        val_diff = quad_eval(p, center) - quad_eval(q, center)
         assert val_diff == pytest.approx(0.0, abs=1e-10)
 
         grad_p = 2.0 * (quad_matrix(p) @ center + linear_vector(p))
@@ -266,8 +264,9 @@ def test_lagrange_conditions_hold_for_random_pairs(rng: np.random.Generator):
         residual = (1.0 - mu) * grad_p + mu * grad_q
         np.testing.assert_allclose(residual, np.zeros_like(residual), atol=1e-10)
 
-        cross = grad_p[0] * grad_q[1] - grad_p[1] * grad_q[0]
-        assert cross == pytest.approx(0.0, abs=1e-10)
+        dot = float(np.dot(grad_p, grad_q))
+        norms = float(np.linalg.norm(grad_p) * np.linalg.norm(grad_q))
+        assert abs(abs(dot) - norms) <= 1e-8
 
 
 def test_saddle_point_behaviour(rng: np.random.Generator):

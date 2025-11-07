@@ -1,4 +1,5 @@
 import numpy as np
+import numpy as np
 import pytest
 
 from ellphi.solver import pdist_tangency
@@ -27,3 +28,11 @@ def test_pdist_tangency_consistency(ellipse_cloud, solver_backend):
         parallel_result,
         err_msg="Serial and parallel results are not close enough.",
     )
+
+
+def test_pdist_tangency_three_dimensional_python_backend(rng):
+    cloud = random_cloud(rng, n_ellipses=8, dim=3)
+    result = pdist_tangency(cloud, parallel=False, backend="python")
+    expected_length = cloud.n * (cloud.n - 1) // 2
+    assert result.shape == (expected_length,)
+    assert np.all(result >= 0.0)

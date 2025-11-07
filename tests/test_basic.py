@@ -3,7 +3,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from ellphi import coef_from_axes, tangency
+from ellphi import coef_from_axes, coef_from_cov, tangency
 from ellphi.solver import quad_eval
 from tests.factories import random_coef_pair, rotation_matrix
 
@@ -195,6 +195,31 @@ def test_circle_tangency_matches_closed_form(case: CircleCase, solver_backend):
     assert res.point.tolist() == pytest.approx(
         expected_point.tolist(), rel=1e-9, abs=1e-12
     )
+
+
+def test_three_dimensional_spheres_match_closed_form():
+    center_p = np.array([0.0, 0.0, 0.0])
+    center_q = np.array([4.0, 1.0, -2.0])
+    radius_p = 1.5
+    radius_q = 0.75
+
+    cov_p = np.eye(3) * radius_p**2
+    cov_q = np.eye(3) * radius_q**2
+
+    pcoef = coef_from_cov(center_p, cov_p)[0]
+    qcoef = coef_from_cov(center_q, cov_q)[0]
+
+    res = tangency(pcoef, qcoef)
+
+    distance = np.linalg.norm(center_q - center_p)
+    expected_t = distance / (radius_p + radius_q)
+    expected_mu = radius_q / (radius_p + radius_q)
+    direction = (center_q - center_p) / distance
+    expected_point = center_p + direction * (radius_p * expected_t)
+
+    assert res.t == pytest.approx(expected_t, rel=1e-9)
+    np.testing.assert_allclose(res.point, expected_point, rtol=1e-9, atol=1e-9)
+    assert res.mu == pytest.approx(expected_mu, rel=1e-9)
 
 
 # -----------------------------------------------------------------------------

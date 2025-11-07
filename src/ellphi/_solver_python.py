@@ -5,13 +5,23 @@ from __future__ import annotations
 from collections import namedtuple
 from functools import partial
 from itertools import combinations
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Tuple, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 import numpy
 from joblib import Parallel, delayed  # type: ignore
 from scipy.optimize import root_scalar
 
 from ._tangent_pencil import build_tangent_pencil, target_prime_from_pencil
+from .geometry import unpack_conic
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ellphi.ellcloud import EllipseCloud
@@ -27,13 +37,12 @@ __all__ = [
 ]
 
 
-def quad_eval(coef: numpy.ndarray, center: Tuple[float, float]) -> float:
-    """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*."""
+def quad_eval(coef: numpy.ndarray, center: Sequence[float]) -> float:
+    """Evaluate the quadratic form represented by ``coef`` at ``center``."""
 
-    assert coef.shape == (6,)
-    a, b, c, d, e, f = coef[:6]
-    x, y = center
-    return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
+    quad, linear, constant = unpack_conic(coef)
+    point = numpy.asarray(center, dtype=float)
+    return float(point @ quad @ point + 2.0 * linear @ point + constant)
 
 
 def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
@@ -45,14 +54,13 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
 TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 
 
-def _center(coef: numpy.ndarray) -> Tuple[float, float]:
-    a, b, c, d, e, _ = coef
-    det = a * c - b**2
-    if det == 0:
+def _center(coef: numpy.ndarray) -> numpy.ndarray:
+    quad, linear, _ = unpack_conic(coef)
+    det = numpy.linalg.det(quad)
+    if det == 0.0:
         raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    x = (b * e - c * d) / det
-    y = (b * d - a * e) / det
-    return (x, y)
+    center = -numpy.linalg.solve(quad, linear)
+    return center
 
 
 def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
@@ -115,8 +123,8 @@ def tangency(
     mu = solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
     coef = pencil(pcoef, qcoef, mu)
     point = _center(coef)
-    t = float(numpy.sqrt(quad_eval(coef, point)))
-    return TangencyResult(t, numpy.asarray(point), mu)
+    t = float(numpy.sqrt(quad_eval(pcoef, point)))
+    return TangencyResult(t, numpy.asarray(point, dtype=float), mu)
 
 
 def _indexed_pairs(size: int) -> Iterator[tuple[int, tuple[int, int]]]:

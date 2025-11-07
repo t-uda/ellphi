@@ -62,3 +62,21 @@ def test_local_cov_merges_identical_neighbourhoods():
     assert ellcloud.nbd.shape == (2, 3)
     assert np.array_equal(ellcloud.nbd, np.array([[0, 1, 2], [3, 4, 5]]))
     assert np.array_equal(ellcloud.nbd, np.sort(ellcloud.nbd, axis=1))
+
+
+def test_local_cov_supports_three_dimensions():
+    X = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+    ellcloud = EllipseCloud.from_local_cov(X, k=4)
+
+    assert ellcloud.n_dim == 3
+    assert ellcloud.coef.shape[1] == (ellcloud.n_dim + 1) * (ellcloud.n_dim + 2) // 2
+    assert ellcloud.mean.shape[1] == 3
+    assert ellcloud.cov.shape[1:] == (3, 3)

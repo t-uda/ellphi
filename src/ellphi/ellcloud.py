@@ -16,7 +16,7 @@ import numpy
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import squareform, pdist
 
-from .geometry import axes_from_cov, coef_from_cov
+from .geometry import axes_from_cov, coef_from_cov, infer_dim_from_coef_length
 from .solver import pdist_tangency
 
 __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
@@ -26,16 +26,26 @@ __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
 class EllipseCloud:
     """Container for an ellipse cloud with convenience methods."""
 
-    coef: numpy.ndarray  # (N, 6)
-    mean: numpy.ndarray  # (N, 2)
-    cov: numpy.ndarray  # (N, 2, 2)
+    coef: numpy.ndarray  # (N, m)
+    mean: numpy.ndarray  # (N, n)
+    cov: numpy.ndarray  # (N, n, n)
     k: int
     nbd: numpy.ndarray  # (N, k)  k-NN indices
     n: int = field(init=False)
+    n_dim: int = field(init=False)
+    coef_length: int = field(init=False)
 
     # ---- automatic field from coef.shape ---------------------------------
     def __post_init__(self):
         self.n = self.coef.shape[0]
+        self.coef_length = self.coef.shape[1]
+        self.n_dim = infer_dim_from_coef_length(self.coef_length)
+        if self.mean.shape != (self.n, self.n_dim):
+            raise ValueError("Mean array shape inconsistent with coefficients")
+        if self.cov.shape != (self.n, self.n_dim, self.n_dim):
+            raise ValueError("Covariance array shape inconsistent with coefficients")
+        if self.nbd.shape[0] != self.n:
+            raise ValueError("Neighbourhood array must align with coefficient count")
 
     # ---- basic Python protocol ------------------------------------------
     def __len__(self) -> int:
@@ -45,7 +55,7 @@ class EllipseCloud:
         return iter(self.coef)
 
     def __getitem__(self, idx) -> numpy.ndarray:
-        """Return the conic coefficient array (6,) for a single ellipse."""
+        """Return the conic coefficient array for a single ellipsoid."""
         return self.coef[idx]
 
     def __str__(self):
@@ -79,6 +89,11 @@ class EllipseCloud:
             Existing axes; if None, creates a new figure.
         """
         from .visualization import ellipse_patch
+
+        if self.n_dim != 2:
+            raise NotImplementedError(
+                "Plotting is currently supported only for 2D ellipses"
+            )
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -137,8 +152,8 @@ class EllipseCloud:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, d)
+            Input point cloud in ``d`` spatial dimensions.
         method : str
             Conversion algorithm. The supported method is "local_cov".
         rescaling : str
@@ -173,6 +188,10 @@ class EllipseCloud:
         Apply rescaling to all the ellipses.
         The supported method is "median" or "average".
         """
+        if self.n_dim != 2:
+            raise NotImplementedError(
+                "Rescaling is currently defined only for 2D ellipses"
+            )
         eigvals = numpy.linalg.eigvalsh(self.cov)
         scales = numpy.sqrt(eigvals)
         if method == "median":
@@ -208,8 +227,8 @@ class LocalCov:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, d)
+            Input point cloud.
 
         Returns
         -------
@@ -225,6 +244,9 @@ class LocalCov:
                 "Local covariance requires at least two neighbours (k >= 2); "
                 f"got k={k}."
             )
+        if X.ndim != 2:
+            raise ValueError("Input point cloud must be a 2D array (N, d)")
+
         d = squareform(pdist(X))  # Euclidean distance matrix
         neighbour_indices = numpy.argsort(d, axis=1)[:, :k]
         sorted_subsets = numpy.sort(neighbour_indices, axis=1)
