@@ -508,6 +508,7 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
     double x0,
     double* out_t,
     double* out_point,
+    std::size_t point_length,
     double* out_mu,
     char* err_buffer,
     std::size_t err_buffer_len
@@ -519,6 +520,10 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
         double mu = solve_mu(p, q, std::string(method), bracket_pair, has_x0 != 0, x0);
         SolverContext ctx = build_solver_context(p, q);
         PencilGeometry geom = build_pencil_geometry(mu, ctx);
+        const std::size_t dim = static_cast<std::size_t>(geom.center.size());
+        if (point_length < dim) {
+            raise("Output point buffer too small");
+        }
         double value = quad_eval(geom.conic, geom.center);
         if (value < 0.0) {
             value = 0.0;
