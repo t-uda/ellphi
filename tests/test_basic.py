@@ -122,26 +122,26 @@ def test_tangent_unit_circles(solver_backend):
     assert res.t == pytest.approx(1.0)
 
 
-def test_tangency_three_dimensional_spheres():
+def test_tangency_three_dimensional_spheres(solver_backend):
     center_p = np.array([0.0, 0.0, 0.0], dtype=float)
     center_q = np.array([3.0, 0.0, 0.0], dtype=float)
     cov = np.eye(3)
     p = coef_from_cov(center_p, cov)
     q = coef_from_cov(center_q, cov)
-    res = tangency(p, q, backend="python")
+    res = tangency(p, q, backend=solver_backend)
     assert res.mu == pytest.approx(0.5)
     np.testing.assert_allclose(res.point, np.array([1.5, 0.0, 0.0]))
     assert res.t == pytest.approx(1.5)
-    with pytest.raises(RuntimeError):
-        tangency(p, q, backend="cpp")
 
 
 @pytest.mark.parametrize("dim", [3, 4])
-def test_tangency_random_high_dimension(dim: int, rng: np.random.Generator) -> None:
+def test_tangency_random_high_dimension(
+    dim: int, rng: np.random.Generator, solver_backend: str
+) -> None:
     iterations = 5
     for _ in range(iterations):
         pcoef, qcoef = random_coef_pair(rng, dim=dim)
-        result = solver_tangency(pcoef, qcoef, backend="python")
+        result = solver_tangency(pcoef, qcoef, backend=solver_backend)
 
         point = result.point
         assert point.shape == (dim,)
