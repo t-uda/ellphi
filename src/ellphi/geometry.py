@@ -13,6 +13,7 @@ Key API (all return ``numpy.float64`` arrays):
 * :func:`coef_from_cov`
 * :func:`pack_conic`
 * :func:`unpack_conic`
+* :func:`unpack_single_conic`
 * :func:`infer_dim_from_coef_length`
 """
 
@@ -29,6 +30,7 @@ __all__ = [
     "coef_from_cov",
     "pack_conic",
     "unpack_conic",
+    "unpack_single_conic",
     "infer_dim_from_coef_length",
 ]
 
@@ -189,6 +191,28 @@ def unpack_conic(
     return matrices, linear, constant
 
 
+def unpack_single_conic(
+    coef: numpy.ndarray,
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """Return ``(A, b, c)`` for a single flattened coefficient array.
+
+    Accepts either shape ``(m,)`` or ``(1, m)`` and preserves the batched
+    semantics of :func:`unpack_conic` for ``m`` corresponding to a single conic.
+    """
+
+    matrices, linear, constant = unpack_conic(coef)
+    if matrices.ndim == 3:
+        if matrices.shape[0] != 1:
+            raise ValueError(
+                "Expected coefficients for a single conic, "
+                f"received {matrices.shape[0]} entries"
+            )
+        matrices = matrices[0]
+        linear = linear[0]
+        constant = constant[0]
+    return matrices, linear, constant
+
+
 def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
     """Centre & axes → conic coefficient array (6,)."""
     return _coef_core(X, r0, r1, numpy.cos(theta), numpy.sin(theta))
@@ -201,18 +225,39 @@ def coef_from_cov(
     *,
     scale: float = 1.0,
 ) -> numpy.ndarray:
-    """Centre + covariance → conic coefficients for arbitrary dimensions."""
+    """Convert centres and covariances to packed conic coefficients.
+
+    Parameters
+    ----------
+    X
+        Array of centres with shape ``(n, d)`` or a single centre with shape ``(d,)``.
+        Single centres are promoted to ``(1, d)`` so that the return value always
+        keeps a leading dimension.
+    cov
+        Covariance matrices with shape ``(n, d, d)`` or a single covariance with
+        shape ``(d, d)``. Each matrix must be square and match the dimensionality
+        of the corresponding centre.
+    scale
+        Optional scale factor applied to the covariance before conversion. Values
+        greater than 1 inflate the ellipsoid radii, while values less than 1 shrink
+        them.
+
+    Returns
+    -------
+    numpy.ndarray
+        Packed coefficients as produced by :func:`pack_conic` with shape
+        ``(n, m)`` where ``m = (d + 1)(d + 2) / 2``. When a single centre and
+        covariance are provided, ``n`` equals 1 so callers can rely on a consistent
+        two-dimensional output.
+    """
 
     centers = numpy.asarray(X, dtype=float)
     cov = numpy.asarray(cov, dtype=float)
 
-    squeeze = False
     if centers.ndim == 1:
         centers = centers[numpy.newaxis, :]
-        squeeze = True
     if cov.ndim == 2:
         cov = cov[numpy.newaxis, :, :]
-        squeeze = True if squeeze else False
 
     if centers.shape[0] != cov.shape[0]:
         raise ValueError("Mismatch between number of centres and covariance matrices")
@@ -228,6 +273,4 @@ def coef_from_cov(
     b = -(matrices @ centers[..., None])[..., 0]
     c = numpy.einsum("...i,...ij,...j->...", centers, matrices, centers)
     packed = pack_conic(matrices, b, c)
-    if squeeze:
-        return packed[0]
     return packed

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .geometry import unpack_conic
+from .geometry import unpack_single_conic
 
 
 @dataclass(frozen=True)
@@ -24,14 +24,14 @@ class TangentPencil:
 def quad_matrix(coef: np.ndarray) -> np.ndarray:
     """Return the quadratic-form matrix associated with ``coef``."""
 
-    quad, _, _ = unpack_conic(coef)
+    quad, _, _ = unpack_single_conic(coef)
     return quad
 
 
 def linear_vector(coef: np.ndarray) -> np.ndarray:
     """Return the linear-term vector associated with ``coef``."""
 
-    _, linear, _ = unpack_conic(coef)
+    _, linear, _ = unpack_single_conic(coef)
     return linear
 
 

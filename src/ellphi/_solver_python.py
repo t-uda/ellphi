@@ -12,7 +12,7 @@ from joblib import Parallel, delayed  # type: ignore
 from scipy.optimize import root_scalar
 
 from ._tangent_pencil import build_tangent_pencil, target_prime_from_pencil
-from .geometry import unpack_conic
+from .geometry import unpack_single_conic
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ellphi.ellcloud import EllipseCloud
@@ -31,7 +31,7 @@ __all__ = [
 def quad_eval(coef: numpy.ndarray, center: Tuple[float, ...] | numpy.ndarray) -> float:
     """Evaluate ``xᵀAx + 2bᵀx + c`` for the provided coefficients."""
 
-    A, b, c = unpack_conic(coef)
+    A, b, c = unpack_single_conic(coef)
     x = numpy.asarray(center, dtype=float)
     if x.ndim != 1 or x.shape[0] != b.shape[0]:
         raise ValueError("Point dimensionality does not match conic coefficients")
@@ -48,7 +48,7 @@ TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 
 
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
-    A, b, _ = unpack_conic(coef)
+    A, b, _ = unpack_single_conic(coef)
     try:
         center = numpy.linalg.solve(A, -b)
     except numpy.linalg.LinAlgError as exc:  # pragma: no cover - defensive
@@ -152,7 +152,7 @@ def _pdist_tangency_parallel(
     def get_pair_tangency(i: int, j: int) -> float:
         return tangency(ellcloud[i], ellcloud[j]).t
 
-    results = Parallel(n_jobs=n_jobs)(
+    results = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(get_pair_tangency)(i, j) for _, (i, j) in pairs
     )
     return numpy.asarray(results, dtype=float)

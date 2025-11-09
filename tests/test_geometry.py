@@ -51,6 +51,13 @@ def test_coef_from_cov():
     assert np.allclose(coef1, coef2, rtol=1e-12, atol=1e-12)
 
 
+def test_coef_from_cov_single_sample_shape():
+    cov = np.array([[2.0, 0.5], [0.5, 1.0]])
+    coef = coef_from_cov([0.0, 1.0], cov)
+    assert coef.shape[0] == 1
+    assert coef.ndim == 2
+
+
 def test_conic_pack_unpack_roundtrip():
     rng = np.random.default_rng(42)
     A = rng.random((3, 3))
@@ -76,6 +83,6 @@ def test_coef_from_cov_general_dimension():
     cov = mat @ mat.T + np.eye(3)
     coef = coef_from_cov(center, cov)
     A, b, c = unpack_conic(coef)
-    np.testing.assert_allclose(A, np.linalg.inv(cov))
-    np.testing.assert_allclose(b, -A @ center)
-    assert c == pytest.approx(center @ A @ center)
+    np.testing.assert_allclose(A[0], np.linalg.inv(cov))
+    np.testing.assert_allclose(b[0], -A[0] @ center)
+    assert c[0] == pytest.approx(center @ A[0] @ center)
