@@ -54,7 +54,7 @@ def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
     if array.ndim == 3 and array.shape[1] == 1:
         array = array[:, 0, :]
     if array.ndim != 2:
-        raise ValueError("Expected coefficient array with shape (n, m)")
+        raise ValueError("Expected coefficient array with shape (m, n)")
     infer_dim_from_coef_length(array.shape[1])
     return array
 

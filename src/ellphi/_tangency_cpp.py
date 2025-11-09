@@ -152,7 +152,7 @@ def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
 
     coef_arr = numpy.ascontiguousarray(coef, dtype=float)
     if coef_arr.ndim != 2:
-        raise ValueError("Coefficient array must have shape (m, k)")
+        raise ValueError("Coefficient array must have shape (m, n)")
     coef_length = coef_arr.shape[1]
     infer_dim_from_coef_length(coef_length)
     m = coef_arr.shape[0]
