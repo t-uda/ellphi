@@ -8,6 +8,7 @@ import numpy
 
 from . import _solver_python as _py
 from . import _tangency_cpp as _cpp
+from .geometry import infer_dim_from_coef_length
 
 __all__ = [
     "quad_eval",
@@ -50,8 +51,9 @@ def has_cpp_backend() -> bool:
 def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
     coef = getattr(ellcloud, "coef", ellcloud)
     array = numpy.asarray(coef, dtype=float)
-    if array.ndim != 2 or array.shape[1] != 6:
-        raise ValueError("Expected ellipse coefficients with shape (n, 6)")
+    if array.ndim != 2:
+        raise ValueError("Expected coefficient array with shape (n, m)")
+    infer_dim_from_coef_length(array.shape[1])
     return array
 
 
@@ -87,17 +89,37 @@ def tangency(
     """Return (t, point, μ) at which two ellipses are tangent."""
 
     method_literal = _normalize_method(method)
-    if _should_use_cpp(backend):
+    pcoef_arr = numpy.asarray(pcoef, dtype=float).reshape(-1)
+    qcoef_arr = numpy.asarray(qcoef, dtype=float).reshape(-1)
+    if pcoef_arr.shape != qcoef_arr.shape:
+        raise ValueError("Coefficient vectors must have the same length")
+    coef_length = pcoef_arr.size
+    infer_dim_from_coef_length(coef_length)
+
+    use_cpp = False
+    if backend not in _BACKEND_NAMES:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
+        )
+    if backend == "cpp":
+        if coef_length != 6:
+            raise RuntimeError("C++ backend currently supports only 2D ellipses")
+        use_cpp = _should_use_cpp(backend)
+    elif backend == "auto":
+        if coef_length == 6:
+            use_cpp = _should_use_cpp(backend)
+
+    if use_cpp:
         return _cpp.tangency(
-            pcoef,
-            qcoef,
+            pcoef_arr,
+            qcoef_arr,
             method=method_literal,
             bracket=bracket,
             x0=x0,
         )
     return tangency_python(
-        pcoef,
-        qcoef,
+        pcoef_arr,
+        qcoef_arr,
         method=method_literal,
         bracket=bracket,
         x0=x0,
@@ -126,9 +148,19 @@ def pdist_tangency(
         Backend used for the tangency computation.
     """
 
-    if _should_use_cpp(backend):
+    if backend not in _BACKEND_NAMES:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
+        )
+
+    if backend in {"cpp", "auto"}:
         coef = _extract_coef_array(ellcloud)
-        return _cpp.pdist_tangency(coef)
+        if coef.shape[1] == 6:
+            if _should_use_cpp(backend):
+                return _cpp.pdist_tangency(coef)
+        elif backend == "cpp":
+            raise RuntimeError("C++ backend currently supports only 2D ellipses")
+
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
     return _pdist_tangency_serial(ellcloud)

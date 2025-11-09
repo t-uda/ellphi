@@ -16,7 +16,7 @@ import numpy
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import squareform, pdist
 
-from .geometry import axes_from_cov, coef_from_cov
+from .geometry import axes_from_cov, coef_from_cov, infer_dim_from_coef_length
 from .solver import pdist_tangency
 
 __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
@@ -26,16 +26,38 @@ __all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
 class EllipseCloud:
     """Container for an ellipse cloud with convenience methods."""
 
-    coef: numpy.ndarray  # (N, 6)
-    mean: numpy.ndarray  # (N, 2)
-    cov: numpy.ndarray  # (N, 2, 2)
+    coef: numpy.ndarray  # (N, m)
+    mean: numpy.ndarray  # (N, d)
+    cov: numpy.ndarray  # (N, d, d)
     k: int
     nbd: numpy.ndarray  # (N, k)  k-NN indices
     n: int = field(init=False)
+    n_dim: int = field(init=False)
 
     # ---- automatic field from coef.shape ---------------------------------
     def __post_init__(self):
+        if self.coef.ndim != 2:
+            raise ValueError("Coefficient array must be two-dimensional")
         self.n = self.coef.shape[0]
+        coef_length = self.coef.shape[1]
+        self.n_dim = infer_dim_from_coef_length(coef_length)
+        expected_mean_shape = (self.n, self.n_dim)
+        expected_cov_shape = (self.n, self.n_dim, self.n_dim)
+        if self.mean.shape != expected_mean_shape:
+            raise ValueError(
+                "Mean array has shape "
+                f"{self.mean.shape}, expected {expected_mean_shape}"
+            )
+        if self.cov.shape != expected_cov_shape:
+            raise ValueError(
+                "Covariance array has shape "
+                f"{self.cov.shape}, expected {expected_cov_shape}"
+            )
+        if self.nbd.shape and self.nbd.shape[0] != self.n:
+            raise ValueError(
+                "Neighbourhood index array must have first dimension "
+                f"{self.n}, got {self.nbd.shape}"
+            )
 
     # ---- basic Python protocol ------------------------------------------
     def __len__(self) -> int:
@@ -45,7 +67,7 @@ class EllipseCloud:
         return iter(self.coef)
 
     def __getitem__(self, idx) -> numpy.ndarray:
-        """Return the conic coefficient array (6,) for a single ellipse."""
+        """Return the conic coefficient array for a single ellipsoid."""
         return self.coef[idx]
 
     def __str__(self):
@@ -79,6 +101,9 @@ class EllipseCloud:
             Existing axes; if None, creates a new figure.
         """
         from .visualization import ellipse_patch
+
+        if self.n_dim != 2:
+            raise NotImplementedError("Plotting is only supported for 2D ellipses")
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -137,8 +162,8 @@ class EllipseCloud:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, d)
+            Input point cloud.
         method : str
             Conversion algorithm. The supported method is "local_cov".
         rescaling : str
@@ -173,6 +198,10 @@ class EllipseCloud:
         Apply rescaling to all the ellipses.
         The supported method is "median" or "average".
         """
+        if self.n_dim != 2:
+            raise NotImplementedError(
+                "Rescaling is currently implemented for 2D ellipses only"
+            )
         eigvals = numpy.linalg.eigvalsh(self.cov)
         scales = numpy.sqrt(eigvals)
         if method == "median":
@@ -203,13 +232,13 @@ class LocalCov:
     # 将来オプションが増えても dataclass なので拡張しやすい
     # 例: weight_func: Literal["uniform", "distance"]
 
-    # main entry: make EllipseCloud from raw Nx2 points -----------------
+    # main entry: make EllipseCloud from raw NxD points -----------------
     def __call__(self, X: numpy.ndarray) -> EllipseCloud:
         """
         Parameters
         ----------
-        X : ndarray, shape (N, 2)
-            Input point cloud (x, y)
+        X : ndarray, shape (N, d)
+            Input point cloud.
 
         Returns
         -------

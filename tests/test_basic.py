@@ -3,7 +3,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from ellphi import coef_from_axes, tangency
+from ellphi import coef_from_axes, coef_from_cov, tangency
 from ellphi.solver import quad_eval
 from tests.factories import random_coef_pair, rotation_matrix
 
@@ -119,6 +119,20 @@ def test_tangent_unit_circles(solver_backend):
     assert res.mu == pytest.approx(0.5)
     assert res.point.tolist() == pytest.approx([1.0, 0.0])
     assert res.t == pytest.approx(1.0)
+
+
+def test_tangency_three_dimensional_spheres():
+    center_p = np.array([0.0, 0.0, 0.0], dtype=float)
+    center_q = np.array([3.0, 0.0, 0.0], dtype=float)
+    cov = np.eye(3)
+    p = coef_from_cov(center_p, cov)
+    q = coef_from_cov(center_q, cov)
+    res = tangency(p, q, backend="python")
+    assert res.mu == pytest.approx(0.5)
+    np.testing.assert_allclose(res.point, np.array([1.5, 0.0, 0.0]))
+    assert res.t == pytest.approx(1.5)
+    with pytest.raises(RuntimeError):
+        tangency(p, q, backend="cpp")
 
 
 # -----------------------------------------------------------------------------
