@@ -54,7 +54,7 @@ def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
     if array.ndim == 3 and array.shape[1] == 1:
         array = array[:, 0, :]
     if array.ndim != 2:
-        raise ValueError("Expected coefficient array with shape (n, m)")
+        raise ValueError("Expected coefficient array with shape (m, n)")
     infer_dim_from_coef_length(array.shape[1])
     return array
 
@@ -98,18 +98,11 @@ def tangency(
     coef_length = pcoef_arr.size
     infer_dim_from_coef_length(coef_length)
 
-    use_cpp = False
     if backend not in _BACKEND_NAMES:
         raise ValueError(
             f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
         )
-    if backend == "cpp":
-        if coef_length != 6:
-            raise RuntimeError("C++ backend currently supports only 2D ellipses")
-        use_cpp = _should_use_cpp(backend)
-    elif backend == "auto":
-        if coef_length == 6:
-            use_cpp = _should_use_cpp(backend)
+    use_cpp = backend in {"cpp", "auto"} and _should_use_cpp(backend)
 
     if use_cpp:
         return _cpp.tangency(
@@ -157,11 +150,8 @@ def pdist_tangency(
 
     if backend in {"cpp", "auto"}:
         coef = _extract_coef_array(ellcloud)
-        if coef.shape[1] == 6:
-            if _should_use_cpp(backend):
-                return _cpp.pdist_tangency(coef)
-        elif backend == "cpp":
-            raise RuntimeError("C++ backend currently supports only 2D ellipses")
+        if _should_use_cpp(backend):
+            return _cpp.pdist_tangency(coef)
 
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
