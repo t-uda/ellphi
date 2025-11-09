@@ -11,6 +11,7 @@ from typing import Tuple
 import numpy
 
 from ._solver_python import TangencyResult
+from .geometry import infer_dim_from_coef_length
 
 _LIB_NAME = "_tangency_cpp_impl"
 _ERROR_BUFFER = 4096
@@ -80,6 +81,7 @@ def tangency(
     func.argtypes = [
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
         ctypes.c_char_p,
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_int,
@@ -95,8 +97,11 @@ def tangency(
     qcoef_arr = numpy.ascontiguousarray(qcoef, dtype=float)
     bracket_arr = numpy.ascontiguousarray(bracket, dtype=float)
 
+    coef_length = pcoef_arr.size
+    dim = infer_dim_from_coef_length(coef_length)
+
     t_out = ctypes.c_double()
-    point_out = (ctypes.c_double * 2)()
+    point_out = (ctypes.c_double * dim)()
     mu_out = ctypes.c_double()
     error_buffer = ctypes.create_string_buffer(_ERROR_BUFFER)
 
@@ -106,6 +111,7 @@ def tangency(
     status = func(
         pcoef_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         qcoef_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        ctypes.c_size_t(coef_length),
         method.encode("utf-8"),
         bracket_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         ctypes.c_int(has_x0),
@@ -121,7 +127,7 @@ def tangency(
         message = error_buffer.value.decode("utf-8", errors="ignore")
         _raise_backend_error(message)
 
-    point = numpy.ctypeslib.as_array(point_out, shape=(2,)).copy()
+    point = numpy.ctypeslib.as_array(point_out, shape=(dim,)).copy()
     return TangencyResult(float(t_out.value), point, float(mu_out.value))
 
 
@@ -133,6 +139,7 @@ def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
     func.argtypes = [
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_size_t,
+        ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_void_p,
         ctypes.c_size_t,
@@ -140,6 +147,7 @@ def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
 
     coef_arr = numpy.ascontiguousarray(coef, dtype=float)
     m = coef_arr.shape[0]
+    coef_length = coef_arr.shape[1]
     n = m * (m - 1) // 2
     output = numpy.empty(n, dtype=float)
     error_buffer = ctypes.create_string_buffer(_ERROR_BUFFER)
@@ -147,6 +155,7 @@ def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
     status = func(
         coef_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         ctypes.c_size_t(m),
+        ctypes.c_size_t(coef_length),
         output.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         ctypes.cast(error_buffer, ctypes.c_void_p),
         ctypes.c_size_t(_ERROR_BUFFER),

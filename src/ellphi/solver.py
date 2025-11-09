@@ -103,13 +103,8 @@ def tangency(
         raise ValueError(
             f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
         )
-    if backend == "cpp":
-        if coef_length != 6:
-            raise RuntimeError("C++ backend currently supports only 2D ellipses")
+    if backend in {"cpp", "auto"}:
         use_cpp = _should_use_cpp(backend)
-    elif backend == "auto":
-        if coef_length == 6:
-            use_cpp = _should_use_cpp(backend)
 
     if use_cpp:
         return _cpp.tangency(
@@ -155,13 +150,13 @@ def pdist_tangency(
             f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
         )
 
-    if backend in {"cpp", "auto"}:
+    if backend == "cpp":
+        if _should_use_cpp(backend):
+            coef = _extract_coef_array(ellcloud)
+            return _cpp.pdist_tangency(coef)
+    elif backend == "auto" and _should_use_cpp(backend):
         coef = _extract_coef_array(ellcloud)
-        if coef.shape[1] == 6:
-            if _should_use_cpp(backend):
-                return _cpp.pdist_tangency(coef)
-        elif backend == "cpp":
-            raise RuntimeError("C++ backend currently supports only 2D ellipses")
+        return _cpp.pdist_tangency(coef)
 
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)

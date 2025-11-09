@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -8,11 +7,9 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
-
-using QuadCoef = std::array<double, 6>;
-using Point = std::array<double, 2>;
 
 constexpr double EPS = std::numeric_limits<double>::epsilon();
 constexpr double XTOL = std::numeric_limits<double>::epsilon();
@@ -21,84 +18,294 @@ constexpr double XTOL = std::numeric_limits<double>::epsilon();
     throw std::runtime_error(message);
 }
 
-QuadCoef pencil(const QuadCoef& p, const QuadCoef& q, double mu) {
-    QuadCoef result{};
+int infer_dim_from_coef_length(std::size_t length) {
+    if (length < 6) {
+        raise("Coefficient vector too short to represent a conic");
+    }
+    const std::size_t disc = 1 + 8 * length;
+    const long double disc_ld = static_cast<long double>(disc);
+    const std::size_t sqrt_disc = static_cast<std::size_t>(std::llround(std::sqrt(disc_ld)));
+    if (sqrt_disc * sqrt_disc != disc) {
+        raise("Coefficient length does not correspond to a symmetric quadratic form");
+    }
+    const long long numerator = static_cast<long long>(sqrt_disc) - 3;
+    if (numerator < 0 || numerator % 2 != 0) {
+        raise("Coefficient length does not correspond to a valid dimension");
+    }
+    const long long dim_ll = numerator / 2;
+    const std::size_t expected_length = (static_cast<std::size_t>(dim_ll + 1) *
+                                         static_cast<std::size_t>(dim_ll + 2)) /
+                                        2;
+    if (expected_length != length || dim_ll < 2) {
+        raise("Coefficient length does not correspond to a valid dimension");
+    }
+    return static_cast<int>(dim_ll);
+}
+
+struct Quadric {
+    int dim{};
+    std::size_t quad_entries{};
+    std::vector<double> coef;
+
+    Quadric() = default;
+
+    Quadric(int dimension, std::vector<double> values)
+        : dim(dimension),
+          quad_entries(static_cast<std::size_t>(dimension) *
+                       static_cast<std::size_t>(dimension + 1) / 2),
+          coef(std::move(values)) {
+        const std::size_t expected = quad_entries + static_cast<std::size_t>(dim) + 1;
+        if (coef.size() != expected) {
+            raise("Coefficient vector length does not match inferred dimension");
+        }
+    }
+
+    static Quadric from_data(const double* data, std::size_t length) {
+        const int dimension = infer_dim_from_coef_length(length);
+        std::vector<double> values(length);
+        for (std::size_t i = 0; i < length; ++i) {
+            values[i] = data[i];
+        }
+        return Quadric(dimension, std::move(values));
+    }
+};
+
+struct CholeskyFactor {
+    int dim{};
+    std::vector<double> lower;
+};
+
+struct PencilGeometry {
+    int dim{};
+    CholeskyFactor chol;
+    std::vector<double> center;
+};
+
+Quadric pencil(const Quadric& p, const Quadric& q, double mu) {
+    if (p.dim != q.dim || p.coef.size() != q.coef.size()) {
+        raise("Coefficient vectors must share the same dimension");
+    }
+    std::vector<double> result(p.coef.size());
     const double alpha = 1.0 - mu;
     for (std::size_t i = 0; i < result.size(); ++i) {
-        result[i] = alpha * p[i] + mu * q[i];
+        result[i] = alpha * p.coef[i] + mu * q.coef[i];
+    }
+    return Quadric(p.dim, std::move(result));
+}
+
+std::vector<double> quad_matrix(const Quadric& coef) {
+    std::vector<double> matrix(static_cast<std::size_t>(coef.dim) *
+                               static_cast<std::size_t>(coef.dim),
+                               0.0);
+    std::size_t idx = 0;
+    for (int i = 0; i < coef.dim; ++i) {
+        for (int j = i; j < coef.dim; ++j) {
+            const double value = coef.coef[idx++];
+            matrix[static_cast<std::size_t>(i) * coef.dim + j] = value;
+            matrix[static_cast<std::size_t>(j) * coef.dim + i] = value;
+        }
+    }
+    return matrix;
+}
+
+std::vector<double> linear_vector(const Quadric& coef) {
+    std::vector<double> linear(static_cast<std::size_t>(coef.dim));
+    std::size_t offset = coef.quad_entries;
+    for (int i = 0; i < coef.dim; ++i) {
+        linear[static_cast<std::size_t>(i)] = coef.coef[offset + static_cast<std::size_t>(i)];
+    }
+    return linear;
+}
+
+CholeskyFactor cholesky_factor(const std::vector<double>& matrix, int dim) {
+    CholeskyFactor factor;
+    factor.dim = dim;
+    factor.lower.assign(static_cast<std::size_t>(dim) * static_cast<std::size_t>(dim), 0.0);
+
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            double sum = matrix[static_cast<std::size_t>(i) * dim + j];
+            for (int k = 0; k < j; ++k) {
+                sum -= factor.lower[static_cast<std::size_t>(i) * dim + k] *
+                       factor.lower[static_cast<std::size_t>(j) * dim + k];
+            }
+            if (i == j) {
+                if (sum <= 0.0) {
+                    raise("Degenerate conic (determinant zero)");
+                }
+                factor.lower[static_cast<std::size_t>(i) * dim + j] = std::sqrt(sum);
+            } else {
+                const double diag = factor.lower[static_cast<std::size_t>(j) * dim + j];
+                if (diag == 0.0) {
+                    raise("Degenerate conic (determinant zero)");
+                }
+                factor.lower[static_cast<std::size_t>(i) * dim + j] = sum / diag;
+            }
+        }
+    }
+
+    return factor;
+}
+
+std::vector<double> cholesky_solve(const CholeskyFactor& factor, const std::vector<double>& rhs) {
+    if (rhs.size() != static_cast<std::size_t>(factor.dim)) {
+        raise("Right-hand side length does not match matrix dimension");
+    }
+
+    const int dim = factor.dim;
+    std::vector<double> y(static_cast<std::size_t>(dim));
+    for (int i = 0; i < dim; ++i) {
+        double sum = rhs[static_cast<std::size_t>(i)];
+        for (int k = 0; k < i; ++k) {
+            sum -= factor.lower[static_cast<std::size_t>(i) * dim + k] * y[static_cast<std::size_t>(k)];
+        }
+        const double diag = factor.lower[static_cast<std::size_t>(i) * dim + i];
+        if (diag == 0.0) {
+            raise("Degenerate conic (determinant zero)");
+        }
+        y[static_cast<std::size_t>(i)] = sum / diag;
+    }
+
+    std::vector<double> x(static_cast<std::size_t>(dim));
+    for (int i = dim - 1; i >= 0; --i) {
+        double sum = y[static_cast<std::size_t>(i)];
+        for (int k = i + 1; k < dim; ++k) {
+            sum -= factor.lower[static_cast<std::size_t>(k) * dim + i] *
+                   x[static_cast<std::size_t>(k)];
+        }
+        const double diag = factor.lower[static_cast<std::size_t>(i) * dim + i];
+        if (diag == 0.0) {
+            raise("Degenerate conic (determinant zero)");
+        }
+        x[static_cast<std::size_t>(i)] = sum / diag;
+    }
+
+    return x;
+}
+
+double quadratic_form_with_inverse(const CholeskyFactor& factor, const std::vector<double>& vector) {
+    std::vector<double> solution = cholesky_solve(factor, vector);
+    double dot = 0.0;
+    for (int i = 0; i < factor.dim; ++i) {
+        dot += vector[static_cast<std::size_t>(i)] * solution[static_cast<std::size_t>(i)];
+    }
+    return dot;
+}
+
+PencilGeometry build_geometry(const Quadric& coef) {
+    PencilGeometry geometry;
+    geometry.dim = coef.dim;
+
+    std::vector<double> matrix = quad_matrix(coef);
+    std::vector<double> linear = linear_vector(coef);
+
+    geometry.chol = cholesky_factor(matrix, coef.dim);
+
+    std::vector<double> rhs(static_cast<std::size_t>(coef.dim));
+    for (int i = 0; i < coef.dim; ++i) {
+        rhs[static_cast<std::size_t>(i)] = -linear[static_cast<std::size_t>(i)];
+    }
+    geometry.center = cholesky_solve(geometry.chol, rhs);
+
+    return geometry;
+}
+
+std::vector<double> matrix_vector_product(const std::vector<double>& matrix, const std::vector<double>& vector, int dim) {
+    if (vector.size() != static_cast<std::size_t>(dim)) {
+        raise("Vector length does not match matrix dimension");
+    }
+    std::vector<double> result(static_cast<std::size_t>(dim), 0.0);
+    for (int i = 0; i < dim; ++i) {
+        double sum = 0.0;
+        for (int j = 0; j < dim; ++j) {
+            sum += matrix[static_cast<std::size_t>(i) * dim + j] *
+                   vector[static_cast<std::size_t>(j)];
+        }
+        result[static_cast<std::size_t>(i)] = sum;
     }
     return result;
 }
 
-double quad_eval(const QuadCoef& coef, const Point& center) {
-    const double a = coef[0];
-    const double b = coef[1];
-    const double c = coef[2];
-    const double d = coef[3];
-    const double e = coef[4];
-    const double f = coef[5];
-    const double x = center[0];
-    const double y = center[1];
-    return a * x * x + 2.0 * b * x * y + c * y * y + 2.0 * d * x + 2.0 * e * y + f;
+void difference_matrix_linear(
+    const Quadric& p,
+    const Quadric& q,
+    std::vector<double>& matrix,
+    std::vector<double>& linear
+) {
+    if (p.dim != q.dim || p.coef.size() != q.coef.size()) {
+        raise("Coefficient vectors must share the same dimension");
+    }
+    const int dim = p.dim;
+    matrix.assign(static_cast<std::size_t>(dim) * static_cast<std::size_t>(dim), 0.0);
+    linear.assign(static_cast<std::size_t>(dim), 0.0);
+
+    std::size_t idx = 0;
+    for (int i = 0; i < dim; ++i) {
+        for (int j = i; j < dim; ++j) {
+            const double value = p.coef[idx] - q.coef[idx];
+            matrix[static_cast<std::size_t>(i) * dim + j] = value;
+            matrix[static_cast<std::size_t>(j) * dim + i] = value;
+            ++idx;
+        }
+    }
+    for (int i = 0; i < dim; ++i) {
+        linear[static_cast<std::size_t>(i)] =
+            p.coef[idx] - q.coef[idx];
+        ++idx;
+    }
 }
 
-Point center(const QuadCoef& coef) {
-    const double a = coef[0];
-    const double b = coef[1];
-    const double c = coef[2];
-    const double d = coef[3];
-    const double e = coef[4];
-
-    const double det = a * c - b * b;
-    if (det == 0.0) {
-        raise("Degenerate conic (determinant zero)");
+double quad_eval(const Quadric& coef, const std::vector<double>& point) {
+    if (point.size() != static_cast<std::size_t>(coef.dim)) {
+        raise("Point dimensionality does not match conic coefficients");
     }
-
-    const double x = (b * e - c * d) / det;
-    const double y = (b * d - a * e) / det;
-    return Point{x, y};
+    double result = 0.0;
+    std::size_t idx = 0;
+    for (int i = 0; i < coef.dim; ++i) {
+        const double xi = point[static_cast<std::size_t>(i)];
+        for (int j = i; j < coef.dim; ++j) {
+            const double xj = point[static_cast<std::size_t>(j)];
+            const double value = coef.coef[idx++];
+            if (i == j) {
+                result += value * xi * xj;
+            } else {
+                result += 2.0 * value * xi * xj;
+            }
+        }
+    }
+    for (int i = 0; i < coef.dim; ++i) {
+        const double bi = coef.coef[idx++];
+        result += 2.0 * bi * point[static_cast<std::size_t>(i)];
+    }
+    result += coef.coef[idx];
+    return result;
 }
 
-double target(double mu, const QuadCoef& p, const QuadCoef& q) {
-    QuadCoef coef = pencil(p, q, mu);
-    Point xc = center(coef);
-    return quad_eval(p, xc) - quad_eval(q, xc);
+double target(double mu, const Quadric& p, const Quadric& q) {
+    Quadric coef = pencil(p, q, mu);
+    PencilGeometry geometry = build_geometry(coef);
+    const double value_p = quad_eval(p, geometry.center);
+    const double value_q = quad_eval(q, geometry.center);
+    return value_p - value_q;
 }
 
-double target_prime(double mu, const QuadCoef& p, const QuadCoef& q) {
-    QuadCoef coef = pencil(p, q, mu);
-    const double a = coef[0];
-    const double b = coef[1];
-    const double c = coef[2];
-    const double d = coef[3];
-    const double e = coef[4];
+double target_prime(double mu, const Quadric& p, const Quadric& q) {
+    Quadric coef = pencil(p, q, mu);
+    PencilGeometry geometry = build_geometry(coef);
 
-    QuadCoef diff{};
-    for (std::size_t i = 0; i < diff.size(); ++i) {
-        diff[i] = p[i] - q[i];
+    std::vector<double> diff_matrix;
+    std::vector<double> diff_linear;
+    difference_matrix_linear(p, q, diff_matrix, diff_linear);
+
+    std::vector<double> matvec = matrix_vector_product(diff_matrix, geometry.center, geometry.dim);
+    std::vector<double> residual(static_cast<std::size_t>(geometry.dim));
+    for (int i = 0; i < geometry.dim; ++i) {
+        residual[static_cast<std::size_t>(i)] =
+            -(matvec[static_cast<std::size_t>(i)] + diff_linear[static_cast<std::size_t>(i)]);
     }
 
-    const double det = a * c - b * b;
-    if (det == 0.0) {
-        raise("Degenerate conic (determinant zero)");
-    }
-
-    const double xc0 = (b * e - c * d) / det;
-    const double xc1 = (b * d - a * e) / det;
-
-    const double diff00 = diff[0];
-    const double diff01 = diff[1];
-    const double diff11 = diff[2];
-    const double diff0 = diff[3];
-    const double diff1 = diff[4];
-
-    const double Axprime0 = -(diff00 * xc0 + diff01 * xc1 + diff0);
-    const double Axprime1 = -(diff01 * xc0 + diff11 * xc1 + diff1);
-
-    const double v0 = Axprime0;
-    const double v1 = Axprime1;
-    const double numerator = c * v0 * v0 - 2.0 * b * v0 * v1 + a * v1 * v1;
-    return 2.0 * numerator / det;
+    const double quad = quadratic_form_with_inverse(geometry.chol, residual);
+    return 2.0 * quad;
 }
 
 double bisect(
@@ -264,8 +471,8 @@ double newton(
 }
 
 double solve_mu(
-    const QuadCoef& p,
-    const QuadCoef& q,
+    const Quadric& p,
+    const Quadric& q,
     const std::string& method,
     const std::pair<double, double>& bracket,
     bool has_x0,
@@ -308,14 +515,6 @@ double solve_mu(
     raise("Unknown method");
 }
 
-QuadCoef as_coef(const double* data) {
-    QuadCoef coef{};
-    for (std::size_t i = 0; i < coef.size(); ++i) {
-        coef[i] = data[i];
-    }
-    return coef;
-}
-
 void copy_error(char* buffer, std::size_t size, const std::string& message) {
     if (buffer == nullptr || size == 0) {
         return;
@@ -336,6 +535,7 @@ void copy_error(char* buffer, std::size_t size, const std::string& message) {
 ELLPHI_EXPORT extern "C" int tangency_solve(
     const double* pcoef,
     const double* qcoef,
+    std::size_t coef_length,
     const char* method,
     const double* bracket,
     int has_x0,
@@ -347,17 +547,22 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
     std::size_t err_buffer_len
 ) {
     try {
-        QuadCoef p = as_coef(pcoef);
-        QuadCoef q = as_coef(qcoef);
+        Quadric p = Quadric::from_data(pcoef, coef_length);
+        Quadric q = Quadric::from_data(qcoef, coef_length);
         std::pair<double, double> bracket_pair{bracket[0], bracket[1]};
         double mu = solve_mu(p, q, std::string(method), bracket_pair, has_x0 != 0, x0);
-        QuadCoef coef = pencil(p, q, mu);
-        Point pt = center(coef);
-        double t = std::sqrt(quad_eval(coef, pt));
+        Quadric coef = pencil(p, q, mu);
+        PencilGeometry geometry = build_geometry(coef);
+        double value = quad_eval(coef, geometry.center);
+        if (value < 0.0) {
+            value = 0.0;
+        }
+        double t = std::sqrt(value);
 
         out_t[0] = t;
-        out_point[0] = pt[0];
-        out_point[1] = pt[1];
+        for (int i = 0; i < geometry.dim; ++i) {
+            out_point[static_cast<std::size_t>(i)] = geometry.center[static_cast<std::size_t>(i)];
+        }
         out_mu[0] = mu;
         return 0;
     } catch (const std::exception& ex) {
@@ -372,21 +577,29 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
 ELLPHI_EXPORT extern "C" int pdist_tangency(
     const double* coef,
     std::size_t m,
+    std::size_t coef_length,
     double* out,
     char* err_buffer,
     std::size_t err_buffer_len
 ) {
     try {
+        std::vector<Quadric> conics;
+        conics.reserve(m);
+        for (std::size_t i = 0; i < m; ++i) {
+            conics.emplace_back(Quadric::from_data(coef + i * coef_length, coef_length));
+        }
+
         std::size_t idx = 0;
         for (std::size_t i = 0; i < m; ++i) {
-            QuadCoef p = as_coef(coef + i * 6);
             for (std::size_t j = i + 1; j < m; ++j) {
-                QuadCoef q = as_coef(coef + j * 6);
-                double mu = solve_mu(p, q, "brentq+newton", {0.0, 1.0}, false, 0.0);
-                QuadCoef mix = pencil(p, q, mu);
-                Point pt = center(mix);
-                double t = std::sqrt(quad_eval(mix, pt));
-                out[idx++] = t;
+                double mu = solve_mu(conics[i], conics[j], "brentq+newton", {0.0, 1.0}, false, 0.0);
+                Quadric mix = pencil(conics[i], conics[j], mu);
+                PencilGeometry geometry = build_geometry(mix);
+                double value = quad_eval(mix, geometry.center);
+                if (value < 0.0) {
+                    value = 0.0;
+                }
+                out[idx++] = std::sqrt(value);
             }
         }
         return 0;

@@ -3,7 +3,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from ellphi import coef_from_axes, coef_from_cov, tangency
+from ellphi import coef_from_axes, coef_from_cov, has_cpp_backend, tangency
 from ellphi.geometry import unpack_single_conic
 from ellphi.solver import quad_eval, tangency as solver_tangency
 from tests.factories import random_coef_pair, rotation_matrix
@@ -128,20 +128,25 @@ def test_tangency_three_dimensional_spheres():
     cov = np.eye(3)
     p = coef_from_cov(center_p, cov)
     q = coef_from_cov(center_q, cov)
-    res = tangency(p, q, backend="python")
-    assert res.mu == pytest.approx(0.5)
-    np.testing.assert_allclose(res.point, np.array([1.5, 0.0, 0.0]))
-    assert res.t == pytest.approx(1.5)
-    with pytest.raises(RuntimeError):
-        tangency(p, q, backend="cpp")
+    expected = tangency(p, q, backend="python")
+    assert expected.mu == pytest.approx(0.5)
+    np.testing.assert_allclose(expected.point, np.array([1.5, 0.0, 0.0]))
+    assert expected.t == pytest.approx(1.5)
+    if has_cpp_backend():
+        result_cpp = tangency(p, q, backend="cpp")
+        assert result_cpp.mu == pytest.approx(expected.mu)
+        np.testing.assert_allclose(result_cpp.point, expected.point)
+        assert result_cpp.t == pytest.approx(expected.t)
 
 
 @pytest.mark.parametrize("dim", [3, 4])
-def test_tangency_random_high_dimension(dim: int, rng: np.random.Generator) -> None:
+def test_tangency_random_high_dimension(
+    dim: int, rng: np.random.Generator, solver_backend: str
+) -> None:
     iterations = 5
     for _ in range(iterations):
         pcoef, qcoef = random_coef_pair(rng, dim=dim)
-        result = solver_tangency(pcoef, qcoef, backend="python")
+        result = solver_tangency(pcoef, qcoef, backend=solver_backend)
 
         point = result.point
         assert point.shape == (dim,)
