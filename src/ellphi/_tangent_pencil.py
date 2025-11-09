@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .geometry import unpack_single_conic
+
 
 @dataclass(frozen=True)
 class TangentPencil:
@@ -20,16 +22,17 @@ class TangentPencil:
 
 
 def quad_matrix(coef: np.ndarray) -> np.ndarray:
-    """Return the 2×2 quadratic-form matrix associated with ``coef``."""
+    """Return the quadratic-form matrix associated with ``coef``."""
 
-    a, b, c = coef[:3]
-    return np.array([[a, b], [b, c]], dtype=float)
+    quad, _, _ = unpack_single_conic(coef)
+    return quad
 
 
 def linear_vector(coef: np.ndarray) -> np.ndarray:
     """Return the linear-term vector associated with ``coef``."""
 
-    return np.array(coef[3:5], dtype=float)
+    _, linear, _ = unpack_single_conic(coef)
+    return linear
 
 
 def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPencil:
@@ -38,13 +41,10 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
     coef = (1.0 - mu) * p + mu * q
     quad = quad_matrix(coef)
     linear = linear_vector(coef)
-    det = float(quad[0, 0] * quad[1, 1] - quad[0, 1] ** 2)
-    if det == 0.0:
+    det = float(np.linalg.det(quad))
+    if np.isclose(det, 0.0):
         raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    inv_quad = (1.0 / det) * np.array(
-        [[quad[1, 1], -quad[0, 1]], [-quad[0, 1], quad[0, 0]]],
-        dtype=float,
-    )
+    inv_quad = np.linalg.inv(quad)
     center = -inv_quad @ linear
     return TangentPencil(
         coef=coef, quad=quad, linear=linear, det=det, inv_quad=inv_quad, center=center
@@ -66,23 +66,23 @@ def target_prime_from_pencil(
 def center_jacobian(pencil: TangentPencil) -> np.ndarray:
     """Return ``∂x_c/∂r`` where ``r`` are pencil coefficients."""
 
-    jac = np.zeros((6, 2), dtype=float)
-    basis_matrices = (
-        np.array([[1.0, 0.0], [0.0, 0.0]], dtype=float),
-        np.array([[0.0, 1.0], [1.0, 0.0]], dtype=float),
-        np.array([[0.0, 0.0], [0.0, 1.0]], dtype=float),
-    )
-    basis_vectors = (
-        np.array([1.0, 0.0], dtype=float),
-        np.array([0.0, 1.0], dtype=float),
-    )
+    n_dim = pencil.center.shape[0]
+    tri_i, tri_j = np.triu_indices(n_dim)
+    n_quad = tri_i.size
+    jac = np.zeros(((n_dim + 1) * (n_dim + 2) // 2, n_dim), dtype=float)
 
-    for idx in range(3):
-        d_quad = basis_matrices[idx]
-        rhs = d_quad @ pencil.center
+    for idx, (i, j) in enumerate(zip(tri_i, tri_j)):
+        basis = np.zeros_like(pencil.quad)
+        basis[i, j] = 1.0
+        if i != j:
+            basis[j, i] = 1.0
+        rhs = basis @ pencil.center
         jac[idx] = -(pencil.inv_quad @ rhs)
 
-    jac[3] = -(pencil.inv_quad @ basis_vectors[0])
-    jac[4] = -(pencil.inv_quad @ basis_vectors[1])
-    # The constant term does not influence the center.
+    for axis in range(n_dim):
+        unit = np.zeros(n_dim, dtype=float)
+        unit[axis] = 1.0
+        jac[n_quad + axis] = -(pencil.inv_quad @ unit)
+
+    # The final coefficient corresponds to the constant term and has zero effect.
     return jac

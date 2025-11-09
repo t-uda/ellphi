@@ -36,8 +36,8 @@ def test_numerical_differentiation(rng):
     p, q = random_coef_pair(rng)
 
     d_mu_dp, d_mu_dq = solve_mu_numerical_diff(p, q)
-    assert d_mu_dp.shape == (6,), f"Expected shape (6,), but got {d_mu_dp.shape}"
-    assert d_mu_dq.shape == (6,), f"Expected shape (6,), but got {d_mu_dq.shape}"
+    assert d_mu_dp.shape == p.shape
+    assert d_mu_dq.shape == q.shape
 
     d_mu_dp_forward, d_mu_dq_forward = solve_mu_forward_diff(p, q)
     np.testing.assert_allclose(
@@ -81,3 +81,18 @@ def test_analytic_gradients_match_central_difference(rng):
 
         mu_direct = solve_mu(p, q)
         assert mu == pytest.approx(mu_direct)
+
+
+def test_analytic_gradients_high_dimension(rng):
+    p, q = random_coef_pair(rng, dim=3)
+    mu, d_mu_dp, d_mu_dq = solve_mu_gradients(p, q)
+    d_mu_dp_num, d_mu_dq_num = solve_mu_numerical_diff(p, q)
+
+    assert d_mu_dp.shape == p.shape
+    assert d_mu_dq.shape == q.shape
+
+    np.testing.assert_allclose(d_mu_dp, d_mu_dp_num, rtol=1e-5, atol=1e-7)
+    np.testing.assert_allclose(d_mu_dq, d_mu_dq_num, rtol=1e-5, atol=1e-7)
+
+    mu_direct = solve_mu(p, q)
+    assert mu == pytest.approx(mu_direct)

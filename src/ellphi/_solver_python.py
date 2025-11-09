@@ -12,6 +12,7 @@ from joblib import Parallel, delayed  # type: ignore
 from scipy.optimize import root_scalar
 
 from ._tangent_pencil import build_tangent_pencil, target_prime_from_pencil
+from .geometry import unpack_single_conic
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ellphi.ellcloud import EllipseCloud
@@ -27,13 +28,14 @@ __all__ = [
 ]
 
 
-def quad_eval(coef: numpy.ndarray, center: Tuple[float, float]) -> float:
-    """Evaluate quadratic form *ax² + 2bxy + cy² + 2dx + 2ey + f*."""
+def quad_eval(coef: numpy.ndarray, center: Tuple[float, ...] | numpy.ndarray) -> float:
+    """Evaluate ``xᵀAx + 2bᵀx + c`` for the provided coefficients."""
 
-    assert coef.shape == (6,)
-    a, b, c, d, e, f = coef[:6]
-    x, y = center
-    return a * x**2 + 2 * b * x * y + c * y**2 + 2 * d * x + 2 * e * y + f
+    A, b, c = unpack_single_conic(coef)
+    x = numpy.asarray(center, dtype=float)
+    if x.ndim != 1 or x.shape[0] != b.shape[0]:
+        raise ValueError("Point dimensionality does not match conic coefficients")
+    return float(x @ A @ x + 2.0 * b @ x + c)
 
 
 def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
@@ -45,14 +47,13 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
 TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 
 
-def _center(coef: numpy.ndarray) -> Tuple[float, float]:
-    a, b, c, d, e, _ = coef
-    det = a * c - b**2
-    if det == 0:
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    x = (b * e - c * d) / det
-    y = (b * d - a * e) / det
-    return (x, y)
+def _center(coef: numpy.ndarray) -> numpy.ndarray:
+    A, b, _ = unpack_single_conic(coef)
+    try:
+        center = numpy.linalg.solve(A, -b)
+    except numpy.linalg.LinAlgError as exc:  # pragma: no cover - defensive
+        raise ZeroDivisionError("Degenerate conic (singular quadratic form)") from exc
+    return center
 
 
 def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
@@ -151,7 +152,7 @@ def _pdist_tangency_parallel(
     def get_pair_tangency(i: int, j: int) -> float:
         return tangency(ellcloud[i], ellcloud[j]).t
 
-    results = Parallel(n_jobs=n_jobs)(
+    results = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(get_pair_tangency)(i, j) for _, (i, j) in pairs
     )
     return numpy.asarray(results, dtype=float)

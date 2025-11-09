@@ -1,4 +1,10 @@
-This file provides instructions for AI agents working on this repository.
+This file provides instructions for AI agents working on this repository. Read it fully before starting any task so you understand the required local checks and CI expectations.
+
+## CI Awareness & Required Local Checks
+
+1. **Mirror CI locally.** Review `.github/workflows/python-app.yml` at the beginning of every task so you know exactly which commands CI will run. Your local workflow must include those same commands (and in the same order when relevant).
+2. **Track executed commands.** Keep a short checklist while you work. Before you hand off or open a PR, verify that every command below has been run in the current branch and note any intentional omissions in your PR summary.
+3. **No-skip policy.** Even for small edits, formatting and linting are mandatory. If a command cannot be run (e.g., tooling unavailable), stop and communicate the blocker rather than submitting unverified code.
 
 ## Development Workflow with pre-commit
 
@@ -24,14 +30,30 @@ This ensures that the project's dependencies remain consistent and reproducible.
 
 ### 2. Run Test and Lint
 
-In this repository, all CI tests must pass before PRs are merged. Therefore, before pushing you must have run all relevant tests.
+In this repository, all CI tests must pass before PRs are merged. Therefore, before pushing you must have run all relevant tests. Use the following checklist and do not skip any step:
 
 ```bash
-poetry run pytest
-poetry run flake8
+# Format and verify formatting
 poetry run black src tests
+poetry run black --check src tests
+
+# Lint and static analysis
+poetry run flake8
 poetry run mypy src tests
+
+# Tests
+poetry run pytest
 ```
+
+If CI introduces new tools, immediately add them to this checklist.
+
+### 3. Pre-PR Handoff
+
+Before requesting review or handing work back to the user:
+
+* Confirm the above commands were run successfully in the current branch.
+* Mention the exact commands (and their status) in the PR description or handoff note.
+* If any command was skipped, clearly explain why and what follow-up is required.
 
 ## Language and Style
 

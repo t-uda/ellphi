@@ -13,7 +13,7 @@ from ellphi.solver import (
 
 
 def _sample_coef(center, cov):
-    return coef_from_cov(numpy.asarray(center), numpy.asarray(cov))[0]
+    return coef_from_cov(numpy.asarray(center), numpy.asarray(cov))
 
 
 @pytest.fixture(scope="module")

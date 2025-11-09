@@ -177,7 +177,7 @@ def test_center_jacobian_matches_finite_difference(rng: np.random.Generator):
         pencil = build_tangent_pencil(mu, p, q)
         jac = center_jacobian(pencil)
 
-        for idx in range(6):
+        for idx in range(pencil.coef.size):
             step = 1e-6
             coef_plus = pencil.coef.copy()
             coef_minus = pencil.coef.copy()
@@ -194,6 +194,30 @@ def test_center_jacobian_matches_finite_difference(rng: np.random.Generator):
             finite_diff = (center_plus - center_minus) / (2.0 * step)
 
             np.testing.assert_allclose(finite_diff, jac[idx], rtol=1e-8, atol=1e-8)
+
+
+def test_center_jacobian_high_dimension(rng: np.random.Generator):
+    p, q = random_coef_pair(rng, dim=3)
+    mu = solve_mu(p, q)
+    pencil = build_tangent_pencil(mu, p, q)
+    jac = center_jacobian(pencil)
+    expected_rows = (3 + 1) * (3 + 2) // 2
+    assert jac.shape == (expected_rows, 3)
+
+    for idx in range(jac.shape[0]):
+        step = 1e-6
+        coef_plus = pencil.coef.copy()
+        coef_minus = pencil.coef.copy()
+        coef_plus[idx] += step
+        coef_minus[idx] -= step
+        quad_plus = quad_matrix(coef_plus)
+        quad_minus = quad_matrix(coef_minus)
+        linear_plus = linear_vector(coef_plus)
+        linear_minus = linear_vector(coef_minus)
+        center_plus = -np.linalg.solve(quad_plus, linear_plus)
+        center_minus = -np.linalg.solve(quad_minus, linear_minus)
+        finite_diff = (center_plus - center_minus) / (2.0 * step)
+        np.testing.assert_allclose(finite_diff, jac[idx], rtol=1e-6, atol=1e-6)
 
 
 def _target_value(mu: float, p: np.ndarray, q: np.ndarray) -> float:

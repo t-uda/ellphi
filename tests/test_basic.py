@@ -3,8 +3,9 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from ellphi import coef_from_axes, tangency
-from ellphi.solver import quad_eval
+from ellphi import coef_from_axes, coef_from_cov, tangency
+from ellphi.geometry import unpack_single_conic
+from ellphi.solver import quad_eval, tangency as solver_tangency
 from tests.factories import random_coef_pair, rotation_matrix
 
 
@@ -119,6 +120,50 @@ def test_tangent_unit_circles(solver_backend):
     assert res.mu == pytest.approx(0.5)
     assert res.point.tolist() == pytest.approx([1.0, 0.0])
     assert res.t == pytest.approx(1.0)
+
+
+def test_tangency_three_dimensional_spheres(solver_backend):
+    center_p = np.array([0.0, 0.0, 0.0], dtype=float)
+    center_q = np.array([3.0, 0.0, 0.0], dtype=float)
+    cov = np.eye(3)
+    p = coef_from_cov(center_p, cov)
+    q = coef_from_cov(center_q, cov)
+    res = tangency(p, q, backend=solver_backend)
+    assert res.mu == pytest.approx(0.5)
+    np.testing.assert_allclose(res.point, np.array([1.5, 0.0, 0.0]))
+    assert res.t == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("dim", [3, 4])
+def test_tangency_random_high_dimension(
+    dim: int, rng: np.random.Generator, solver_backend: str
+) -> None:
+    iterations = 5
+    for _ in range(iterations):
+        pcoef, qcoef = random_coef_pair(rng, dim=dim)
+        result = solver_tangency(pcoef, qcoef, backend=solver_backend)
+
+        point = result.point
+        assert point.shape == (dim,)
+
+        p_value = quad_eval(pcoef, point)
+        q_value = quad_eval(qcoef, point)
+        expected = result.t**2
+        assert p_value == pytest.approx(expected, rel=1e-7, abs=1e-10)
+        assert q_value == pytest.approx(expected, rel=1e-7, abs=1e-10)
+
+        Ap, bp, _ = unpack_single_conic(pcoef)
+        Aq, bq, _ = unpack_single_conic(qcoef)
+        grad_p = 2.0 * (Ap @ point) + 2.0 * bp
+        grad_q = 2.0 * (Aq @ point) + 2.0 * bq
+
+        combination = (1.0 - result.mu) * grad_p + result.mu * grad_q
+        np.testing.assert_allclose(
+            combination,
+            np.zeros_like(point),
+            rtol=1e-6,
+            atol=1e-6,
+        )
 
 
 # -----------------------------------------------------------------------------
