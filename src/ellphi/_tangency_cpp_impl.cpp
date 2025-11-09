@@ -519,7 +519,11 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
         double mu = solve_mu(p, q, std::string(method), bracket_pair, has_x0 != 0, x0);
         SolverContext ctx = build_solver_context(p, q);
         PencilGeometry geom = build_pencil_geometry(mu, ctx);
-        double t = std::sqrt(quad_eval(geom.conic, geom.center));
+        double value = quad_eval(geom.conic, geom.center);
+        if (value < 0.0) {
+            value = 0.0;
+        }
+        double t = std::sqrt(value);
 
         out_t[0] = t;
         std::copy(geom.center.begin(), geom.center.end(), out_point);
@@ -562,8 +566,11 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
                 double mu = solve_mu(p, q, "brentq+newton", {0.0, 1.0}, false, 0.0);
                 SolverContext ctx = build_solver_context(p, q);
                 PencilGeometry geom = build_pencil_geometry(mu, ctx);
-                double t = std::sqrt(quad_eval(geom.conic, geom.center));
-                out[idx++] = t;
+                double value = quad_eval(geom.conic, geom.center);
+                if (value < 0.0) {
+                    value = 0.0;
+                }
+                out[idx++] = std::sqrt(value);
             }
         }
         return 0;
