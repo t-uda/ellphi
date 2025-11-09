@@ -19,6 +19,7 @@ pip install ellphi
 * [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour  
 * [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline  
 * [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
+* [`ndim-demo-3d.ipynb`](https://github.com/t-uda/ellphi/notebooks/ndim-demo-3d.ipynb) – 3-D ellipsoid cloud + tangency distance walkthrough
 
 > **For ATMCS 2025 attendees**  
 > See **[`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb)**  
