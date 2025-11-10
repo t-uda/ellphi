@@ -10,7 +10,7 @@ ellphi.ellcloud  –  ellipse cloud interfaces
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Sequence, Iterator, Optional
+from typing import Sequence, Iterator
 
 import numpy
 import matplotlib.pyplot as plt
@@ -82,8 +82,8 @@ class EllipseCloud:
     # ---- visualisation ---------------------------------------------------
     def plot(
         self,
-        ids: Optional[Sequence[int]] = None,
-        ax: Optional[plt.Axes] = None,
+        ids: Sequence[int] | None = None,
+        ax: plt.Axes | None = None,
         scale: float = 1.0,
         # facecolor: str = "none",
         # edgecolor: str = "C0",

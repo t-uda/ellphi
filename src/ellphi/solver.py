@@ -20,6 +20,7 @@ __all__ = [
     "tangency_python",
     "pdist_tangency_python",
     "has_cpp_backend",
+    "MethodName",
 ]
 
 

@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections import namedtuple
 from functools import partial
 from itertools import combinations
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Tuple, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    Tuple,
+    cast,
+)
 
 import numpy
 from joblib import Parallel, delayed  # type: ignore
