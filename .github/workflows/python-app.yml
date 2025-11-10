@@ -36,7 +36,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
       run: poetry install --with dev
@@ -71,7 +71,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
       run: poetry install --with dev      # stub も OK
