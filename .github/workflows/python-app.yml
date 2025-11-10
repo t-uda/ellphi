@@ -78,3 +78,6 @@ jobs:
 
     - name: mypy
       run: poetry run mypy src
+
+    - name: stubtest
+      run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
