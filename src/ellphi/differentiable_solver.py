@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -61,10 +61,10 @@ def solve_mu_gradients(
     p: np.ndarray,
     q: np.ndarray,
     *,
-    mu: float | None = None,
+    mu: Optional[float] = None,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: float | None = None,
+    x0: Optional[float] = None,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
     """Return ``μ`` and its partial derivatives with respect to ``p`` and ``q``.
 

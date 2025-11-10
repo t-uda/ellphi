@@ -121,7 +121,7 @@ class EllipseCloud:
         self,
         *,
         parallel: bool = True,
-        n_jobs: int | None = -1,
+        n_jobs: Optional[int] = -1,
         backend: str = "auto",
     ):
         """

@@ -1,5 +1,3 @@
-ellphi._solver_python.MethodName
-ellphi.solver.MethodName
 ellphi.EllipseCloud.__init__
 ellphi.EllipseCloud.__match_args__
 ellphi.EllipseCloud.__post_init__
@@ -14,8 +12,6 @@ ellphi.EllipseCloud.write_coef
 ellphi.LocalCov
 ellphi.__all__
 ellphi._solver_python.MethodName
-ellphi.differentiable_solver.__all__
-ellphi.differentiable_solver.solve_mu_numerical_diff
 ellphi.ellcloud.EllipseCloud.__init__
 ellphi.ellcloud.EllipseCloud.__match_args__
 ellphi.ellcloud.EllipseCloud.__post_init__
