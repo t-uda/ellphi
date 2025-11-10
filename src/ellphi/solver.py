@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tangency solver dispatching between Python and C++ backends."""
 
-from typing import Iterable, Optional, Tuple, Union, cast, get_args
+from typing import Iterable, Tuple, cast, get_args
 
 import numpy
 
@@ -74,7 +74,7 @@ def _should_use_cpp(backend: str) -> bool:
     return False
 
 
-def _normalize_method(method: Union[MethodName, str]) -> MethodName:
+def _normalize_method(method: MethodName | str) -> MethodName:
     if method not in _METHOD_NAMES:
         raise ValueError(f"Unknown method: {method}")
     return cast(MethodName, method)
@@ -84,9 +84,9 @@ def tangency(
     pcoef: numpy.ndarray,
     qcoef: numpy.ndarray,
     *,
-    method: Union[MethodName, str] = "brentq+newton",
+    method: MethodName | str = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: Optional[float] = None,
+    x0: float | None = None,
     backend: str = "auto",
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
@@ -126,7 +126,7 @@ def pdist_tangency(
     ellcloud,
     *,
     parallel: bool = True,
-    n_jobs: Optional[int] = -1,
+    n_jobs: int | None = -1,
     backend: str = "auto",
 ) -> numpy.ndarray:
     """Compute pairwise tangency distances for a cloud of ellipses.

@@ -11,9 +11,7 @@ from typing import (
     Callable,
     Iterator,
     Literal,
-    Optional,
     Tuple,
-    Union,
     cast,
 )
 
@@ -38,9 +36,7 @@ __all__ = [
 ]
 
 
-def quad_eval(
-    coef: numpy.ndarray, center: Union[Tuple[float, ...], numpy.ndarray]
-) -> float:
+def quad_eval(coef: numpy.ndarray, center: Tuple[float, ...] | numpy.ndarray) -> float:
     """Evaluate ``xᵀAx + 2bᵀx + c`` for the provided coefficients."""
 
     A, b, c = unpack_single_conic(coef)
@@ -92,7 +88,7 @@ def solve_mu(
     *,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: Optional[float] = None,
+    x0: float | None = None,
 ) -> float:
     curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
     curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
@@ -121,7 +117,7 @@ def tangency(
     *,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: Optional[float] = None,
+    x0: float | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
 
@@ -150,7 +146,7 @@ def _pdist_tangency_serial(ellcloud: EllipseCloud) -> numpy.ndarray:
 
 
 def _pdist_tangency_parallel(
-    ellcloud: EllipseCloud, n_jobs: Optional[int] = -1
+    ellcloud: EllipseCloud, n_jobs: int | None = -1
 ) -> numpy.ndarray:
     """Parallel implementation of pdist_tangency."""
 
@@ -171,7 +167,7 @@ def _pdist_tangency_parallel(
 
 
 def pdist_tangency(
-    ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: Optional[int] = -1
+    ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: int | None = -1
 ) -> numpy.ndarray:
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)

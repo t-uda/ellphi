@@ -6,7 +6,7 @@ import ctypes
 import sys
 import sysconfig
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy
 
@@ -39,7 +39,7 @@ def _load_library() -> ctypes.CDLL:
     return ctypes.CDLL(str(lib_path))
 
 
-_LIB: Optional[ctypes.CDLL]
+_LIB: ctypes.CDLL | None
 try:  # pragma: no cover - build process is environment dependent
     _LIB = _load_library()
 except (OSError, FileNotFoundError):  # pragma: no cover
@@ -72,7 +72,7 @@ def tangency(
     *,
     method: str,
     bracket: Tuple[float, float],
-    x0: Optional[float],
+    x0: float | None,
 ) -> TangencyResult:
     lib = _ensure_available()
 

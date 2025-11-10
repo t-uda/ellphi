@@ -1,15 +1,5 @@
 from __future__ import annotations
-from typing import (
-    IO,
-    Any,
-    Iterable,
-    Iterator,
-    Optional,
-    Sequence,
-    Tuple,
-    overload,
-    Union,
-)
+from typing import IO, Any, Iterable, Iterator, Sequence, Tuple, overload
 import numpy as np
 import numpy.typing as npt
 from matplotlib import pyplot as plt
@@ -31,21 +21,17 @@ class EllipseCloud:
     @overload
     def __getitem__(self, key: int) -> np.ndarray: ...
     @overload
-    def __getitem__(self, key: Union[slice, Sequence[int]]) -> EllipseCloud: ...
+    def __getitem__(self, key: slice | Sequence[int]) -> EllipseCloud: ...
     def __iter__(self) -> Iterator[np.ndarray]: ...
     def plot(
         self,
-        ids: Optional[Sequence[int]] = None,
-        ax: Optional[plt.Axes] = None,
+        ids: Sequence[int] | None = None,
+        ax: plt.Axes | None = None,
         scale: float = 1.0,
         **kwgs,
     ) -> plt.Axes: ...
     def pdist_tangency(
-        self,
-        *,
-        parallel: bool = True,
-        n_jobs: Optional[int] = -1,
-        backend: str = "auto",
+        self, *, parallel: bool = True, n_jobs: int | None = -1, backend: str = "auto"
     ): ...
     def write_coef(self, f: IO[str]) -> None: ...
     def as_ellcat(self) -> Any: ...

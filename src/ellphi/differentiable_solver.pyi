@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Tuple
 import numpy as np
 from ellphi.solver import MethodName
 
@@ -8,10 +8,10 @@ def solve_mu_gradients(
     p: np.ndarray,
     q: np.ndarray,
     *,
-    mu: Optional[float] = None,
+    mu: float | None = None,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: Optional[float] = None,
+    x0: float | None = None,
 ) -> Tuple[float, np.ndarray, np.ndarray]: ...
 def solve_mu_numerical_diff(
     p: np.ndarray, q: np.ndarray, h: float = 1e-6
