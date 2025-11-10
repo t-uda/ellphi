@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 import numpy
 from numpy.typing import NDArray
 from ._solver_python import TangencyResult
@@ -10,6 +10,6 @@ def tangency(
     *,
     method: str,
     bracket: Tuple[float, float],
-    x0: float | None
+    x0: Optional[float],
 ) -> TangencyResult: ...
 def pdist_tangency(coef: NDArray[numpy.floating]) -> NDArray[numpy.floating]: ...

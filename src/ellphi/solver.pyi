@@ -1,4 +1,4 @@
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Optional, Union
 import numpy
 from numpy.typing import NDArray
 from ._solver_python import TangencyResult, MethodName
@@ -28,27 +28,25 @@ def pdist_tangency_python(
     ellcloud: Iterable[NDArray[numpy.floating]],
     *,
     parallel: bool = True,
-    n_jobs: int | None = -1,
+    n_jobs: Optional[int] = -1,
 ) -> NDArray[numpy.floating]: ...
 
 BackendLiteral = Tuple[str, ...]
 
 def has_cpp_backend() -> bool: ...
-
 def tangency(
     pcoef: NDArray[numpy.floating],
     qcoef: NDArray[numpy.floating],
     *,
-    method: MethodName | str = "brentq+newton",
+    method: Union[MethodName, str] = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
-    x0: float | None = None,
+    x0: Optional[float] = None,
     backend: str = "auto",
 ) -> TangencyResult: ...
-
 def pdist_tangency(
     ellcloud: Iterable[NDArray[numpy.floating]],
     *,
     parallel: bool = True,
-    n_jobs: int | None = -1,
+    n_jobs: Optional[int] = -1,
     backend: str = "auto",
 ) -> NDArray[numpy.floating]: ...
