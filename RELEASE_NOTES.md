@@ -13,6 +13,10 @@ high-dimensional regression tests.
 evaluations before taking square roots, while the Python wrapper rejects malformed coefficient arrays
 early.
 
+### Changed
+
+- Dropped support for Python 3.9. Python 3.10 or newer is now required.
+
 ### Tooling
 
 - AGENTS.md documents the exact CI command checklist and black[jupyter] is added so notebooks are
