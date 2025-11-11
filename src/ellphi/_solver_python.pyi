@@ -1,6 +1,5 @@
 from typing import NamedTuple, Tuple
-import numpy
-from numpy.typing import NDArray
+from ellphi import FloatArray
 from ellphi.ellcloud import EllipseCloud
 
 __all__ = [
@@ -15,35 +14,31 @@ __all__ = [
 
 MethodName = str  # Simplified for stub
 
-def quad_eval(
-    coef: NDArray[numpy.floating], center: Tuple[float, ...] | NDArray[numpy.floating]
-) -> float: ...
-def pencil(
-    p: NDArray[numpy.floating], q: NDArray[numpy.floating], mu: float
-) -> NDArray[numpy.floating]: ...
+def quad_eval(coef: FloatArray, center: Tuple[float, ...] | FloatArray) -> float: ...
+def pencil(p: FloatArray, q: FloatArray, mu: float) -> FloatArray: ...
 
 class TangencyResult(NamedTuple):
     t: float
-    point: NDArray[numpy.floating]
+    point: FloatArray
     mu: float
 
 def solve_mu(
-    p: NDArray[numpy.floating],
-    q: NDArray[numpy.floating],
+    p: FloatArray,
+    q: FloatArray,
     *,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> float: ...
 def tangency(
-    pcoef: NDArray[numpy.floating],
-    qcoef: NDArray[numpy.floating],
+    pcoef: FloatArray,
+    qcoef: FloatArray,
     *,
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
 ) -> TangencyResult: ...
-def _pdist_tangency_serial(ellcloud: EllipseCloud) -> NDArray[numpy.floating]: ...
+def _pdist_tangency_serial(ellcloud: EllipseCloud) -> FloatArray: ...
 def _pdist_tangency_parallel(
     ellcloud: EllipseCloud, n_jobs: int | None = -1
-) -> NDArray[numpy.floating]: ...
+) -> FloatArray: ...

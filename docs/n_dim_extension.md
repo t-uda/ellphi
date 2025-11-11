@@ -137,7 +137,7 @@ t = \sqrt{F_p(x_t)} = \sqrt{(x_t - x_{0,p})^\top Σ_p^{-1} (x_t - x_{0,p})}
 | `solver` (`_solver_python.py`, `_tangent_pencil.py`) | 行列表現の一般化 | `quad_eval`, `_center`, `build_tangent_pencil`, `target_prime_from_pencil`, `center_jacobian` を `(A, b, c)` ベースに書き換える。2D 互換のため、内部で「6 要素 → (A, b, c)」のアンパックユーティリティを導入する。 |
 | `differentiable_solver.py` | `center_jacobian` の利用 | `center_jacobian` を nD 対応へ拡張後、`solve_mu_gradients` は同じ数式で動作。Jacobian の shape は `(m, n)` に変わる点をテストで担保する。 |
 | `pdist_tangency` | `coef.shape[1]` 依存 | 係数長 `m` から `n` を解く helper `infer_dim_from_coef_length(m)` を追加し、並列実装には既存ロジックを流用。 |
-| C++ バックエンド (`_tangency_cpp_impl.cpp`) | ハードコードされた 2×2 行列 | 行列サイズをテンプレート化する必要がある。段階的には Python 実装を nD 対応 → C++ は 2D fallback とし、nD サポートは将来対応に分離してもよい。 |
+| C++ バックエンド (`_tangency_cpp_impl.cpp`) | n 次元への一般化 | C++ 実装は、係数ベクトルの長さから次元 `n` を動的に推定し、n x n 行列演算（コレスキー分解など）をサポートするよう一般化済み。 |
 | テスト (`tests/`) | 期待値の更新 | 既存 2D テストはそのまま維持し、新たに nD（例: 3D 球体）の解析解ケースを追加。`factories.py` に任意次元楕円体ジェネレータを導入。 |
 | ドキュメント／ノートブック | API 説明 | `README` や notebooks で「nD 対応」の前提と、2D でのみ可視化できる点を説明する。 |
 
@@ -184,10 +184,9 @@ t = \sqrt{F_p(x_t)} = \sqrt{(x_t - x_{0,p})^\top Σ_p^{-1} (x_t - x_{0,p})}
 6. **`pdist_tangency` / `EllipseCloud.pdist_tangency` の仕上げ**
    - 係数長から自動的に次元を判定する helper を導入し、Python 実装を nD 対応にする。
    - `tests/test_solver.py` に 3D 用のランダムクラウドテストを追加するが、必要に応じて `pytest.importorskip("scipy")` などで負荷を抑える。
-   - まだ C++ バックエンドは 2D のままなので、`backend="python"` を強制するフラグをテストで設定しておくと CI が安定。
 
-7. **C++ バックエンドを最後に拡張 or ガード**
-   - Python 実装が安定し、nD の検証テストが十分緑になった段階で着手。
-   - バックエンドが未対応の間は `has_cpp_backend` に「n>2 の場合は False を返す」ガードを入れておけばテストの実行可否が明確になる。
+7. **C++ バックエンドの nD 対応検証**
+   - C++ バックエンドはすでに n 次元に対応済みであるため、Python 実装と並行して nD 検証テストを追加する。
+   - `tests/test_cpp_backend.py` にて、nD 入力に対する C++ の計算結果が Python の結果と一致することを確認する。
 
 この順序だと、常に「狭い領域のリファクタ → その場でテスト追加 → 既存テストも緑」というサイクルを保てるため、AGENT が docs を参照しながらでも滑らかにテストドリブン開発を進められる。

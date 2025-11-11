@@ -1,6 +1,5 @@
 from typing import Iterable, Tuple
-import numpy
-from numpy.typing import NDArray
+from ellphi import FloatArray
 from ._solver_python import TangencyResult, MethodName
 
 __all__ = [
@@ -25,18 +24,18 @@ from ._solver_python import (
 )
 
 def pdist_tangency_python(
-    ellcloud: Iterable[NDArray[numpy.floating]],
+    ellcloud: Iterable[FloatArray],
     *,
     parallel: bool = True,
     n_jobs: int | None = -1,
-) -> NDArray[numpy.floating]: ...
+) -> FloatArray: ...
 
 BackendLiteral = Tuple[str, ...]
 
 def has_cpp_backend() -> bool: ...
 def tangency(
-    pcoef: NDArray[numpy.floating],
-    qcoef: NDArray[numpy.floating],
+    pcoef: FloatArray,
+    qcoef: FloatArray,
     *,
     method: MethodName | str = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
@@ -44,9 +43,9 @@ def tangency(
     backend: str = "auto",
 ) -> TangencyResult: ...
 def pdist_tangency(
-    ellcloud: Iterable[NDArray[numpy.floating]],
+    ellcloud: Iterable[FloatArray],
     *,
     parallel: bool = True,
     n_jobs: int | None = -1,
     backend: str = "auto",
-) -> NDArray[numpy.floating]: ...
+) -> FloatArray: ...

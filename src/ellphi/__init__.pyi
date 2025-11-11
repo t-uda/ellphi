@@ -1,3 +1,8 @@
+from numpy.typing import NDArray
+import numpy as np
+
+FloatArray = NDArray[np.float64]
+
 from .ellcloud import (
     EllipseCloud as EllipseCloud,
     LocalCov as LocalCov,
@@ -32,4 +37,5 @@ __all__ = [
     "pdist_tangency",
     "TangencyResult",
     "has_cpp_backend",
+    "FloatArray",
 ]
