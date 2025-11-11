@@ -71,6 +71,12 @@ mypy = "^1.8"
 scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 pytest = "^8.4.1"
 
+[tool.mypy]
+mypy_path = "src"
+
+[tool.stubtest]
+allowlist = "stubtest-allowlist.txt"
+
 [build-system]
 requires = ["poetry-core>=1.9.0", "setuptools>=65"]
 build-backend = "poetry.core.masonry.api"

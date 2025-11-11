@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11"]
 
     steps:
     - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
       run: poetry install --with dev
@@ -71,10 +71,13 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
       run: poetry install --with dev      # stub も OK
 
     - name: mypy
       run: poetry run mypy src
+
+    - name: stubtest
+      run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
