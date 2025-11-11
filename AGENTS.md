@@ -41,11 +41,36 @@ poetry run black --check src tests
 poetry run flake8
 poetry run mypy src tests
 
+# Type Stub Validation
+MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+
 # Tests
 poetry run pytest
 ```
 
 If CI introduces new tools, immediately add them to this checklist.
+
+#### A Note on `stubtest`
+
+`stubtest` is a tool that verifies the consistency between your Python type stubs (`.pyi` files) and the actual runtime implementation. It helps catch discrepancies like missing or mismatched function signatures, ensuring that your type hints are accurate.
+
+**Command:**
+
+```bash
+MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+```
+
+**Purpose:**
+
+*   To validate that the type stubs accurately reflect the runtime code.
+*   To prevent type-related errors in projects that consume this library.
+
+**Handling Failures:**
+
+When `stubtest` reports a failure, it means there is a mismatch between the implementation and the type stub. You have two options:
+
+1.  **Fix the Type Stub:** If the `.pyi` file is incorrect or outdated, update it to match the runtime implementation. This is the preferred solution in most cases.
+2.  **Update the Allowlist:** If the reported mismatch is intentional or cannot be resolved (e.g., due to dynamic attributes or limitations in the type system), you can add the specific symbol to the `stubtest-allowlist.txt` file. Always include a comment in the allowlist explaining why the entry is necessary.
 
 ### 3. Pre-PR Handoff
 
