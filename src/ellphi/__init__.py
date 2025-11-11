@@ -11,6 +11,7 @@ Re-exports the most frequently used symbols so users can::
 from importlib.metadata import PackageNotFoundError, version as _version
 import numpy as np
 from numpy.typing import NDArray
+
 # geometry
 from .geometry import (
     unit_vector,
@@ -19,6 +20,7 @@ from .geometry import (
     coef_from_cov,
 )
 from .ellcloud import ellipse_cloud, EllipseCloud, LocalCov
+
 # solver
 from .solver import (
     quad_eval,
