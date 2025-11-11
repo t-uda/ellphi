@@ -56,6 +56,8 @@ packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
 include = [
   { path = "src/ellphi/_tangency_cpp_impl.*", format = ["sdist", "wheel"] },
+  { path = "src/ellphi/*.pyi", format = ["sdist", "wheel"] },
+  { path = "src/ellphi/py.typed", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.build]
