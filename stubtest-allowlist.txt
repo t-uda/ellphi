@@ -1,5 +1,2 @@
-ellphi.LocalCov
-ellphi.__all__
 ellphi._solver_python.MethodName
-ellphi.ellipse_cloud
 ellphi.solver.MethodName

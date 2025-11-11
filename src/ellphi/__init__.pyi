@@ -1,5 +1,7 @@
 from .ellcloud import (
     EllipseCloud as EllipseCloud,
+    LocalCov as LocalCov,
+    ellipse_cloud as ellipse_cloud,
 )
 from .geometry import (
     axes_from_cov as axes_from_cov,
@@ -21,7 +23,9 @@ __all__ = [
     "axes_from_cov",
     "coef_from_axes",
     "coef_from_cov",
+    "ellipse_cloud",
     "EllipseCloud",
+    "LocalCov",
     "quad_eval",
     "pencil",
     "tangency",
