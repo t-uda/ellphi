@@ -70,7 +70,20 @@ MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
 When `stubtest` reports a failure, it means there is a mismatch between the implementation and the type stub. You have two options:
 
 1.  **Fix the Type Stub:** If the `.pyi` file is incorrect or outdated, update it to match the runtime implementation. This is the preferred solution in most cases.
-2.  **Update the Allowlist:** If the reported mismatch is intentional or cannot be resolved (e.g., due to dynamic attributes or limitations in the type system), you can add the specific symbol to the `stubtest-allowlist.txt` file. Always include a comment in the allowlist explaining why the entry is necessary.
+2.  **Update the Allowlist:** If the reported mismatch is intentional or cannot be resolved (e.g., due to dynamic attributes or limitations in the type system), you can add the specific symbol to the `stubtest-allowlist.txt` file. When doing so, you must document the reason in the "Allowlist Justification" section below.
+
+#### Allowlist Justification
+
+This section documents the reasons for each entry in the `stubtest-allowlist.txt` file.
+
+*   `ellphi._solver_python.MethodName`
+*   `ellphi.solver.MethodName`
+
+**Reason:** These entries are necessary because the `MethodName` type alias is defined as a `typing.Literal` in the implementation, but it is simplified to `str` in the corresponding stub files (`.pyi`). This simplification is intentional to avoid duplicating the literal values in the stub, which would make it harder to maintain.
+
+#### Managing the Allowlist
+
+When adding a new entry to the `stubtest-allowlist.txt` file, you must also update the "Allowlist Justification" section in this document to include a clear and concise explanation for why the entry is needed. This ensures that the allowlist remains transparent and easy to manage.
 
 ### 3. Pre-PR Handoff
 
