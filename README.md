@@ -14,6 +14,10 @@ Install from PyPI:
 pip install ellphi
 ```
 
+## Supported Python Versions
+
+Python 3.10 or later.
+
 ## Quick start (under construction)
 
 * [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour  
