@@ -29,6 +29,8 @@ def solve_mu(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = ...,
+    hybrid_newton_maxiter: int | None = ...,
 ) -> float: ...
 def tangency(
     pcoef: FloatArray,
@@ -37,6 +39,8 @@ def tangency(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = ...,
+    hybrid_newton_maxiter: int | None = ...,
 ) -> TangencyResult: ...
 def _pdist_tangency_serial(ellcloud: EllipseCloud) -> FloatArray: ...
 def _pdist_tangency_parallel(

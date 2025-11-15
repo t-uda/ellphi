@@ -20,7 +20,7 @@ from joblib import Parallel, delayed  # type: ignore
 from scipy.optimize import root_scalar
 
 from ._tangent_pencil import build_tangent_pencil, target_prime_from_pencil
-from .geometry import unpack_single_conic
+from .geometry import infer_dim_from_coef_length, unpack_single_conic
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     from ellphi.ellcloud import EllipseCloud
@@ -80,6 +80,36 @@ def _target_prime(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
 SingleStageMethodName = Literal["bisect", "brentq", "brenth", "newton"]
 MethodName = Literal["brentq+newton", "bisect", "brentq", "brenth", "newton"]
 _BRACKET_METHODS: tuple[SingleStageMethodName, ...] = ("bisect", "brentq", "brenth")
+_DEFAULT_HYBRID_BRACKET_MAXITER_2D = 8
+_DEFAULT_HYBRID_NEWTON_MAXITER_2D = 3
+_DEFAULT_HYBRID_BRACKET_MAXITER_ND = 28
+_DEFAULT_HYBRID_NEWTON_MAXITER_ND = 6
+
+
+def _hybrid_iteration_defaults(dim: int) -> tuple[int, int]:
+    if dim == 2:
+        return (_DEFAULT_HYBRID_BRACKET_MAXITER_2D, _DEFAULT_HYBRID_NEWTON_MAXITER_2D)
+    return (_DEFAULT_HYBRID_BRACKET_MAXITER_ND, _DEFAULT_HYBRID_NEWTON_MAXITER_ND)
+
+
+def _resolve_hybrid_iterations(
+    dim: int,
+    hybrid_bracket_maxiter: int | None,
+    hybrid_newton_maxiter: int | None,
+) -> tuple[int, int]:
+    default_bracket, default_newton = _hybrid_iteration_defaults(dim)
+    bracket_iter = (
+        default_bracket if hybrid_bracket_maxiter is None else hybrid_bracket_maxiter
+    )
+    newton_iter = (
+        default_newton if hybrid_newton_maxiter is None else hybrid_newton_maxiter
+    )
+    return bracket_iter, newton_iter
+
+
+def _infer_dim_from_coef(p: numpy.ndarray) -> int:
+    coef = numpy.asarray(p, dtype=float).reshape(-1)
+    return infer_dim_from_coef_length(coef.size)
 
 
 def solve_mu(
@@ -89,6 +119,8 @@ def solve_mu(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = None,
+    hybrid_newton_maxiter: int | None = None,
 ) -> float:
     curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
     curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
@@ -100,8 +132,16 @@ def solve_mu(
         return float(result.root)
 
     if method == "brentq+newton":
-        mu0 = solve_single_stage("brentq", bracket=bracket, maxiter=8)
-        return solve_single_stage("newton", x0=mu0, maxiter=3)
+        dim = _infer_dim_from_coef(p)
+        bracket_iter, newton_iter = _resolve_hybrid_iterations(
+            dim, hybrid_bracket_maxiter, hybrid_newton_maxiter
+        )
+        if bracket_iter <= 0:
+            raise ValueError("hybrid_bracket_maxiter must be positive")
+        if newton_iter <= 0:
+            raise ValueError("hybrid_newton_maxiter must be positive")
+        mu0 = solve_single_stage("brentq", bracket=bracket, maxiter=bracket_iter)
+        return solve_single_stage("newton", x0=mu0, maxiter=newton_iter)
     if method in _BRACKET_METHODS:
         return solve_single_stage(cast(SingleStageMethodName, method), bracket=bracket)
     if method == "newton":
@@ -118,10 +158,20 @@ def tangency(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = None,
+    hybrid_newton_maxiter: int | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
 
-    mu = solve_mu(pcoef, qcoef, method=method, bracket=bracket, x0=x0)
+    mu = solve_mu(
+        pcoef,
+        qcoef,
+        method=method,
+        bracket=bracket,
+        x0=x0,
+        hybrid_bracket_maxiter=hybrid_bracket_maxiter,
+        hybrid_newton_maxiter=hybrid_newton_maxiter,
+    )
     coef = pencil(pcoef, qcoef, mu)
     point = _center(coef)
     t = float(numpy.sqrt(quad_eval(coef, point)))

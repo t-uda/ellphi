@@ -41,6 +41,8 @@ def tangency(
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
     backend: str = "auto",
+    hybrid_bracket_maxiter: int | None = ...,
+    hybrid_newton_maxiter: int | None = ...,
 ) -> TangencyResult: ...
 def pdist_tangency(
     ellcloud: Iterable[FloatArray],

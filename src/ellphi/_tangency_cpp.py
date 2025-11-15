@@ -73,6 +73,8 @@ def tangency(
     method: str,
     bracket: Tuple[float, float],
     x0: float | None,
+    hybrid_bracket_maxiter: int,
+    hybrid_newton_maxiter: int,
 ) -> TangencyResult:
     lib = _ensure_available()
 
@@ -86,6 +88,8 @@ def tangency(
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_int,
         ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_size_t,
@@ -120,6 +124,8 @@ def tangency(
         bracket_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         ctypes.c_int(has_x0),
         ctypes.c_double(x0_val),
+        ctypes.c_int(int(hybrid_bracket_maxiter)),
+        ctypes.c_int(int(hybrid_newton_maxiter)),
         ctypes.byref(t_out),
         point_out,
         ctypes.c_size_t(dim),

@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-
 from ._tangent_pencil import (
     TangentPencil,
     build_tangent_pencil,
@@ -65,6 +64,8 @@ def solve_mu_gradients(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = None,
+    hybrid_newton_maxiter: int | None = None,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
     """Return ``μ`` and its partial derivatives with respect to ``p`` and ``q``.
 
@@ -79,6 +80,10 @@ def solve_mu_gradients(
     method, bracket, x0:
         Parameters forwarded to :func:`ellphi.solver.solve_mu` when ``mu``
         is not given.
+    hybrid_bracket_maxiter, hybrid_newton_maxiter:
+        Number of iterations used by the hybrid ``brentq`` + ``newton`` solver.
+        When omitted, the defaults depend on the ambient dimension (8/3 in 2D,
+        28/6 otherwise).
 
     Returns
     -------
@@ -87,7 +92,15 @@ def solve_mu_gradients(
     """
 
     if mu is None:
-        mu = solve_mu(p, q, method=method, bracket=bracket, x0=x0)
+        mu = solve_mu(
+            p,
+            q,
+            method=method,
+            bracket=bracket,
+            x0=x0,
+            hybrid_bracket_maxiter=hybrid_bracket_maxiter,
+            hybrid_newton_maxiter=hybrid_newton_maxiter,
+        )
 
     pencil: TangentPencil = build_tangent_pencil(mu, p, q)
     diff = p - q
