@@ -109,8 +109,7 @@ def _build_cases(
 
 def _save_cases(cases: Sequence[Case], path: Path) -> None:
     payload = [
-        {"dim": case.dim, "p": case.p.tolist(), "q": case.q.tolist()}
-        for case in cases
+        {"dim": case.dim, "p": case.p.tolist(), "q": case.q.tolist()} for case in cases
     ]
     path.write_text(json.dumps(payload, indent=2))
 
@@ -130,10 +129,9 @@ def _relative_tangency_residual(p: np.ndarray, q: np.ndarray, result) -> float:
     value_p = quad_eval(p, result.point)
     value_q = quad_eval(q, result.point)
     t_sq = float(result.t) ** 2
-    target_residual = abs(value_p - value_q)
-    scale_residual = max(abs(value_p - t_sq), abs(value_q - t_sq))
-    denom = max(abs(t_sq), 1.0)
-    return max(target_residual, scale_residual) / denom
+    numer = abs(value_p - value_q) + abs(value_p - t_sq) + abs(value_q - t_sq)
+    denom = abs(t_sq)
+    return numer / denom if denom != 0.0 else numer
 
 
 def _stats(values: Sequence[float]) -> dict[str, float]:
@@ -480,6 +478,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=str,
         help="Comma-separated list of hybrid iteration pairs, e.g. '8x3,16x5'",
     )
+    parser.add_argument(
+        "--warmup", type=int, default=0, help="Number of warmup evaluations to skip"
+    )
     return parser.parse_args(argv)
 
 
@@ -497,6 +498,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.cases_output:
             _save_cases(cases, args.cases_output)
+    if args.warmup > 0:
+        cases = cases[args.warmup :]
     summary, dims = _summarize(cases, combos, benchmarks, backends)
 
     def _fmt(stat: dict[str, float]) -> str:
