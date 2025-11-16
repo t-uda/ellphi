@@ -1,4 +1,7 @@
 .DS_Store
+
+# Gemini
+.gemini/
 # Serena AI Helper
 .serena/
 
@@ -209,3 +212,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# Benchmark/tuning artifacts
+docs/hybrid_tuning_summary*.json
+docs/hybrid_tuning_summary*.md
+docs/*hybrid_time_vs_error_*.png
+build/benchmarks/
