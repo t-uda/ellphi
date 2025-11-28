@@ -411,11 +411,47 @@ double brentq_impl(
     }
     return b;
 }
+// Helper function for 3-point rational interpolation (Bus & Dekker, 1975, Algorithm M)
+// Points are (x1, f1), (x2, f2), (x3, f3)
+// Returns the interpolated value, or NaN if interpolation is not possible/stable.
+double rational_interp(double x1, double f1, double x2, double f2, double x3, double f3) {
+    // Ensure distinct function values for interpolation
+    if (f1 == f2 || f1 == f3 || f2 == f3) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    // First divided differences (f[x_i, x_j] = (f(x_i) - f(x_j)) / (x_i - x_j))
+    // This helper function uses (x1, f1), (x2, f2), (x3, f3) for interpolation.
+    // In the context of the calling brenth_impl, these map to:
+    // x1 -> b, f1 -> fb (current best point)
+    // x2 -> a, f2 -> fa (point from opposite side of root)
+    // x3 -> c, f3 -> fc (previous 'a' or old 'b' if points were swapped)
+
+    double f_x1_x3_div_diff;
+    if (x1 == x3) f_x1_x3_div_diff = std::numeric_limits<double>::infinity();
+    else f_x1_x3_div_diff = (f1 - f3) / (x1 - x3); // f[b, d]
+
+    double f_x2_x3_div_diff;
+    if (x2 == x3) f_x2_x3_div_diff = std::numeric_limits<double>::infinity();
+    else f_x2_x3_div_diff = (f2 - f3) / (x2 - x3); // f[a, d]
+
+    // Alpha and Beta as per Bus & Dekker (3.1.5)
+    double alpha = f_x1_x3_div_diff * f2; // alpha = f[b, d] * f(a)
+    double beta = f_x2_x3_div_diff * f1;  // beta = f[a, d] * f(b)
+
+    if (beta != alpha) {
+        if (beta - alpha == 0.0) return std::numeric_limits<double>::quiet_NaN(); // Avoid division by zero
+        return x1 - beta * (x1 - x2) / (beta - alpha);
+    } else if (beta != 0.0) { // beta == alpha != 0.0 implies next point is x2
+        return x2;
+    } else { // beta == alpha == 0.0 => problematic, don't use interpolation
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+}
+
 /*
- * TODO: This is a placeholder for the actual brenth_impl function.
- * Currently, it's a copy of brentq_impl. If a specific algorithm for
- * brenth with hyperbolic extrapolation is identified, this function
- * should be updated accordingly.
+ * Implementation of Brent's method with 3-point rational interpolation (hyperbolic extrapolation),
+ * as described in "Algorithm M" by Bus & Dekker (1975).
  */
 double brenth_impl(
     const std::function<double(double)>& f,
@@ -437,11 +473,12 @@ double brenth_impl(
 
     double c = a;
     double fc = fa;
-    double d = b - a;
-    double e = d;
+    double d = b - a; // 'd' in brentq is the step size.
+    double e = d;     // 'e' in brentq is previous step size.
 
     for (int iter = 0; iter < maxiter; ++iter) {
         if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
+            // Re-establish bracketing and reset interpolation history if bracket is lost.
             c = a;
             fc = fa;
             d = b - a;
@@ -449,63 +486,86 @@ double brenth_impl(
         }
 
         if (std::abs(fc) < std::abs(fb)) {
+            // Ensure 'b' is always the current best estimate (|f(b)| smallest).
+            // Update the points for interpolation: c becomes old a, a becomes old b, b becomes old c.
             a = b;
             fa = fb;
+
             b = c;
             fb = fc;
+
             c = a;
             fc = fa;
         }
 
         const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
-        const double m = 0.5 * (c - b);
+        const double m = 0.5 * (c - b); // Half of the bracketing interval [b, c]
 
         if (std::abs(m) <= tol || fb == 0.0) {
-            return b;
+            return b; // Converged
         }
 
-        if (std::abs(e) >= tol && std::abs(fa) > std::abs(fb)) {
-            double s = fb / fa;
-            double p;
-            double q;
+        // --- Attempt Rational Interpolation ---
+        // Uses three points: (b, fb), (a, fa), (c, fc)
+        // Mapped to rational_interp(x1, f1, x2, f2, x3, f3) -> rational_interp(b, fb, a, fa, c, fc)
+        double s_interp = std::numeric_limits<double>::quiet_NaN();
 
-            if (a == c) {
-                p = 2.0 * m * s;
-                q = 1.0 - s;
-            } else {
-                const double q_tmp = fa / fc;
-                const double r = fb / fc;
-                p = s * (2.0 * m * q_tmp * (q_tmp - r) - (b - a) * (r - 1.0));
-                q = (q_tmp - 1.0) * (r - 1.0) * (s - 1.0);
-            }
+        // Only attempt rational interpolation if we have three distinct points.
+        // And if a, c are not too close to b for stability.
+        if (std::abs(b - a) > EPS && std::abs(b - c) > EPS && std::abs(a - c) > EPS) {
+            s_interp = rational_interp(b, fb, a, fa, c, fc);
+        }
 
-            if (p > 0.0) {
-                q = -q;
-            } else {
-                p = -p;
-            }
+        // Determine the next step based on interpolation and Brent's safeguards.
+        double next_step_len;
 
-            if (q != 0.0 &&
-                2.0 * p < std::min(3.0 * m * q - std::abs(tol * q), std::abs(e * q))) {
-                e = d;
-                d = p / q;
-            } else {
-                d = m;
+        // Apply Brent's safeguard logic to the interpolated step 's_interp'.
+        // This closely mimics the conditions in brentq_impl.
+        // If s_interp is valid and conditions for superlinear step are met, use it.
+        // Otherwise, fall back to bisection.
+        if (!std::isnan(s_interp) && std::abs(e) >= tol && std::abs(fa) > std::abs(fb)) {
+            double p = s_interp - b; // Proposed step from current 'b' to 's_interp'
+            double q = 1.0; // Denominator for comparison in safeguard logic.
+
+            // This safeguard checks if the interpolated step 'p' is not too large
+            // and is in a reasonable direction, and ensures sufficient reduction.
+            if (p * q > 0.0) { // If 'p' is in the expected direction from 'b'
+                if (2.0 * std::abs(p) < std::min(3.0 * std::abs(m) * q - std::abs(tol * q), std::abs(e * q))) {
+                    next_step_len = p / q;
+                    e = d; // Store previous effective step size
+                    d = next_step_len; // Store current effective step size
+                } else {
+                    next_step_len = m; // Fallback to bisection
+                    e = m;
+                    d = m;
+                }
+            } else { // If proposed 'p' is not in expected direction or zero
+                next_step_len = m; // Fallback to bisection
                 e = m;
+                d = m;
             }
         } else {
-            d = m;
+            // If rational interpolation failed, or conditions for using it are not met, use bisection.
+            next_step_len = m;
             e = m;
+            d = m;
         }
+
+        // --- Take the step and update points ---
+        // Update 'd' (previous step) and 'e' (second previous step) for the next iteration.
+        d = e;
+        e = next_step_len;
 
         a = b;
         fa = fb;
-        if (std::abs(d) > tol) {
-            b += d;
+
+        if (std::abs(next_step_len) > tol) {
+            b += next_step_len;
         } else {
-            b += (m > 0.0 ? tol : -tol);
+            b += (m > 0.0 ? tol : -tol); // Move by tolerance if step is too small
         }
         fb = f(b);
+
         if (fb == 0.0) {
             return b;
         }
@@ -513,7 +573,7 @@ double brenth_impl(
 
     double residual = f(b);
     if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
-        raise("Brent method failed to converge");
+        raise("Brenth method failed to converge");
     }
     return b;
 }
