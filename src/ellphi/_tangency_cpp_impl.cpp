@@ -311,7 +311,113 @@ double bisect(
     return mid;
 }
 
-double brent(
+double brentq_impl(
+    const std::function<double(double)>& f,
+    double a,
+    double b,
+    double fa,
+    double fb,
+    int maxiter
+) {
+    if (fa == 0.0) {
+        return a;
+    }
+    if (fb == 0.0) {
+        return b;
+    }
+    if (fa * fb > 0.0) {
+        raise("Brent interval does not bracket a root");
+    }
+
+    double c = a;
+    double fc = fa;
+    double d = b - a;
+    double e = d;
+
+    for (int iter = 0; iter < maxiter; ++iter) {
+        if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
+            c = a;
+            fc = fa;
+            d = b - a;
+            e = d;
+        }
+
+        if (std::abs(fc) < std::abs(fb)) {
+            a = b;
+            fa = fb;
+            b = c;
+            fb = fc;
+            c = a;
+            fc = fa;
+        }
+
+        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
+        const double m = 0.5 * (c - b);
+
+        if (std::abs(m) <= tol || fb == 0.0) {
+            return b;
+        }
+
+        if (std::abs(e) >= tol && std::abs(fa) > std::abs(fb)) {
+            double s = fb / fa;
+            double p;
+            double q;
+
+            if (a == c) {
+                p = 2.0 * m * s;
+                q = 1.0 - s;
+            } else {
+                const double q_tmp = fa / fc;
+                const double r = fb / fc;
+                p = s * (2.0 * m * q_tmp * (q_tmp - r) - (b - a) * (r - 1.0));
+                q = (q_tmp - 1.0) * (r - 1.0) * (s - 1.0);
+            }
+
+            if (p > 0.0) {
+                q = -q;
+            } else {
+                p = -p;
+            }
+
+            if (q != 0.0 &&
+                2.0 * p < std::min(3.0 * m * q - std::abs(tol * q), std::abs(e * q))) {
+                e = d;
+                d = p / q;
+            } else {
+                d = m;
+                e = m;
+            }
+        } else {
+            d = m;
+            e = m;
+        }
+
+        a = b;
+        fa = fb;
+        if (std::abs(d) > tol) {
+            b += d;
+        } else {
+            b += (m > 0.0 ? tol : -tol);
+        }
+        fb = f(b);
+        if (fb == 0.0) {
+            return b;
+        }
+    }
+
+    double residual = f(b);
+    if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
+        raise("Brent method failed to converge");
+    }
+    return b;
+}
+/*
+ * TODO: This is a placeholder for the actual brenth_impl function.
+ * Currently, it's a copy of brentq_impl. If a specific algorithm for
+ * brenth with hyperbolic extrapolation is identified, this function
+ * should be updated accordingly.
+ */
+double brenth_impl(
     const std::function<double(double)>& f,
     double a,
     double b,
@@ -453,10 +559,11 @@ double solve_mu(
     const double fb = target_fn(b);
 
     auto bisect_refined = [&]() { return bisect(target_fn, a, b, fa, fb, 128); };
-    auto brent_refined = [&]() { return brent(target_fn, a, b, fa, fb, 256); };
+    auto brentq_refined = [&]() { return brentq_impl(target_fn, a, b, fa, fb, 256); };
+    auto brenth_refined = [&]() { return brenth_impl(target_fn, a, b, fa, fb, 256); };
 
     if (method == "brentq+newton") {
-        double mu0 = brent(target_fn, a, b, fa, fb, 64);
+        double mu0 = brentq_impl(target_fn, a, b, fa, fb, 64);
         try {
             return newton(target_fn, target_prime_fn, mu0, 3);
         } catch (const std::runtime_error& ex) {
@@ -469,8 +576,11 @@ double solve_mu(
     if (method == "bisect") {
         return bisect_refined();
     }
-    if (method == "brentq" || method == "brenth") {
-        return brent_refined();
+    if (method == "brentq") {
+        return brentq_refined();
+    }
+    if (method == "brenth") {
+        return brenth_refined(); // Placeholder, will be replaced with brenth_impl()
     }
     if (method == "newton") {
         if (!has_x0) {
