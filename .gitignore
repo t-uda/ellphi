@@ -2,6 +2,7 @@
 
 # Gemini
 .gemini/
+GEMINI.md
 # Serena AI Helper
 .serena/
 
@@ -16,6 +17,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+plots/
 develop-eggs/
 dist/
 downloads/

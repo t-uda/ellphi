@@ -15,7 +15,6 @@ import argparse
 import json
 import math
 import statistics
-import itertools
 import sys
 import time
 from collections import Counter, defaultdict
@@ -187,7 +186,7 @@ def _evaluate_case(
                 result = tangency(case.p, case.q, **kwargs)
                 elapsed = time.perf_counter() - start
                 error = _relative_tangency_residual(case.p, case.q, result)
-                per_case[key] = {"time": elapsed, "error": error}
+                per_case[key] = {"time": elapsed, "error": error, "dim": case.dim}
             except Exception:
                 per_case[key] = {}
 
@@ -197,8 +196,9 @@ def _evaluate_case(
 def _summarize(
     cases: Sequence[Case],
     combos: Sequence[tuple[int, int]],
-    benchmark_methods: Sequence[str],
+    benchmark_methods: Iterable[str],
     backends: Sequence[str],
+    all_raw_results: dict[str, list[tuple[int, float, float]]],
 ) -> tuple[dict[str, dict[str, dict[str, dict[str, float]]]], list[int]]:
     metrics: dict[str, list[float]] = defaultdict(list)
     errors: dict[str, list[float]] = defaultdict(list)
@@ -213,38 +213,56 @@ def _summarize(
     failures_by_dim: dict[int, Counter[str]] = defaultdict(Counter)
 
     dims_in_suite = sorted({case.dim for case in cases})
-    all_keys: list[str] = []
 
+    # Pre-calculate total case counts per dimension for failure calculation
+    total_cases_per_dim: dict[int, int] = defaultdict(int)
     for case in cases:
-        case_stats = _evaluate_case(case, combos, benchmark_methods, backends)
-        dim = case.dim
-        for key, values in case_stats.items():
-            if key not in metrics:
-                all_keys.append(key)
-            if not values:
-                failures[key] += 1
-                failures_by_dim[dim][key] += 1
-                continue
-            metrics[key].append(values["time"])
-            errors[key].append(values["error"])
-            metrics_by_dim[dim][key].append(values["time"])
-            errors_by_dim[dim][key].append(values["error"])
+        total_cases_per_dim[case.dim] += 1
+    total_cases_overall = len(cases)
+
+    # Populate metrics and errors lists from all_raw_results
+    for key, results_list in all_raw_results.items():
+        for dim_val, time_val, error_val in results_list:
+            metrics[key].append(time_val)
+            errors[key].append(error_val)
+            metrics_by_dim[dim_val][key].append(time_val)
+            errors_by_dim[dim_val][key].append(error_val)
+
+    # Calculate failures
+    possible_keys: set[str] = set()
+    for backend in backends:
+        for method in benchmark_methods:
+            possible_keys.add(f"{backend}:{method}")
+        for b_iter, n_iter in combos:
+            possible_keys.add(f"{backend}:hybrid_{b_iter}x{n_iter}")
+
+    for key in possible_keys:
+        overall_samples = len(metrics.get(key, []))
+        failures[key] = total_cases_overall - overall_samples
+
+        for dim in dims_in_suite:
+            dim_samples = len(metrics_by_dim[dim].get(key, []))
+            failures_by_dim[dim][key] = total_cases_per_dim[dim] - dim_samples
 
     summary: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
-    for key in sorted(all_keys):
+    for key in sorted(
+        possible_keys
+    ):  # Iterate over all possible keys, even those with 100% failure
         per_dim: dict[str, dict[str, dict[str, float]]] = {}
         for dim in dims_in_suite:
-            metrics_dim = metrics_by_dim.get(dim, {})
-            errors_dim = errors_by_dim.get(dim, {})
+            time_list_dim = metrics_by_dim[dim].get(key, [])
+            error_list_dim = errors_by_dim[dim].get(key, [])
+
             per_dim[str(dim)] = {
-                "time": _stats(metrics_dim.get(key, [])),
-                "error": _stats(errors_dim.get(key, [])),
-                "failures": {"count": failures_by_dim.get(dim, Counter()).get(key, 0)},
+                "time": _stats(time_list_dim),
+                "error": _stats(error_list_dim),
+                "failures": {"count": failures_by_dim[dim].get(key, 0)},
             }
+
         summary[key] = {
             "overall": {
-                "time": _stats(metrics[key]),
-                "error": _stats(errors[key]),
+                "time": _stats(metrics.get(key, [])),
+                "error": _stats(errors.get(key, [])),
                 "failures": {"count": failures.get(key, 0)},
             },
             "per_dim": per_dim,
@@ -396,7 +414,123 @@ def _plot_backend_scatter(
         ax.grid(True, which="both", ls="--", alpha=0.4)
         ax.legend(handles, handle_labels, loc="best", fontsize=7, ncol=2)
         fig.tight_layout()
-        outfile = output_dir / f"{prefix}hybrid_time_vs_error_{backend}.png"
+        outfile = (
+            output_dir / f"{prefix}hybrid_time_vs_error_scatter_{backend}.png"
+        )
+        fig.savefig(outfile, dpi=200)
+        plt.close(fig)
+        print(f"Wrote {outfile}", file=sys.stderr)
+
+
+def _plot_density_map(
+    all_raw_results: dict[str, list[tuple[int, float, float]]],
+    backends: Sequence[str],
+    output_dir: Path,
+    prefix: str = "",
+) -> None:
+    try:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import pandas as pd
+    except Exception as exc:  # pragma: no cover - optional dependency
+        print(f"Skipping density plot generation ({exc})", file=sys.stderr)
+        return
+
+    method_groups = {
+        "hybrid": [
+            m for m in all_raw_results if "hybrid_" in m
+        ],  # Dynamically find hybrid methods
+        "brent": ["brentq", "brenth"],
+        "other": ["bisect", "newton"],
+    }
+    # Flatten all_raw_results into a list of dictionaries for easier DataFrame creation
+    data_for_df = []
+    for key, results_list in all_raw_results.items():
+        backend, method = key.split(":", 1)
+        for dim, time_val, error_val in results_list:
+            group = "other"
+            if "hybrid_" in method:
+                group = "hybrid"
+            elif method in method_groups["brent"]:
+                group = "brent"
+            elif method in method_groups["other"]:
+                group = "other"
+
+            data_for_df.append(
+                {
+                    "backend": backend,
+                    "method": method,
+                    "group": group,
+                    "dim": dim,
+                    "time_ms": time_val * 1e3,  # Convert to ms
+                    "error": error_val,
+                }
+            )
+
+    if not data_for_df:
+        print("No data available for density plots.", file=sys.stderr)
+        return
+
+    df = pd.DataFrame(data_for_df)
+    
+    # Replace 0 errors with a small positive number for log scale plotting
+    df["error"] = df["error"].replace(0, 1e-18)
+
+    for backend in backends:
+        df_backend = df[df["backend"] == backend] # df_backend をここで定義
+        # Drop rows with NaN values in 'time_ms' or 'error' to ensure proper plotting
+        df_backend = df_backend.dropna(subset=['time_ms', 'error'])
+
+        # If after dropping NaNs, the DataFrame is empty, skip plotting
+        if df_backend.empty:
+            print(f"--- DataFrame for backend {backend} is empty after dropping NaNs ---", file=sys.stderr)
+            continue
+        
+        fig, ax = plt.subplots(figsize=(10, 7))
+
+        # Determine unique groups present in the data for this backend
+        present_groups = df_backend["group"].unique()
+        
+        # Custom color palette: blue for hybrid, green for brent, gray for other
+        custom_palette = {
+            "hybrid": "#1f77b4",  # blue
+            "brent": "#2ca02c",   # green
+            "other": "#7f7f7f"    # gray
+        }
+
+        sns.kdeplot(
+            data=df_backend,
+            x="time_ms",
+            y="error",
+            hue="group",  # Group by method type
+            log_scale=(True, True),
+            fill=True,
+            alpha=0.5,
+            ax=ax,
+            warn_singular=False,
+            palette=custom_palette,
+            legend=True,
+        )
+
+        ax.set_xlabel("Time per tangency (ms)")
+        ax.set_ylabel("Relative tangency residual")
+        ax.set_title(f"Hybrid benchmark: Time vs Error Density ({backend})")
+        ax.grid(True, which="both", ls="--", alpha=0.4)
+
+        # Adjust y-axis limits for better visibility, especially for Python backend
+        # based on observed data ranges.
+        # Python backend has larger errors than C++ backend.
+        if backend == "python":
+            # Set upper limit to a value that covers most meaningful errors without being too wide due to extreme outliers
+            ax.set_ylim(1e-18, 1e-02) # Adjusted based on typical meaningful errors
+        else:
+            # C++ backend typically has very small errors
+            ax.set_ylim(1e-18, 1e-08) # Adjusted for C++ backend's smaller error range
+
+        fig.tight_layout()
+        outfile = (
+            output_dir / f"{prefix}hybrid_time_vs_error_density_{backend}.png"
+        )
         fig.savefig(outfile, dpi=200)
         plt.close(fig)
         print(f"Wrote {outfile}", file=sys.stderr)
@@ -458,6 +592,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional directory to write per-backend time/error scatter plots",
     )
     parser.add_argument(
+        "--plot-type",
+        choices=("scatter", "density", "both"),
+        default="scatter",
+        help="Type of plot to generate: 'scatter', 'density', or 'both'.",
+    )
+    parser.add_argument(
         "--plot-prefix",
         type=str,
         default="",
@@ -500,7 +640,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             _save_cases(cases, args.cases_output)
     if args.warmup > 0:
         cases = cases[args.warmup :]
-    summary, dims = _summarize(cases, combos, benchmarks, backends)
+
+    all_raw_results: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
+    for case in cases:
+        case_stats = _evaluate_case(case, combos, benchmarks, backends)
+        for key, values in case_stats.items():
+            if values:  # Only record successful evaluations
+                all_raw_results[key].append(
+                    (values["dim"], values["time"], values["error"])
+                )
+
+    summary, dims = _summarize(cases, combos, benchmarks, backends, all_raw_results)
 
     def _fmt(stat: dict[str, float]) -> str:
         return (
@@ -517,7 +667,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.plot_dir:
         plot_dir = Path(args.plot_dir)
         plot_dir.mkdir(parents=True, exist_ok=True)
-        _plot_backend_scatter(summary, backends, plot_dir, prefix=args.plot_prefix)
+        
+        do_scatter = args.plot_type in ("scatter", "both")
+        do_density = args.plot_type in ("density", "both")
+
+        if do_scatter:
+            _plot_backend_scatter(summary, backends, plot_dir, prefix=args.plot_prefix)
+        if do_density:
+            _plot_density_map(
+                all_raw_results, backends, plot_dir, prefix=args.plot_prefix
+            )
 
     if args.table_format == "markdown":
         rows = _build_table_rows(summary, dims)
