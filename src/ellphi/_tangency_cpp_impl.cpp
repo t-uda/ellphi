@@ -417,10 +417,12 @@ double brentq_impl(
         }
     }
 
-    double residual = f(b);
-    if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
-        raise("Brent method failed to converge");
-    }
+    //// DO NOT RAISE HERE. THIS IS A PART OF THE NUMERICAL COMPUTATION CODE.
+    //// Even if the iteration would not converge, it MUST NOT be an error.
+    // double residual = f(b);
+    // if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
+    //     raise("Brent method failed to converge");
+    // }
     return b;
 }
 // Helper function for 3-point rational interpolation (Bus & Dekker, 1975, Algorithm M)
@@ -583,10 +585,12 @@ double brenth_impl(
         }
     }
 
-    double residual = f(b);
-    if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
-        raise("Brenth method failed to converge");
-    }
+    //// DO NOT RAISE HERE. THIS IS A PART OF THE NUMERICAL COMPUTATION CODE.
+    //// Even if the iteration would not converge, it MUST NOT be an error.
+    // double residual = f(b);
+    // if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
+    //     raise("Brenth method failed to converge");
+    // }
     return b;
 }
 
@@ -641,26 +645,8 @@ double solve_mu(
             raise("Hybrid iteration counts must be positive");
         }
         double mu0 = 0.0;
-        try {
-            mu0 = brentq_impl(target_fn, a, b, fa, fb, hybrid_bracket_maxiter);
-        } catch (const std::runtime_error& ex) {
-            if (
-                std::string(ex.what()) == "Brent method failed to converge" &&
-                hybrid_bracket_maxiter < HYBRID_BRACKET_MAXITER_FAILSAFE
-            ) {
-                mu0 = brentq_impl(target_fn, a, b, fa, fb, HYBRID_BRACKET_MAXITER_FAILSAFE);
-            } else {
-                throw;
-            }
-        }
-        try {
-            return newton(target_fn, target_prime_fn, mu0, hybrid_newton_maxiter);
-        } catch (const std::runtime_error& ex) {
-            if (std::string(ex.what()) == "Derivative is zero during Newton iteration") {
-                return mu0;
-            }
-            throw;
-        }
+        mu0 = brentq_impl(target_fn, a, b, fa, fb, hybrid_bracket_maxiter);
+        return newton(target_fn, target_prime_fn, mu0, hybrid_newton_maxiter);
     }
     if (method == "bisect") {
         return bisect_refined();

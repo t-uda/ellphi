@@ -6,6 +6,7 @@ mkdir -p build/benchmarks
 
 # Common settings
 SAMPLES=5000
+SMALL_SAMPLES=500
 HYBRID_COMBOS="8x3,28x3"
 
 # 1) Normal Low-Dim (2D, 3D) - The "Happy Path"
@@ -55,3 +56,15 @@ poetry run python scripts/hybrid_tuning.py \
   --output build/benchmarks/summary_extreme_highdim.json \
   --warmup 1 \
   > build/benchmarks/summary_extreme_highdim.md
+
+# 5) Multi-Dim (20D to 50D) - Seeking the "Strategy Shift"
+# Check if hybrid still works for much higher dimention.
+poetry run python scripts/hybrid_tuning.py \
+  --samples-per-dim $SMALL_SAMPLES --dims `seq 20 3 50` \
+  --extreme-fraction 0.0 \
+  --hybrid-combos "$HYBRID_COMBOS" \
+  --plot-dir build/benchmarks --plot-prefix multidim- \
+  --plot-type both \
+  --output build/benchmarks/summary_multidim.json \
+  --warmup 1 \
+  > build/benchmarks/summary_multidim.md
