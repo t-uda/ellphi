@@ -604,8 +604,8 @@ double newton(
     for (int iter = 0; iter < maxiter; ++iter) {
         double fx = f(x);
         double dfx = df(x);
-        if (dfx == 0.0) {
-            raise("Derivative is zero during Newton iteration");
+        if (std::abs(dfx) < EPS) {
+            break;
         }
         double step = fx / dfx;
         double next = x - step;
