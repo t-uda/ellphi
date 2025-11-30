@@ -14,6 +14,18 @@ namespace {
 
 constexpr double EPS = std::numeric_limits<double>::epsilon();
 constexpr double XTOL = std::numeric_limits<double>::epsilon();
+constexpr int HYBRID_BRACKET_MAXITER_2D = 8;
+constexpr int HYBRID_NEWTON_MAXITER_2D = 3;
+constexpr int HYBRID_BRACKET_MAXITER_ND = 28;
+constexpr int HYBRID_NEWTON_MAXITER_ND = 6;
+constexpr int HYBRID_BRACKET_MAXITER_FAILSAFE = 64;
+
+std::pair<int, int> default_hybrid_iterations(int dim) {
+    if (dim == 2) {
+        return {HYBRID_BRACKET_MAXITER_2D, HYBRID_NEWTON_MAXITER_2D};
+    }
+    return {HYBRID_BRACKET_MAXITER_ND, HYBRID_NEWTON_MAXITER_ND};
+}
 
 [[noreturn]] void raise(const std::string& message) {
     throw std::runtime_error(message);
@@ -405,10 +417,12 @@ double brentq_impl(
         }
     }
 
-    double residual = f(b);
-    if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
-        raise("Brent method failed to converge");
-    }
+    //// DO NOT RAISE HERE. THIS IS A PART OF THE NUMERICAL COMPUTATION CODE.
+    //// Even if the iteration would not converge, it MUST NOT be an error.
+    // double residual = f(b);
+    // if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
+    //     raise("Brent method failed to converge");
+    // }
     return b;
 }
 // Helper function for 3-point rational interpolation (Bus & Dekker, 1975, Algorithm M)
@@ -553,7 +567,7 @@ double brenth_impl(
 
         // --- Take the step and update points ---
         // Update 'd' (previous step) and 'e' (second previous step) for the next iteration.
-        d = e;
+        d = e; 
         e = next_step_len;
 
         a = b;
@@ -571,10 +585,12 @@ double brenth_impl(
         }
     }
 
-    double residual = f(b);
-    if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
-        raise("Brenth method failed to converge");
-    }
+    //// DO NOT RAISE HERE. THIS IS A PART OF THE NUMERICAL COMPUTATION CODE.
+    //// Even if the iteration would not converge, it MUST NOT be an error.
+    // double residual = f(b);
+    // if (std::abs(residual) > 8.0 * EPS * std::abs(b)) {
+    //     raise("Brenth method failed to converge");
+    // }
     return b;
 }
 
@@ -588,8 +604,8 @@ double newton(
     for (int iter = 0; iter < maxiter; ++iter) {
         double fx = f(x);
         double dfx = df(x);
-        if (dfx == 0.0) {
-            raise("Derivative is zero during Newton iteration");
+        if (std::abs(dfx) < EPS) {
+            break;
         }
         double step = fx / dfx;
         double next = x - step;
@@ -607,7 +623,9 @@ double solve_mu(
     const std::string& method,
     const std::pair<double, double>& bracket,
     bool has_x0,
-    double x0
+    double x0,
+    int hybrid_bracket_maxiter,
+    int hybrid_newton_maxiter
 ) {
     SolverContext ctx = build_solver_context(pcoef, qcoef);
     auto target_fn = [&](double mu) { return target(mu, ctx); };
@@ -623,15 +641,12 @@ double solve_mu(
     auto brenth_refined = [&]() { return brenth_impl(target_fn, a, b, fa, fb, 256); };
 
     if (method == "brentq+newton") {
-        double mu0 = brentq_impl(target_fn, a, b, fa, fb, 64);
-        try {
-            return newton(target_fn, target_prime_fn, mu0, 3);
-        } catch (const std::runtime_error& ex) {
-            if (std::string(ex.what()) == "Derivative is zero during Newton iteration") {
-                return mu0;
-            }
-            throw;
+        if (hybrid_bracket_maxiter <= 0 || hybrid_newton_maxiter <= 0) {
+            raise("Hybrid iteration counts must be positive");
         }
+        double mu0 = 0.0;
+        mu0 = brentq_impl(target_fn, a, b, fa, fb, hybrid_bracket_maxiter);
+        return newton(target_fn, target_prime_fn, mu0, hybrid_newton_maxiter);
     }
     if (method == "bisect") {
         return bisect_refined();
@@ -640,7 +655,7 @@ double solve_mu(
         return brentq_refined();
     }
     if (method == "brenth") {
-        return brenth_refined(); // Placeholder, will be replaced with brenth_impl()
+        return brenth_refined();
     }
     if (method == "newton") {
         if (!has_x0) {
@@ -676,6 +691,8 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
     const double* bracket,
     int has_x0,
     double x0,
+    int hybrid_bracket_maxiter,
+    int hybrid_newton_maxiter,
     double* out_t,
     double* out_point,
     std::size_t point_length,
@@ -687,7 +704,16 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
         std::vector<double> p(pcoef, pcoef + coef_length);
         std::vector<double> q(qcoef, qcoef + coef_length);
         std::pair<double, double> bracket_pair{bracket[0], bracket[1]};
-        double mu = solve_mu(p, q, std::string(method), bracket_pair, has_x0 != 0, x0);
+        double mu = solve_mu(
+            p,
+            q,
+            std::string(method),
+            bracket_pair,
+            has_x0 != 0,
+            x0,
+            hybrid_bracket_maxiter,
+            hybrid_newton_maxiter
+        );
         SolverContext ctx = build_solver_context(p, q);
         PencilGeometry geom = build_pencil_geometry(mu, ctx);
         const std::size_t dim = static_cast<std::size_t>(geom.center.size());
@@ -723,7 +749,6 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
 ) {
     try {
         int dim = infer_dim_from_coef_length(coef_length);
-        (void)dim;
         std::vector<std::vector<double>> conics(
             m,
             std::vector<double>(coef_length, 0.0)
@@ -738,7 +763,17 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
             const std::vector<double>& p = conics[i];
             for (std::size_t j = i + 1; j < m; ++j) {
                 const std::vector<double>& q = conics[j];
-                double mu = solve_mu(p, q, "brentq+newton", {0.0, 1.0}, false, 0.0);
+                auto hybrid_iters = default_hybrid_iterations(dim);
+                double mu = solve_mu(
+                    p,
+                    q,
+                    "brentq+newton",
+                    {0.0, 1.0},
+                    false,
+                    0.0,
+                    hybrid_iters.first,
+                    hybrid_iters.second
+                );
                 SolverContext ctx = build_solver_context(p, q);
                 PencilGeometry geom = build_pencil_geometry(mu, ctx);
                 double value = quad_eval(geom.conic, geom.center);

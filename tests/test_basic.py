@@ -415,6 +415,70 @@ def test_newton_method_with_initial_guess(solver_backend):
     assert res.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
 
 
+def test_hybrid_default_iterations_2d_match_explicit(solver_backend):
+    p = coef_from_axes([0.2, -0.5], 1.1, 0.8, 0.3)
+    q = coef_from_axes([-0.8, 1.0], 1.3, 0.6, -0.4)
+
+    baseline = tangency(p, q, backend=solver_backend)
+    explicit = tangency(
+        p,
+        q,
+        backend=solver_backend,
+        hybrid_bracket_maxiter=8,
+        hybrid_newton_maxiter=3,
+    )
+
+    assert explicit.t == pytest.approx(baseline.t, rel=1e-9)
+    assert explicit.mu == pytest.approx(baseline.mu, rel=1e-9)
+    assert explicit.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
+
+
+def test_hybrid_default_iterations_high_dim_match_tuned(solver_backend, rng):
+    p, q = random_coef_pair(rng, dim=3)
+
+    baseline = tangency(p, q, backend=solver_backend)
+    explicit = tangency(
+        p,
+        q,
+        backend=solver_backend,
+        hybrid_bracket_maxiter=28,
+        hybrid_newton_maxiter=6,
+    )
+
+    assert explicit.t == pytest.approx(baseline.t, rel=1e-9)
+    assert explicit.mu == pytest.approx(baseline.mu, rel=1e-9)
+    assert explicit.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
+
+
+def test_hybrid_iteration_customization(solver_backend):
+    p = coef_from_axes([0.1, -0.4], 0.9, 0.7, 0.3)
+    q = coef_from_axes([-0.9, 1.1], 1.4, 0.8, 0.5)
+
+    baseline = tangency(p, q, backend=solver_backend)
+    tweaked = tangency(
+        p,
+        q,
+        backend=solver_backend,
+        hybrid_bracket_maxiter=24,
+        hybrid_newton_maxiter=5,
+    )
+
+    assert tweaked.t == pytest.approx(baseline.t, rel=1e-9)
+    assert tweaked.mu == pytest.approx(baseline.mu, rel=1e-9)
+    assert tweaked.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
+
+
+def test_hybrid_iteration_validation(solver_backend):
+    p = coef_from_axes([0.2, -0.6], 1.1, 0.6, 0.2)
+    q = coef_from_axes([-0.9, 0.7], 0.8, 1.2, 0.9)
+
+    with pytest.raises(ValueError, match="hybrid_bracket_maxiter"):
+        tangency(p, q, backend=solver_backend, hybrid_bracket_maxiter=0)
+
+    with pytest.raises(ValueError, match="hybrid_newton_maxiter"):
+        tangency(p, q, backend=solver_backend, hybrid_newton_maxiter=-1)
+
+
 # -----------------------------------------------------------------------------
 # 14. Edge cases for tangency
 # -----------------------------------------------------------------------------

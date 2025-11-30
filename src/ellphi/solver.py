@@ -80,6 +80,16 @@ def _normalize_method(method: MethodName | str) -> MethodName:
     return cast(MethodName, method)
 
 
+def _resolve_backend_hybrid_iterations(
+    dim: int,
+    hybrid_bracket_maxiter: int | None,
+    hybrid_newton_maxiter: int | None,
+) -> tuple[int, int]:
+    return _py._resolve_hybrid_iterations(
+        dim, hybrid_bracket_maxiter, hybrid_newton_maxiter
+    )
+
+
 def tangency(
     pcoef: numpy.ndarray,
     qcoef: numpy.ndarray,
@@ -88,6 +98,8 @@ def tangency(
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
     backend: str = "auto",
+    hybrid_bracket_maxiter: int | None = None,
+    hybrid_newton_maxiter: int | None = None,
 ) -> TangencyResult:
     """Return (t, point, μ) at which two ellipses are tangent."""
 
@@ -98,6 +110,28 @@ def tangency(
         raise ValueError("Coefficient vectors must have the same length")
     coef_length = pcoef_arr.size
     infer_dim_from_coef_length(coef_length)
+
+    dim = infer_dim_from_coef_length(coef_length)
+    if method_literal == "brentq+newton":
+        bracket_iter, newton_iter = _resolve_backend_hybrid_iterations(
+            dim,
+            hybrid_bracket_maxiter,
+            hybrid_newton_maxiter,
+        )
+        if bracket_iter <= 0:
+            raise ValueError("hybrid_bracket_maxiter must be positive")
+        if newton_iter <= 0:
+            raise ValueError("hybrid_newton_maxiter must be positive")
+    else:
+        default_bracket, default_newton = _py._hybrid_iteration_defaults(dim)
+        bracket_iter = (
+            default_bracket
+            if hybrid_bracket_maxiter is None
+            else hybrid_bracket_maxiter
+        )
+        newton_iter = (
+            default_newton if hybrid_newton_maxiter is None else hybrid_newton_maxiter
+        )
 
     if backend not in _BACKEND_NAMES:
         raise ValueError(
@@ -112,6 +146,8 @@ def tangency(
             method=method_literal,
             bracket=bracket,
             x0=x0,
+            hybrid_bracket_maxiter=bracket_iter,
+            hybrid_newton_maxiter=newton_iter,
         )
     return tangency_python(
         pcoef_arr,
@@ -119,6 +155,8 @@ def tangency(
         method=method_literal,
         bracket=bracket,
         x0=x0,
+        hybrid_bracket_maxiter=bracket_iter,
+        hybrid_newton_maxiter=newton_iter,
     )
 
 

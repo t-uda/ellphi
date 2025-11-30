@@ -10,5 +10,7 @@ def tangency(
     method: str,
     bracket: Tuple[float, float],
     x0: float | None,
+    hybrid_bracket_maxiter: int,
+    hybrid_newton_maxiter: int,
 ) -> TangencyResult: ...
 def pdist_tangency(coef: FloatArray) -> FloatArray: ...
