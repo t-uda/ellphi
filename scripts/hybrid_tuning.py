@@ -156,7 +156,7 @@ def _evaluate_case(
         for failsafe in failsafe_options:
             label = method if failsafe else f"{method}_nofailsafe"
             kwargs: dict[str, object] = {"method": method, "failsafe": failsafe}
-            if method in {"newton"}:
+            if method in {"newton", "algsig+newton"}:
                 kwargs["x0"] = 0.5
             method_specs.append((label, kwargs))
 
@@ -442,7 +442,7 @@ def _plot_density_map(
             m for m in all_raw_results if "hybrid_" in m
         ],  # Dynamically find hybrid methods
         "brent": ["brentq", "brenth"],
-        "other": ["bisect", "newton"],
+        "other": ["bisect", "newton", "algsig+newton"],
     }
     # Flatten all_raw_results into a list of dictionaries for easier DataFrame creation
     data_for_df = []
@@ -452,10 +452,8 @@ def _plot_density_map(
             group = "other"
             if "hybrid_" in method:
                 group = "hybrid"
-            elif method in method_groups["brent"]:
+            elif any(method.startswith(b) for b in method_groups["brent"]):
                 group = "brent"
-            elif method in method_groups["other"]:
-                group = "other"
 
             data_for_df.append(
                 {
@@ -590,7 +588,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--methods",
         nargs="+",
-        default=["bisect", "brentq", "brenth", "newton"],
+        default=["bisect", "brentq", "brenth", "newton", "algsig+newton"],
         help="Root-finding methods to benchmark.",
     )
     parser.add_argument(

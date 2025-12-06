@@ -13,7 +13,9 @@
 namespace {
 
 constexpr double EPS = std::numeric_limits<double>::epsilon();
-constexpr double XTOL = std::numeric_limits<double>::epsilon();
+constexpr double BRENT_XTOL = std::numeric_limits<double>::epsilon();
+constexpr double NEWTON_RTOL = 4.0 * EPS;
+constexpr double NEWTON_XTOL = 1e-8;
 constexpr int HYBRID_BRACKET_MAXITER_2D = 28;
 constexpr int HYBRID_NEWTON_MAXITER_2D = 3;
 constexpr int HYBRID_BRACKET_MAXITER_ND = 28;
@@ -445,7 +447,7 @@ double brentq_impl(
             fc = fa;
         }
 
-        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
+        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * BRENT_XTOL;
         const double m = 0.5 * (c - b);
 
         if (std::abs(m) <= tol || fb == 0.0) {
@@ -594,7 +596,7 @@ double brenth_impl(
             fc = fa;
         }
 
-        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
+        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * BRENT_XTOL;
         const double m = 0.5 * (c - b); // Half of the bracketing interval [b, c]
 
         if (std::abs(m) <= tol || fb == 0.0) {
@@ -699,12 +701,90 @@ NewtonResult newton(
         }
         double step = fx / dfx;
         double next = x - step;
-        if (std::abs(step) <= 8.0 * EPS * std::abs(next)) {
+        if (std::abs(step) <= NEWTON_RTOL * std::abs(next) + NEWTON_XTOL) {
             return {next, true};
         }
         x = next;
     }
     return {x, false};
+}
+
+// --- Algsig+Newton Helpers ---
+
+double x_from_u(double u) {
+    return 0.5 * (1.0 + u / std::sqrt(1.0 + u * u));
+}
+
+double u_from_x(double x) {
+    if (x <= 0.0 || x >= 1.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    double x_safe = std::max(1e-15, std::min(1.0 - 1e-15, x));
+    return (2.0 * x_safe - 1.0) / (2.0 * std::sqrt(x_safe * (1.0 - x_safe)));
+}
+
+double x_prime_from_u(double u) {
+    return 0.5 * std::pow(1.0 + u * u, -1.5);
+}
+
+NewtonResult algsig_newton(
+    const std::function<double(double)>& f,
+    const std::function<double(double)>& df,
+    double x0,
+    int maxiter
+) {
+    double u = u_from_x(x0);
+    if (!std::isfinite(u)) {
+        u = 0.0; // Default start if x0 is invalid
+    }
+
+    for (int i = 0; i < maxiter; ++i) {
+        double x = x_from_u(u);
+        double f_val = f(x);
+        double f_prime_val = df(x);
+        double x_prime_val = x_prime_from_u(u);
+        double F_prime_u = f_prime_val * x_prime_val;
+
+        if (!std::isfinite(f_val) || !std::isfinite(F_prime_u) || F_prime_u == 0.0) {
+            return {x_from_u(u), false};
+        }
+
+        // Backtracking Line Search to find a step that decreases the function value
+        double delta_u = -f_val / F_prime_u;
+        double alpha = 1.0;
+        double u_next = u;
+        bool step_accepted = false;
+
+        for (int j = 0; j < 10; ++j) { // Max 10 backtracking steps
+            double u_candidate = u + alpha * delta_u;
+            if (!std::isfinite(u_candidate)) {
+                alpha *= 0.5;
+                continue;
+            }
+            double x_candidate = x_from_u(u_candidate);
+            double f_candidate = f(x_candidate);
+
+            if (std::isfinite(f_candidate) && std::abs(f_candidate) < std::abs(f_val)) {
+                u_next = u_candidate;
+                step_accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+
+        if (!step_accepted) {
+            return {x_from_u(u), false}; // Backtracking failed
+        }
+        
+        // Convergence criterion on the step size in the transformed space
+        if (std::abs(u_next - u) <= NEWTON_XTOL + NEWTON_RTOL * std::abs(u_next)) {
+            return {x_from_u(u_next), true};
+        }
+
+        u = u_next;
+    }
+
+    return {x_from_u(u), false};
 }
 
 double solve_mu(
@@ -730,6 +810,7 @@ double solve_mu(
     auto bisect_refined = [&]() { return bisect(target_fn, a, b, fa, fb, 128); };
     auto brentq_refined = [&]() { return brentq_impl(target_fn, a, b, fa, fb, 256); };
     auto brenth_refined = [&]() { return brenth_impl(target_fn, a, b, fa, fb, 256); };
+    auto failsafe_refined = [&]() { return brentq_impl(target_fn, a, b, fa, fb, HYBRID_BRACKET_MAXITER_FAILSAFE); };
 
     if (method == "brentq+newton") {
         if (hybrid_bracket_maxiter <= 0 || hybrid_newton_maxiter <= 0) {
@@ -742,10 +823,21 @@ double solve_mu(
         if (res.converged) {
             return res.root;
         } else if (failsafe) {
-            return brentq_impl(target_fn, a, b, fa, fb, HYBRID_BRACKET_MAXITER_FAILSAFE);
+            return failsafe_refined();
         } else {
             return mu0;
         }
+    }
+    if (method == "algsig+newton") {
+        double mu_guess = has_x0 ? x0 : 0.5;
+        NewtonResult res = algsig_newton(target_fn, target_prime_fn, mu_guess, NEWTON_ONLY_MAXITER);
+        if (res.converged) {
+            return res.root;
+        }
+        if (failsafe) {
+            return failsafe_refined();
+        }
+        return res.root;
     }
     if (method == "bisect") {
         return bisect_refined();
@@ -768,7 +860,7 @@ double solve_mu(
         );
 
         if (failsafe && !res.converged) {
-            return brentq_impl(target_fn, a, b, fa, fb, HYBRID_BRACKET_MAXITER_FAILSAFE);
+            return failsafe_refined();
         }
         return res.root;
     }
