@@ -1,15 +1,17 @@
 import numpy as np
 from .geometry import unpack_single_conic as unpack_single_conic
 from dataclasses import dataclass
+from typing import Tuple, Any
+from numpy.typing import NDArray
 
 @dataclass(frozen=True)
 class TangentPencil:
-    coef: np.ndarray
-    quad: np.ndarray
-    linear: np.ndarray
+    coef: NDArray[Any]
+    quad: NDArray[Any]
+    linear: NDArray[Any]
     det: float
-    inv_quad: np.ndarray
-    center: np.ndarray
+    chol: Tuple[NDArray[Any], bool]
+    center: NDArray[Any]
 
 def quad_matrix(coef: np.ndarray) -> np.ndarray: ...
 def linear_vector(coef: np.ndarray) -> np.ndarray: ...

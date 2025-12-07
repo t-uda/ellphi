@@ -31,6 +31,7 @@ def solve_mu(
     x0: float | None = None,
     hybrid_bracket_maxiter: int | None = ...,
     hybrid_newton_maxiter: int | None = ...,
+    failsafe: bool = True,
 ) -> float: ...
 def tangency(
     pcoef: FloatArray,
@@ -41,6 +42,7 @@ def tangency(
     x0: float | None = None,
     hybrid_bracket_maxiter: int | None = ...,
     hybrid_newton_maxiter: int | None = ...,
+    failsafe: bool = True,
 ) -> TangencyResult: ...
 def _pdist_tangency_serial(ellcloud: EllipseCloud) -> FloatArray: ...
 def _pdist_tangency_parallel(

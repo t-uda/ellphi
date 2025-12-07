@@ -149,13 +149,16 @@ def _evaluate_case(
     combos: Iterable[tuple[int, int]],
     benchmark_methods: Iterable[str],
     backends: Sequence[str],
+    failsafe_options: Sequence[bool],
 ) -> dict[str, dict[str, float]]:
     method_specs: list[tuple[str, dict[str, object]]] = []
     for method in benchmark_methods:
-        kwargs: dict[str, object] = {"method": method}
-        if method == "newton":
-            kwargs["x0"] = 0.5
-        method_specs.append((method, kwargs))
+        for failsafe in failsafe_options:
+            label = method if failsafe else f"{method}_nofailsafe"
+            kwargs: dict[str, object] = {"method": method, "failsafe": failsafe}
+            if method in {"newton"}:
+                kwargs["x0"] = 0.5
+            method_specs.append((label, kwargs))
 
     hybrid_specs: list[tuple[str, dict[str, object]]] = [
         (
@@ -196,7 +199,7 @@ def _evaluate_case(
 def _summarize(
     cases: Sequence[Case],
     combos: Sequence[tuple[int, int]],
-    benchmark_methods: Iterable[str],
+    benchmark_labels: Iterable[str],
     backends: Sequence[str],
     all_raw_results: dict[str, list[tuple[int, float, float]]],
 ) -> tuple[dict[str, dict[str, dict[str, dict[str, float]]]], list[int]]:
@@ -231,8 +234,8 @@ def _summarize(
     # Calculate failures
     possible_keys: set[str] = set()
     for backend in backends:
-        for method in benchmark_methods:
-            possible_keys.add(f"{backend}:{method}")
+        for label in benchmark_labels:
+            possible_keys.add(f"{backend}:{label}")
         for b_iter, n_iter in combos:
             possible_keys.add(f"{backend}:hybrid_{b_iter}x{n_iter}")
 
@@ -414,9 +417,7 @@ def _plot_backend_scatter(
         ax.grid(True, which="both", ls="--", alpha=0.4)
         ax.legend(handles, handle_labels, loc="best", fontsize=7, ncol=2)
         fig.tight_layout()
-        outfile = (
-            output_dir / f"{prefix}hybrid_time_vs_error_scatter_{backend}.png"
-        )
+        outfile = output_dir / f"{prefix}hybrid_time_vs_error_scatter_{backend}.png"
         fig.savefig(outfile, dpi=200)
         plt.close(fig)
         print(f"Wrote {outfile}", file=sys.stderr)
@@ -472,30 +473,33 @@ def _plot_density_map(
         return
 
     df = pd.DataFrame(data_for_df)
-    
+
     # Replace 0 errors with a small positive number for log scale plotting
     df["error"] = df["error"].replace(0, 1e-18)
 
     for backend in backends:
-        df_backend = df[df["backend"] == backend] # df_backend をここで定義
+        df_backend = df[df["backend"] == backend]  # df_backend をここで定義
         # Drop rows with NaN values in 'time_ms' or 'error' to ensure proper plotting
-        df_backend = df_backend.dropna(subset=['time_ms', 'error'])
+        df_backend = df_backend.dropna(subset=["time_ms", "error"])
 
         # If after dropping NaNs, the DataFrame is empty, skip plotting
         if df_backend.empty:
-            print(f"--- DataFrame for backend {backend} is empty after dropping NaNs ---", file=sys.stderr)
+            print(
+                f"--- DataFrame for backend {backend} is empty after dropping NaNs ---",
+                file=sys.stderr,
+            )
             continue
-        
+
         fig, ax = plt.subplots(figsize=(10, 7))
 
         # Determine unique groups present in the data for this backend
         present_groups = df_backend["group"].unique()
-        
+
         # Custom color palette: blue for hybrid, green for brent, gray for other
         custom_palette = {
             "hybrid": "#1f77b4",  # blue
-            "brent": "#2ca02c",   # green
-            "other": "#7f7f7f"    # gray
+            "brent": "#2ca02c",  # green
+            "other": "#7f7f7f",  # gray
         }
 
         sns.kdeplot(
@@ -522,32 +526,20 @@ def _plot_density_map(
         # Python backend has larger errors than C++ backend.
         if backend == "python":
             # Set upper limit to a value that covers most meaningful errors without being too wide due to extreme outliers
-            ax.set_ylim(1e-18, 1e-02) # Adjusted based on typical meaningful errors
+            ax.set_ylim(1e-18, 1e-02)  # Adjusted based on typical meaningful errors
         else:
             # C++ backend typically has very small errors
-            ax.set_ylim(1e-18, 1e-08) # Adjusted for C++ backend's smaller error range
+            ax.set_ylim(1e-18, 1e-08)  # Adjusted for C++ backend's smaller error range
 
         fig.tight_layout()
-        outfile = (
-            output_dir / f"{prefix}hybrid_time_vs_error_density_{backend}.png"
-        )
+        outfile = output_dir / f"{prefix}hybrid_time_vs_error_density_{backend}.png"
         fig.savefig(outfile, dpi=200)
         plt.close(fig)
         print(f"Wrote {outfile}", file=sys.stderr)
 
 
 def _default_combos() -> list[tuple[int, int]]:
-    return [
-        (8, 3),
-        (12, 4),
-        (16, 4),
-        (16, 5),
-        (20, 5),
-        (24, 5),
-        (24, 6),
-        (28, 6),
-        (32, 6),
-    ]
+    return [(28, 3)]
 
 
 def _parse_combos(arg: str | None) -> list[tuple[int, int]]:
@@ -567,6 +559,21 @@ def _parse_combos(arg: str | None) -> list[tuple[int, int]]:
     return combos
 
 
+def _parse_bool_list(values: Sequence[str]) -> list[bool]:
+    parsed: list[bool] = []
+    for val in values:
+        text = val.strip().lower()
+        if text in {"true", "1", "yes", "y"}:
+            parsed.append(True)
+        elif text in {"false", "0", "no", "n"}:
+            parsed.append(False)
+        else:
+            raise ValueError(f"Invalid boolean value '{val}'")
+    if not parsed:
+        raise ValueError("At least one failsafe option must be provided")
+    return parsed
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples-per-dim", type=int, default=80)
@@ -579,6 +586,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs="+",
         default=["python", "cpp"],
         help="Backends to benchmark (python, cpp)",
+    )
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        default=["bisect", "brentq", "brenth", "newton"],
+        help="Root-finding methods to benchmark.",
+    )
+    parser.add_argument(
+        "--failsafe-options",
+        nargs="+",
+        default=["true"],
+        help="Failsafe settings to test (e.g., 'true false').",
     )
     parser.add_argument(
         "--table-format",
@@ -629,7 +648,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     rng = np.random.default_rng(args.seed)
     backends = _resolve_backends(args.backends)
     combos = _parse_combos(args.hybrid_combos)
-    benchmarks = ["bisect", "brentq", "brenth", "newton"]
+    benchmarks = []
+    seen_methods: set[str] = set()
+    for method in args.methods:
+        name = method.lower()
+        if name in seen_methods:
+            continue
+        benchmarks.append(name)
+        seen_methods.add(name)
+    failsafe_options = _parse_bool_list(args.failsafe_options)
+    benchmark_labels = [
+        m if fs else f"{m}_nofailsafe" for m in benchmarks for fs in failsafe_options
+    ]
     if args.cases_input:
         cases = _load_cases(args.cases_input)
     else:
@@ -643,14 +673,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     all_raw_results: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
     for case in cases:
-        case_stats = _evaluate_case(case, combos, benchmarks, backends)
+        case_stats = _evaluate_case(
+            case, combos, benchmarks, backends, failsafe_options
+        )
         for key, values in case_stats.items():
             if values:  # Only record successful evaluations
                 all_raw_results[key].append(
                     (values["dim"], values["time"], values["error"])
                 )
 
-    summary, dims = _summarize(cases, combos, benchmarks, backends, all_raw_results)
+    summary, dims = _summarize(
+        cases, combos, benchmark_labels, backends, all_raw_results
+    )
 
     def _fmt(stat: dict[str, float]) -> str:
         return (
@@ -667,7 +701,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.plot_dir:
         plot_dir = Path(args.plot_dir)
         plot_dir.mkdir(parents=True, exist_ok=True)
-        
+
         do_scatter = args.plot_type in ("scatter", "both")
         do_density = args.plot_type in ("density", "both")
 
