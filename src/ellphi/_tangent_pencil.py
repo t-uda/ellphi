@@ -44,7 +44,7 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
     linear = linear_vector(coef)
 
     det = float(np.linalg.det(quad))
-    
+
     # Rely on linalg.cho_factor and lstsq to handle singular/ill-conditioned matrices.
     # The explicit isclose(det, 0.0) check can be too aggressive if underlying solvers are robust.
 

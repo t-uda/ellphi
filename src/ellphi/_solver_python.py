@@ -87,6 +87,7 @@ NewtonResult = namedtuple("NewtonResult", ["root", "converged"])
 
 
 
+
 def _algsig_newton_py(
     curry_f: Callable[[float], float],
     curry_df: Callable[[float], float],
@@ -103,7 +104,7 @@ def _algsig_newton_py(
     for i in range(maxiter):
         x = _x_from_u(u)
         f_val = curry_f(x)
-        
+
         if not numpy.isfinite(f_val):
             return NewtonResult(x, False)
 
@@ -119,31 +120,32 @@ def _algsig_newton_py(
         alpha = 1.0
         u_next = u
         step_accepted = False
-        
+
         for j in range(10):  # Max 10 backtracking steps
             u_candidate = u + alpha * delta_u
             if not numpy.isfinite(u_candidate):
                 alpha *= 0.5
                 continue
-            
+
             f_candidate = curry_f(_x_from_u(u_candidate))
-            
+
             if numpy.isfinite(f_candidate) and abs(f_candidate) < abs(f_val):
                 u_next = u_candidate
                 step_accepted = True
                 break
             alpha *= 0.5
-        
+
         if not step_accepted:
-            return NewtonResult(x, False) # Backtracking failed
+            return NewtonResult(x, False)  # Backtracking failed
 
         # Convergence criterion
         if abs(u_next - u) <= xtol + rtol * abs(u_next):
             return NewtonResult(_x_from_u(u_next), True)
-            
+
         u = u_next
 
     return NewtonResult(_x_from_u(u), False)
+
 
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
     A, b, _ = unpack_single_conic(coef)

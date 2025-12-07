@@ -652,7 +652,7 @@ def find_divergent_case(cases: Sequence[Case]) -> None:
     for i, case in enumerate(cases):
         if i % 10 == 0:
             print(f"  ... checked {i}/{len(cases)} cases", file=sys.stderr)
-        
+
         kwargs = {"method": "algsig+newton", "failsafe": False, "x0": 0.5}
         try:
             # Check if C++ succeeds
@@ -709,11 +709,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.cases_output:
             _save_cases(cases, args.cases_output)
-            
+
     if args.find_divergent_case:
         find_divergent_case(cases)
         return 0  # Should not be reached if a case is found
-    
+
     if args.warmup > 0:
         cases = cases[args.warmup :]
 
