@@ -638,7 +638,50 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--warmup", type=int, default=0, help="Number of warmup evaluations to skip"
     )
+    parser.add_argument(
+        "--find-divergent-case",
+        action="store_true",
+        help="If set, find and print the first case where Python and C++ diverge.",
+    )
     return parser.parse_args(argv)
+
+
+def find_divergent_case(cases: Sequence[Case]) -> None:
+    """Find and print the first case where Python and C++ diverge."""
+    print("Searching for divergent case...", file=sys.stderr)
+    for i, case in enumerate(cases):
+        if i % 10 == 0:
+            print(f"  ... checked {i}/{len(cases)} cases", file=sys.stderr)
+        
+        kwargs = {"method": "algsig+newton", "failsafe": False, "x0": 0.5}
+        try:
+            # Check if C++ succeeds
+            tangency(case.p, case.q, backend="cpp", **kwargs)
+            cpp_succeeded = True
+        except Exception:
+            cpp_succeeded = False
+
+        if not cpp_succeeded:
+            continue
+
+        # If C++ succeeded, check if Python fails
+        try:
+            tangency(case.p, case.q, backend="python", **kwargs)
+            # If we get here, Python also succeeded, so it's not the case we're looking for
+        except Exception:
+            # C++ succeeded and Python failed. This is our target case.
+            print("\n--- DIVERGENT CASE FOUND ---", file=sys.stderr)
+            print(f"Case index: {i}, Dim: {case.dim}")
+            print("\np_coef = np.array([")
+            print(",\n".join(f"    {x:.17e}" for x in case.p))
+            print("])")
+            print("\nq_coef = np.array([")
+            print(",\n".join(f"    {x:.17e}" for x in case.q))
+            print("])")
+            sys.exit(0)
+
+    print("\n--- No divergent case found ---", file=sys.stderr)
+    sys.exit(1)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -666,6 +709,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.cases_output:
             _save_cases(cases, args.cases_output)
+            
+    if args.find_divergent_case:
+        find_divergent_case(cases)
+        return 0  # Should not be reached if a case is found
+    
     if args.warmup > 0:
         cases = cases[args.warmup :]
 

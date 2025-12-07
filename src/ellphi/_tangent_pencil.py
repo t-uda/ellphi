@@ -44,15 +44,23 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
     linear = linear_vector(coef)
 
     det = float(np.linalg.det(quad))
-    if np.isclose(det, 0.0):
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
+    
+    # Rely on linalg.cho_factor and lstsq to handle singular/ill-conditioned matrices.
+    # The explicit isclose(det, 0.0) check can be too aggressive if underlying solvers are robust.
 
-    chol = linalg.cho_factor(quad, check_finite=False)
-
-    center = -linalg.cho_solve(chol, linear)
+    try:
+        # Attempt Cholesky factorization
+        chol_factor = linalg.cho_factor(quad, check_finite=False)
+        center = -linalg.cho_solve(chol_factor, linear)
+        chol_tuple = chol_factor  # Store the successful cholesky factor
+    except linalg.LinAlgError:
+        # If Cholesky fails, it means the quadratic form is not positive definite.
+        # This implies we cannot form a tangent pencil suitable for derivative calculation.
+        # Re-raise as ZeroDivisionError as per test expectation.
+        raise ZeroDivisionError("Degenerate or non-positive definite quadratic form.")
 
     return TangentPencil(
-        coef=coef, quad=quad, linear=linear, det=det, chol=chol, center=center
+        coef=coef, quad=quad, linear=linear, det=det, chol=chol_tuple, center=center
     )
 
 

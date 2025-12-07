@@ -8,13 +8,14 @@ mkdir -p build/benchmarks
 SAMPLES=5000
 SMALL_SAMPLES=500
 HYBRID_COMBOS="28x3"
+METHODS="brentq brenth algsig+newton newton"
 
 # 1) Normal Low-Dim (2D, 3D) - The "Happy Path"
 # Expect hybrid_8x3 to shine here.
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 2 3 \
   --extreme-fraction 0.0 \
-  --methods brentq algsig+newton \
+  --methods $METHODS \
   --failsafe-options true false \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix normal_lowdim- \
@@ -64,6 +65,7 @@ poetry run python scripts/hybrid_tuning.py \
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SMALL_SAMPLES --dims `seq 20 3 50` \
   --extreme-fraction 0.0 \
+  --methods $METHODS \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix multidim- \
   --plot-type both \
@@ -76,7 +78,7 @@ poetry run python scripts/hybrid_tuning.py \
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 2 3 \
   --extreme-fraction 1.0 \
-  --methods brentq algsig+newton \
+  --methods $METHODS \
   --failsafe-options true false \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix extreme_lowdim- \
@@ -90,7 +92,7 @@ poetry run python scripts/hybrid_tuning.py \
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 0.0 \
-  --methods brentq algsig+newton \
+  --methods $METHODS \
   --failsafe-options true false \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix normal_highdim- \
@@ -104,7 +106,7 @@ poetry run python scripts/hybrid_tuning.py \
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 1.0 \
-  --methods brentq algsig+newton \
+  --methods $METHODS \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix extreme_highdim- \
   --plot-type both \
@@ -117,7 +119,7 @@ poetry run python scripts/hybrid_tuning.py \
 poetry run python scripts/hybrid_tuning.py \
   --samples-per-dim $SMALL_SAMPLES --dims `seq 20 3 50` \
   --extreme-fraction 0.0 \
-  --methods brentq algsig+newton \
+  --methods $METHODS \
   --failsafe-options true false \
   --hybrid-combos "$HYBRID_COMBOS" \
   --plot-dir build/benchmarks --plot-prefix multidim- \
@@ -125,4 +127,3 @@ poetry run python scripts/hybrid_tuning.py \
   --output build/benchmarks/summary_multidim.json \
   --warmup 1 \
   > build/benchmarks/summary_multidim.md
-
