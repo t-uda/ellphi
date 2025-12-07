@@ -1,8 +1,6 @@
 import numpy as np
-import pytest
 
 from ellphi.solver import tangency, TangencyResult
-from ellphi._solver_python import _center  # For direct testing if needed
 
 # --- Divergent Case extracted from benchmark (Case index: 0, Dim: 5) ---
 p_coef = np.array(

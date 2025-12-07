@@ -491,8 +491,6 @@ def _plot_density_map(
         fig, ax = plt.subplots(figsize=(10, 7))
 
         # Determine unique groups present in the data for this backend
-        present_groups = df_backend["group"].unique()
-
         # Custom color palette: blue for hybrid, green for brent, gray for other
         custom_palette = {
             "hybrid": "#1f77b4",  # blue
@@ -523,8 +521,10 @@ def _plot_density_map(
         # based on observed data ranges.
         # Python backend has larger errors than C++ backend.
         if backend == "python":
-            # Set upper limit to a value that covers most meaningful errors without being too wide due to extreme outliers
+            # Set upper limit to a value that covers most meaningful errors
+            # without being too wide due to extreme outliers
             ax.set_ylim(1e-18, 1e-02)  # Adjusted based on typical meaningful errors
+            # without being too wide due to extreme outliers
         else:
             # C++ backend typically has very small errors
             ax.set_ylim(1e-18, 1e-08)  # Adjusted for C++ backend's smaller error range
@@ -667,9 +667,10 @@ def find_divergent_case(cases: Sequence[Case]) -> None:
         # If C++ succeeded, check if Python fails
         try:
             tangency(case.p, case.q, backend="python", **kwargs)
-            # If we get here, Python also succeeded, so it's not the case we're looking for
+            # If Python also succeeded, it's not the case we're looking for
         except Exception:
-            # C++ succeeded and Python failed. This is our target case.
+            # C++ succeeded and Python failed.
+            # This is our target case.
             print("\n--- DIVERGENT CASE FOUND ---", file=sys.stderr)
             print(f"Case index: {i}, Dim: {case.dim}")
             print("\np_coef = np.array([")

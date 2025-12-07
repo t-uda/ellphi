@@ -130,7 +130,8 @@ def main(output: Path, extreme: bool) -> int:
                 u_next = u_candidate
                 valid_step_found = True
                 print(
-                    f"Iter {i}: Backtrack(j={j}) alpha={alpha:.3g}, step={alpha * delta_u:.4g}"
+                    f"Iter {i}: Backtrack(j={j}) alpha={alpha:.3g}, "
+                    f"step={alpha * delta_u:.4g}"
                 )
                 break
 

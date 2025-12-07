@@ -46,7 +46,8 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
     det = float(np.linalg.det(quad))
 
     # Rely on linalg.cho_factor and lstsq to handle singular/ill-conditioned matrices.
-    # The explicit isclose(det, 0.0) check can be too aggressive if underlying solvers are robust.
+    # The explicit isclose(det, 0.0) check can be too aggressive
+    # if underlying solvers are robust.
 
     try:
         # Attempt Cholesky factorization
@@ -54,8 +55,9 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
         center = -linalg.cho_solve(chol_factor, linear)
         chol_tuple = chol_factor  # Store the successful cholesky factor
     except linalg.LinAlgError:
-        # If Cholesky fails, it means the quadratic form is not positive definite.
-        # This implies we cannot form a tangent pencil suitable for derivative calculation.
+        # If Cholesky fails, the quadratic form is not positive definite.
+        # This implies we cannot form a tangent pencil suitable
+        # for derivative calculation.
         # Re-raise as ZeroDivisionError as per test expectation.
         raise ZeroDivisionError("Degenerate or non-positive definite quadratic form.")
 

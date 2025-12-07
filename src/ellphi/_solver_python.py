@@ -85,9 +85,6 @@ TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 NewtonResult = namedtuple("NewtonResult", ["root", "converged"])
 
 
-
-
-
 def _algsig_newton_py(
     curry_f: Callable[[float], float],
     curry_df: Callable[[float], float],
@@ -312,7 +309,7 @@ def solve_mu(
                 "brentq", bracket=bracket, maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE
             )
 
-        # If not converged and no failsafe, raise an error to match scipy.newton's behavior
+        # If not converged & no failsafe, raise error to match scipy.newton's behavior
         raise RuntimeError("algsig+newton failed to converge.")
 
     if method in _BRACKET_METHODS:

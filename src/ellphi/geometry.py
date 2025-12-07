@@ -271,7 +271,8 @@ def coef_from_cov(
     try:
         inv_cov = numpy.linalg.inv(cov)
     except numpy.linalg.LinAlgError:
-        # If the covariance matrix is singular, we cannot compute the conic coefficients.
+        # If the covariance matrix is singular,
+        # we cannot compute the conic coefficients.
         # We return an array of NaNs to indicate that the computation failed,
         # allowing the caller (e.g., the solver) to handle this case gracefully.
         m = (n_dim + 1) * (n_dim + 2) // 2
