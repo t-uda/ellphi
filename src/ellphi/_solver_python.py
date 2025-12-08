@@ -62,6 +62,50 @@ def _x_prime_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
     return 0.5 * (1.0 + u**2) ** (-1.5)
 
 
+# --- Linear Solvers ---
+
+
+def _gaussian_elimination(matrix: numpy.ndarray, rhs: numpy.ndarray) -> numpy.ndarray:
+    """Solve ``Ax = rhs`` with partial pivoting.
+
+    This mirrors the C++ fallback implementation so that the Python backend
+    behaves consistently across NumPy releases when Cholesky factorisation
+    fails.
+    """
+
+    A = numpy.array(matrix, dtype=float, copy=True)
+    b = numpy.array(rhs, dtype=float, copy=True)
+
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise numpy.linalg.LinAlgError("Matrix must be square")
+
+    dim = A.shape[0]
+    for k in range(dim):
+        pivot = k + int(numpy.argmax(numpy.abs(A[k:, k])))
+        pivot_value = A[pivot, k]
+        if pivot_value == 0.0:
+            raise numpy.linalg.LinAlgError("Matrix is singular")
+
+        if pivot != k:
+            A[[k, pivot]] = A[[pivot, k]]
+            b[[k, pivot]] = b[[pivot, k]]
+
+        diag = A[k, k]
+        factors = A[k + 1 :, k] / diag
+        b[k + 1 :] -= factors * b[k]
+        A[k + 1 :, k:] -= factors[:, numpy.newaxis] * A[k : k + 1, k:]
+
+    x = numpy.zeros(dim, dtype=float)
+    for i in range(dim - 1, -1, -1):
+        diag = A[i, i]
+        if diag == 0.0:
+            raise numpy.linalg.LinAlgError("Matrix is singular")
+        residual = b[i] - A[i, i + 1 :] @ x[i + 1 :]
+        x[i] = residual / diag
+
+    return x
+
+
 # --- Core Solver Functions ---
 
 
@@ -151,10 +195,9 @@ def _center(coef: numpy.ndarray) -> numpy.ndarray:
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to general linear solver, using lstsq for robustness
-            center = numpy.linalg.lstsq(A, -b, rcond=None)[0]
+            center = _gaussian_elimination(A, -b)
         except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
-            # If lstsq also fails, propagate NaN
+            # If the fallback also fails, propagate NaN
             return numpy.full(A.shape[0], numpy.nan, dtype=float)
     return center
 
