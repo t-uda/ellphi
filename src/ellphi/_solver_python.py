@@ -62,6 +62,55 @@ def _x_prime_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
     return 0.5 * (1.0 + u**2) ** (-1.5)
 
 
+# --- Linear Solvers ---
+
+
+def _gaussian_elimination(
+    A: numpy.ndarray, b: numpy.ndarray
+) -> numpy.ndarray:
+    """Solve a dense linear system using Gaussian elimination with pivoting.
+
+    The implementation mirrors the C++ backend's fallback used when Cholesky
+    factorization fails, ensuring both backends follow the same numerical path
+    across NumPy/SciPy versions.
+    """
+
+    matrix = numpy.array(A, dtype=float, copy=True)
+    rhs = numpy.array(b, dtype=float, copy=True)
+
+    if matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("Matrix A must be square")
+
+    dim = matrix.shape[0]
+
+    for k in range(dim):
+        pivot_offset = int(numpy.argmax(numpy.abs(matrix[k:, k])))
+        pivot = k + pivot_offset
+        pivot_value = matrix[pivot, k]
+
+        if pivot_value == 0.0 or not numpy.isfinite(pivot_value):
+            raise linalg.LinAlgError("Degenerate conic (determinant zero)")
+
+        if pivot != k:
+            matrix[[k, pivot]] = matrix[[pivot, k]]
+            rhs[[k, pivot]] = rhs[[pivot, k]]
+
+        for i in range(k + 1, dim):
+            factor = matrix[i, k] / pivot_value
+            rhs[i] -= factor * rhs[k]
+            matrix[i, k:] -= factor * matrix[k, k:]
+
+    x = numpy.zeros(dim, dtype=float)
+    for i in range(dim - 1, -1, -1):
+        diag = matrix[i, i]
+        if diag == 0.0 or not numpy.isfinite(diag):
+            raise linalg.LinAlgError("Degenerate conic (determinant zero)")
+
+        x[i] = (rhs[i] - matrix[i, i + 1 :] @ x[i + 1 :]) / diag
+
+    return x
+
+
 # --- Core Solver Functions ---
 
 
@@ -151,10 +200,10 @@ def _center(coef: numpy.ndarray) -> numpy.ndarray:
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to general linear solver, using lstsq for robustness
-            center = numpy.linalg.lstsq(A, -b, rcond=None)[0]
-        except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
-            # If lstsq also fails, propagate NaN
+            # Fallback to match C++ backend: Gaussian elimination with pivoting
+            center = _gaussian_elimination(A, -b)
+        except linalg.LinAlgError:  # pragma: no cover - defensive
+            # If the fallback also fails, propagate NaN
             return numpy.full(A.shape[0], numpy.nan, dtype=float)
     return center
 
