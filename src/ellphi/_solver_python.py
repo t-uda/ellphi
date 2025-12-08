@@ -248,6 +248,17 @@ def solve_mu(
     curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
     curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
 
+    def _ensure_finite(
+        func: Callable[[float], float], label: str
+    ) -> Callable[[float], float]:
+        def wrapper(mu: float) -> float:
+            value = func(mu)
+            if not numpy.isfinite(value):
+                raise RuntimeError(f"Non-finite {label} value during Newton iteration")
+            return value
+
+        return wrapper
+
     def solve_single_stage(method_name: SingleStageMethodName, **kwargs: Any) -> float:
         if method_name == "newton":
             kwargs.setdefault("fprime", curry_df)
@@ -269,9 +280,9 @@ def solve_mu(
         try:
             # SciPy's Newton uses a similar tolerance scheme, so we can rely on it
             root, result = scipy_newton(
-                curry_f,
+                _ensure_finite(curry_f, "target"),
                 x0=mu0,
-                fprime=curry_df,
+                fprime=_ensure_finite(curry_df, "target derivative"),
                 maxiter=newton_iter,
                 full_output=True,
                 disp=False,
@@ -321,9 +332,9 @@ def solve_mu(
 
         try:
             root, result = scipy_newton(
-                curry_f,
+                _ensure_finite(curry_f, "target"),
                 x0=x0,
-                fprime=curry_df,
+                fprime=_ensure_finite(curry_df, "target derivative"),
                 maxiter=_NEWTON_ONLY_MAXITER,
                 full_output=True,
                 disp=False,  # Important: disp=False raises RuntimeError on failure
