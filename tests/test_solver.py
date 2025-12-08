@@ -1,6 +1,9 @@
 import numpy as np
 import pytest
+from scipy import linalg
 
+from ellphi._solver_python import _center, _gaussian_elimination
+from ellphi.geometry import pack_conic
 from ellphi.solver import pdist_tangency, solve_mu, tangency
 
 from .factories import random_cloud, random_coef_pair
@@ -52,3 +55,18 @@ def test_algsig_newton_confines_mu_and_matches_bracket(rng):
     np.testing.assert_allclose(
         algsig_python.point, algsig_auto.point, rtol=1e-9, atol=1e-10
     )
+
+
+def test_python_center_uses_gaussian_fallback_when_cholesky_fails():
+    A = np.array([[0.0, 2.0], [2.0, 3.0]], dtype=float)
+    b = np.array([1.0, -4.0], dtype=float)
+    coef = pack_conic(A, b, 0.0)
+
+    with pytest.raises(linalg.LinAlgError):
+        linalg.cho_factor(A, check_finite=False)
+
+    expected = np.array([2.75, -0.5])
+
+    center = _center(coef)
+    np.testing.assert_allclose(center, expected)
+    np.testing.assert_allclose(_gaussian_elimination(A, -b), expected)

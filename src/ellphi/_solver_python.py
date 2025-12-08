@@ -151,12 +151,53 @@ def _center(coef: numpy.ndarray) -> numpy.ndarray:
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to general linear solver, using lstsq for robustness
-            center = numpy.linalg.lstsq(A, -b, rcond=None)[0]
+            center = _gaussian_elimination(A, -b)
         except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
-            # If lstsq also fails, propagate NaN
             return numpy.full(A.shape[0], numpy.nan, dtype=float)
     return center
+
+
+def _gaussian_elimination(A: numpy.ndarray, b: numpy.ndarray) -> numpy.ndarray:
+    """Solve ``Ax = b`` using partial-pivot Gaussian elimination.
+
+    This mirrors the C++ fallback path used by the compiled backend and avoids
+    relying on LAPACK least-squares heuristics whose behaviour can vary across
+    NumPy/SciPy releases.
+    """
+
+    A_work = numpy.array(A, dtype=float, copy=True)
+    b_work = numpy.array(b, dtype=float, copy=True)
+    dim = A_work.shape[0]
+
+    if A_work.shape != (dim, dim):  # pragma: no cover - defensive
+        raise numpy.linalg.LinAlgError("Matrix must be square")
+
+    for k in range(dim):
+        pivot_slice = slice(k, dim)
+        pivot = k + int(numpy.argmax(numpy.abs(A_work[pivot_slice, k])))
+        pivot_value = abs(A_work[pivot, k])
+        if pivot_value == 0.0:
+            raise numpy.linalg.LinAlgError("Degenerate conic (determinant zero)")
+
+        if pivot != k:
+            A_work[[k, pivot]] = A_work[[pivot, k]]
+            b_work[[k, pivot]] = b_work[[pivot, k]]
+
+        diag = A_work[k, k]
+        if k + 1 < dim:
+            factors = A_work[k + 1 :, k] / diag
+            b_work[k + 1 :] -= factors * b_work[k]
+            A_work[k + 1 :, k:] -= factors[:, numpy.newaxis] * A_work[k, k:]
+
+    x = numpy.empty(dim, dtype=float)
+    for i in range(dim - 1, -1, -1):
+        diag = A_work[i, i]
+        if diag == 0.0:
+            raise numpy.linalg.LinAlgError("Degenerate conic (determinant zero)")
+        residual = b_work[i] - numpy.dot(A_work[i, i + 1 :], x[i + 1 :])
+        x[i] = residual / diag
+
+    return x
 
 
 def _target(mu: float, p: numpy.ndarray, q: numpy.ndarray) -> float:
