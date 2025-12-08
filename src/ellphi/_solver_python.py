@@ -146,13 +146,52 @@ def _algsig_newton_py(
 
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
     A, b, _ = unpack_single_conic(coef)
+
+    def _gaussian_elimination(
+        matrix: numpy.ndarray, rhs: numpy.ndarray
+    ) -> numpy.ndarray:
+        """Solve ``Ax = b`` using partial-pivot Gaussian elimination.
+
+        Mirrors the C++ backend fallback to avoid version-dependent differences
+        in ``numpy.linalg.lstsq``.
+        """
+
+        mat = numpy.array(matrix, dtype=float, copy=True)
+        vec = numpy.array(rhs, dtype=float, copy=True)
+        dim = mat.shape[0]
+
+        for k in range(dim):
+            pivot_rel = int(numpy.argmax(numpy.abs(mat[k:, k])))
+            pivot = k + pivot_rel
+            pivot_value = float(abs(mat[pivot, k]))
+            if pivot_value == 0.0:
+                raise numpy.linalg.LinAlgError("Degenerate conic (determinant zero)")
+            if pivot != k:
+                mat[[k, pivot], k:] = mat[[pivot, k], k:]
+                vec[k], vec[pivot] = vec[pivot], vec[k]
+
+            diag = mat[k, k]
+            for i in range(k + 1, dim):
+                factor = mat[i, k] / diag
+                vec[i] -= factor * vec[k]
+                mat[i, k:] -= factor * mat[k, k:]
+
+        x = numpy.zeros(dim, dtype=float)
+        for i in range(dim - 1, -1, -1):
+            diag = mat[i, i]
+            if diag == 0.0:
+                raise numpy.linalg.LinAlgError("Degenerate conic (determinant zero)")
+            rhs_i = vec[i] - numpy.dot(mat[i, i + 1 :], x[i + 1 :])
+            x[i] = rhs_i / diag
+
+        return x
+
     try:
         chol = linalg.cho_factor(A, check_finite=False)
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to general linear solver, using lstsq for robustness
-            center = numpy.linalg.lstsq(A, -b, rcond=None)[0]
+            center = _gaussian_elimination(A, -b)
         except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
             # If lstsq also fails, propagate NaN
             return numpy.full(A.shape[0], numpy.nan, dtype=float)
