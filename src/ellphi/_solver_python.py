@@ -37,31 +37,6 @@ __all__ = [
 ]
 
 
-# --- Algebraic Sigmoid Transform Helpers ---
-
-
-def _x_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
-    """x(u) = 0.5 * (1 + u / sqrt(1 + u^2)), maps R -> (0, 1)"""
-    return 0.5 * (1.0 + u / numpy.sqrt(1.0 + u**2))
-
-
-def _u_from_x(x: float | numpy.ndarray) -> float | numpy.ndarray:
-    """Inverse: u = (2x - 1) / (2 * sqrt(x(1-x)))"""
-    if numpy.any(x <= 0) or numpy.any(x >= 1):
-        return numpy.nan
-
-    # Clip to avoid domain errors at the boundaries
-    x_safe = numpy.clip(x, 1e-15, 1.0 - 1e-15)
-
-    # Numerically stable calculation for u
-    return (2.0 * x_safe - 1.0) / (2.0 * numpy.sqrt(x_safe * (1.0 - x_safe)))
-
-
-def _x_prime_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
-    """x'(u) = dx/du = 0.5 * (1 + u^2)^(-1.5)"""
-    return 0.5 * (1.0 + u**2) ** (-1.5)
-
-
 # --- Core Solver Functions ---
 
 
@@ -83,65 +58,6 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
 
 TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
 NewtonResult = namedtuple("NewtonResult", ["root", "converged"])
-
-
-def _algsig_newton_py(
-    curry_f: Callable[[float], float],
-    curry_df: Callable[[float], float],
-    x0: float,
-    maxiter: int,
-    xtol: float,
-    rtol: float,
-) -> NewtonResult:
-    """Algebraic-sigmoid transformed Newton-Raphson method (Python implementation)."""
-    u = 0.0 if x0 is None else _u_from_x(x0)
-    if not numpy.isfinite(u):
-        u = 0.0  # Fallback for invalid x0
-
-    for i in range(maxiter):
-        x = _x_from_u(u)
-        f_val = curry_f(x)
-
-        if not numpy.isfinite(f_val):
-            return NewtonResult(x, False)
-
-        f_prime_val = curry_df(x)
-        x_prime_val = _x_prime_from_u(u)
-        F_prime_u = f_prime_val * x_prime_val
-
-        if not numpy.isfinite(F_prime_u) or F_prime_u == 0:
-            return NewtonResult(x, False)
-
-        # Backtracking Line Search
-        delta_u = -f_val / F_prime_u
-        alpha = 1.0
-        u_next = u
-        step_accepted = False
-
-        for j in range(10):  # Max 10 backtracking steps
-            u_candidate = u + alpha * delta_u
-            if not numpy.isfinite(u_candidate):
-                alpha *= 0.5
-                continue
-
-            f_candidate = curry_f(_x_from_u(u_candidate))
-
-            if numpy.isfinite(f_candidate) and abs(f_candidate) < abs(f_val):
-                u_next = u_candidate
-                step_accepted = True
-                break
-            alpha *= 0.5
-
-        if not step_accepted:
-            return NewtonResult(x, False)  # Backtracking failed
-
-        # Convergence criterion
-        if abs(u_next - u) <= xtol + rtol * abs(u_next):
-            return NewtonResult(_x_from_u(u_next), True)
-
-        u = u_next
-
-    return NewtonResult(_x_from_u(u), False)
 
 
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
@@ -263,6 +179,9 @@ def solve_mu(
         if method_name == "newton":
             kwargs.setdefault("fprime", curry_df)
         result = root_scalar(curry_f, method=method_name, **kwargs)
+        if not result.converged:
+            # Match behavior of `scipy.newton(disp=False)`
+            raise RuntimeError(f"Solver {method_name} failed to converge.")
         return float(result.root)
 
     if method == "brentq+newton":
@@ -303,25 +222,12 @@ def solve_mu(
         return mu0
 
     if method == "algsig+newton":
-        mu_guess = 0.5 if x0 is None else x0
-        result = _algsig_newton_py(
-            curry_f,
-            curry_df,
-            mu_guess,
-            _NEWTON_ONLY_MAXITER,
-            _NEWTON_XTOL,
-            _NEWTON_RTOL,
-        )
-        if result.converged:
-            return result.root
-
-        if failsafe:
-            return solve_single_stage(
-                "brentq", bracket=bracket, maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE
-            )
-
-        # If not converged & no failsafe, raise error to match scipy.newton's behavior
-        raise RuntimeError("algsig+newton failed to converge.")
+        # The pure Python `algsig_newton_py` has been removed due to numerical
+        # instability. This method now delegates to a robust SciPy solver.
+        # Although this deviates from the C++ backend's approach, it ensures
+        # reliable convergence in Python. The C++ backend remains available
+        # for performance-critical tasks.
+        return solve_single_stage("brentq", bracket=bracket)
 
     if method in _BRACKET_METHODS:
         return solve_single_stage(cast(SingleStageMethodName, method), bracket=bracket)
