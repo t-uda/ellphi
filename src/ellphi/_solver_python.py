@@ -126,7 +126,10 @@ def _algsig_newton_py(
 
             f_candidate = curry_f(_x_from_u(u_candidate))
 
-            if numpy.isfinite(f_candidate) and abs(f_candidate) < abs(f_val):
+            # Relaxed check: allow equality to handle cases where we hit machine
+            # precision and cannot strictly improve, effectively falling through to
+            # convergence check.
+            if numpy.isfinite(f_candidate) and abs(f_candidate) <= abs(f_val):
                 u_next = u_candidate
                 step_accepted = True
                 break
@@ -144,6 +147,56 @@ def _algsig_newton_py(
     return NewtonResult(_x_from_u(u), False)
 
 
+def _gaussian_elimination_py(
+    matrix: numpy.ndarray, rhs: numpy.ndarray
+) -> numpy.ndarray:
+    """Gaussian elimination with partial pivoting (Python fallback)."""
+    # Working on a copy to avoid side effects
+    A = matrix.copy()
+    b = rhs.copy()
+    dim = A.shape[0]
+
+    for k in range(dim):
+        # Partial pivoting
+        pivot = k
+        pivot_val = abs(A[k, k])
+        for i in range(k + 1, dim):
+            val = abs(A[i, k])
+            if val > pivot_val:
+                pivot = i
+                pivot_val = val
+
+        if pivot_val == 0.0:
+            raise RuntimeError("Degenerate conic (determinant zero)")
+
+        if pivot != k:
+            # Swap rows
+            A[[k, pivot]] = A[[pivot, k]]
+            b[[k, pivot]] = b[[pivot, k]]
+
+        diag = A[k, k]
+        for i in range(k + 1, dim):
+            factor = A[i, k] / diag
+            b[i] -= factor * b[k]
+            # Row operation: A[i] -= factor * A[k]
+            # Only update columns starting from k to save work, though A[i, k] becomes 0
+            A[i, k:] -= factor * A[k, k:]
+
+    # Back substitution
+    x = numpy.zeros(dim, dtype=float)
+    for i in range(dim - 1, -1, -1):
+        sum_val = b[i]
+        for j in range(i + 1, dim):
+            sum_val -= A[i, j] * x[j]
+
+        diag = A[i, i]
+        if diag == 0.0:
+            raise RuntimeError("Degenerate conic (determinant zero)")
+        x[i] = sum_val / diag
+
+    return x
+
+
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
     A, b, _ = unpack_single_conic(coef)
     try:
@@ -151,11 +204,16 @@ def _center(coef: numpy.ndarray) -> numpy.ndarray:
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to general linear solver, using lstsq for robustness
-            center = numpy.linalg.lstsq(A, -b, rcond=None)[0]
-        except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
-            # If lstsq also fails, propagate NaN
-            return numpy.full(A.shape[0], numpy.nan, dtype=float)
+            # Fallback to manual Gaussian elimination with partial pivoting
+            # to match C++ backend behavior exactly.
+            center = _gaussian_elimination_py(A, -b)
+        except RuntimeError as e:
+            # If Gaussian elimination fails (singular matrix), we mirror the C++ logic:
+            # return NaNs. The check "Degenerate conic" comes from
+            # _gaussian_elimination_py.
+            if str(e) == "Degenerate conic (determinant zero)":
+                return numpy.full(A.shape[0], numpy.nan, dtype=float)
+            raise e
     return center
 
 
@@ -254,7 +312,8 @@ def solve_mu(
         def wrapper(mu: float) -> float:
             value = func(mu)
             if not numpy.isfinite(value):
-                raise RuntimeError(f"Non-finite {label} value during Newton iteration")
+                msg = f"Non-finite {label} value during Newton iteration"
+                raise RuntimeError(msg)
             return value
 
         return wrapper
@@ -298,7 +357,9 @@ def solve_mu(
 
         if failsafe:
             return solve_single_stage(
-                "brentq", bracket=bracket, maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE
+                "brentq",
+                bracket=bracket,
+                maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE,
             )
         return mu0
 
@@ -317,7 +378,9 @@ def solve_mu(
 
         if failsafe:
             return solve_single_stage(
-                "brentq", bracket=bracket, maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE
+                "brentq",
+                bracket=bracket,
+                maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE,
             )
 
         # If not converged & no failsafe, raise error to match scipy.newton's behavior
@@ -350,7 +413,9 @@ def solve_mu(
 
         if failsafe:
             return solve_single_stage(
-                "brentq", bracket=bracket, maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE
+                "brentq",
+                bracket=bracket,
+                maxiter=_HYBRID_BRACKET_MAXITER_FAILSAFE,
             )
         # This part should ideally not be reached if disp=False, but as a fallback:
         raise RuntimeError("Newton method failed to converge.")
