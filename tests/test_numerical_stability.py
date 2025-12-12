@@ -106,9 +106,8 @@ def test_hard_case_stability_and_parity(method: str):
 def test_center_calculation_indefinite_matrix_parity():
     """Verify `_center` calculation for indefinite matrices (Gaussian fallback).
 
-    Standard Cholesky decomposition fails for indefinite matrices (even if non-singular).
-    This test ensures the Python fallback (Gaussian elimination) produces the
-    same result as the expected mathematical solution, matching C++ strategy.
+    Cholesky decomposition fails for indefinite matrices. This test ensures
+    the Python fallback matches the mathematical solution and C++ strategy.
     """
     # Indefinite matrix: [[0, 1.5], [1.5, 0]] -> det = -2.25 != 0
     matrix = np.array([[0.0, 1.5], [1.5, 0.0]])
@@ -117,12 +116,8 @@ def test_center_calculation_indefinite_matrix_parity():
 
     center = _center(coef)
 
-    # Expected solution for 1.5y + x = 0, 1.5x - 2 = 0
-    # => x = 4/3, y = -x/1.5 = -4/4.5 = -8/9 ... wait.
-    # Ax = -b
-    # [[0, 1.5], [1.5, 0]] * [x, y] = [-1, 2]
-    # 1.5y = -1 => y = -2/3
-    # 1.5x = 2  => x = 4/3
+    # Expected solution for 1.5y = -1 and 1.5x = 2
+    # => y = -2/3, x = 4/3
     expected = np.array([4.0 / 3.0, -2.0 / 3.0])
 
     np.testing.assert_allclose(center, expected)
