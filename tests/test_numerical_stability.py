@@ -1,6 +1,8 @@
 import numpy as np
 
-from ellphi.solver import tangency, TangencyResult
+from ellphi._solver_python import _center
+from ellphi.geometry import pack_conic
+from ellphi.solver import TangencyResult, tangency
 
 # --- Divergent Case extracted from benchmark (Case index: 0, Dim: 5) ---
 p_coef = np.array(
@@ -75,3 +77,13 @@ def test_divergent_algsig_newton_case():
 
     # Optionally, assert that the mu values are close if exact match is expected
     # np.testing.assert_allclose(cpp_result.mu, python_result.mu, rtol=1e-9, atol=1e-10)
+
+
+def test_center_gaussian_fallback_matches_cpp_strategy():
+    matrix = np.array([[0.0, 1.5], [1.5, 0.0]])
+    linear = np.array([1.0, -2.0])
+    coef = pack_conic(matrix, linear, 0.25)
+
+    center = _center(coef)
+
+    np.testing.assert_allclose(center, np.array([4.0 / 3.0, -2.0 / 3.0]))

@@ -62,6 +62,50 @@ def _x_prime_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
     return 0.5 * (1.0 + u**2) ** (-1.5)
 
 
+# --- Linear Solvers ---
+
+
+def _gaussian_elimination(matrix: numpy.ndarray, rhs: numpy.ndarray) -> numpy.ndarray:
+    """Solve ``Ax = rhs`` with partial pivoting.
+
+    This mirrors the C++ fallback implementation so that the Python backend
+    behaves consistently across NumPy releases when Cholesky factorisation
+    fails.
+    """
+
+    A = numpy.array(matrix, dtype=float, copy=True)
+    b = numpy.array(rhs, dtype=float, copy=True)
+
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise numpy.linalg.LinAlgError("Matrix must be square")
+
+    dim = A.shape[0]
+    for k in range(dim):
+        pivot = k + int(numpy.argmax(numpy.abs(A[k:, k])))
+        pivot_value = A[pivot, k]
+        if pivot_value == 0.0:
+            raise numpy.linalg.LinAlgError("Matrix is singular")
+
+        if pivot != k:
+            A[[k, pivot]] = A[[pivot, k]]
+            b[[k, pivot]] = b[[pivot, k]]
+
+        diag = A[k, k]
+        factors = A[k + 1 :, k] / diag
+        b[k + 1 :] -= factors * b[k]
+        A[k + 1 :, k:] -= factors[:, numpy.newaxis] * A[k : k + 1, k:]
+
+    x = numpy.zeros(dim, dtype=float)
+    for i in range(dim - 1, -1, -1):
+        diag = A[i, i]
+        if diag == 0.0:
+            raise numpy.linalg.LinAlgError("Matrix is singular")
+        residual = b[i] - A[i, i + 1 :] @ x[i + 1 :]
+        x[i] = residual / diag
+
+    return x
+
+
 # --- Core Solver Functions ---
 
 
@@ -147,56 +191,6 @@ def _algsig_newton_py(
     return NewtonResult(_x_from_u(u), False)
 
 
-def _gaussian_elimination_py(
-    matrix: numpy.ndarray, rhs: numpy.ndarray
-) -> numpy.ndarray:
-    """Gaussian elimination with partial pivoting (Python fallback)."""
-    # Working on a copy to avoid side effects
-    A = matrix.copy()
-    b = rhs.copy()
-    dim = A.shape[0]
-
-    for k in range(dim):
-        # Partial pivoting
-        pivot = k
-        pivot_val = abs(A[k, k])
-        for i in range(k + 1, dim):
-            val = abs(A[i, k])
-            if val > pivot_val:
-                pivot = i
-                pivot_val = val
-
-        if pivot_val == 0.0:
-            raise RuntimeError("Degenerate conic (determinant zero)")
-
-        if pivot != k:
-            # Swap rows
-            A[[k, pivot]] = A[[pivot, k]]
-            b[[k, pivot]] = b[[pivot, k]]
-
-        diag = A[k, k]
-        for i in range(k + 1, dim):
-            factor = A[i, k] / diag
-            b[i] -= factor * b[k]
-            # Row operation: A[i] -= factor * A[k]
-            # Only update columns starting from k to save work, though A[i, k] becomes 0
-            A[i, k:] -= factor * A[k, k:]
-
-    # Back substitution
-    x = numpy.zeros(dim, dtype=float)
-    for i in range(dim - 1, -1, -1):
-        sum_val = b[i]
-        for j in range(i + 1, dim):
-            sum_val -= A[i, j] * x[j]
-
-        diag = A[i, i]
-        if diag == 0.0:
-            raise RuntimeError("Degenerate conic (determinant zero)")
-        x[i] = sum_val / diag
-
-    return x
-
-
 def _center(coef: numpy.ndarray) -> numpy.ndarray:
     A, b, _ = unpack_single_conic(coef)
     try:
@@ -204,16 +198,10 @@ def _center(coef: numpy.ndarray) -> numpy.ndarray:
         center = linalg.cho_solve(chol, -b, check_finite=False)
     except linalg.LinAlgError:
         try:
-            # Fallback to manual Gaussian elimination with partial pivoting
-            # to match C++ backend behavior exactly.
-            center = _gaussian_elimination_py(A, -b)
-        except RuntimeError as e:
-            # If Gaussian elimination fails (singular matrix), we mirror the C++ logic:
-            # return NaNs. The check "Degenerate conic" comes from
-            # _gaussian_elimination_py.
-            if str(e) == "Degenerate conic (determinant zero)":
-                return numpy.full(A.shape[0], numpy.nan, dtype=float)
-            raise e
+            center = _gaussian_elimination(A, -b)
+        except numpy.linalg.LinAlgError:  # pragma: no cover - defensive
+            # If the fallback also fails, propagate NaN
+            return numpy.full(A.shape[0], numpy.nan, dtype=float)
     return center
 
 
