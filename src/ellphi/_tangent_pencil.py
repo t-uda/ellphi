@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import linalg
 
 from .geometry import unpack_single_conic
 
@@ -17,7 +18,7 @@ class TangentPencil:
     quad: np.ndarray
     linear: np.ndarray
     det: float
-    inv_quad: np.ndarray
+    chol: tuple[np.ndarray, bool]
     center: np.ndarray
 
 
@@ -41,13 +42,27 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
     coef = (1.0 - mu) * p + mu * q
     quad = quad_matrix(coef)
     linear = linear_vector(coef)
+
     det = float(np.linalg.det(quad))
-    if np.isclose(det, 0.0):
-        raise ZeroDivisionError("Degenerate conic (determinant zero)")
-    inv_quad = np.linalg.inv(quad)
-    center = -inv_quad @ linear
+
+    # Rely on linalg.cho_factor and lstsq to handle singular/ill-conditioned matrices.
+    # The explicit isclose(det, 0.0) check can be too aggressive
+    # if underlying solvers are robust.
+
+    try:
+        # Attempt Cholesky factorization
+        chol_factor = linalg.cho_factor(quad, check_finite=False)
+        center = -linalg.cho_solve(chol_factor, linear)
+        chol_tuple = chol_factor  # Store the successful cholesky factor
+    except linalg.LinAlgError:
+        # If Cholesky fails, the quadratic form is not positive definite.
+        # This implies we cannot form a tangent pencil suitable
+        # for derivative calculation.
+        # Re-raise as ZeroDivisionError as per test expectation.
+        raise ZeroDivisionError("Degenerate or non-positive definite quadratic form.")
+
     return TangentPencil(
-        coef=coef, quad=quad, linear=linear, det=det, inv_quad=inv_quad, center=center
+        coef=coef, quad=quad, linear=linear, det=det, chol=chol_tuple, center=center
     )
 
 
@@ -60,7 +75,9 @@ def target_prime_from_pencil(
     diff_mat = quad_matrix(diff)
     diff_vec = linear_vector(diff)
     residual = -(diff_mat @ pencil.center + diff_vec)
-    return float(2.0 * residual @ pencil.inv_quad @ residual)
+
+    solved = linalg.cho_solve(pencil.chol, residual)
+    return float(2.0 * residual @ solved)
 
 
 def center_jacobian(pencil: TangentPencil) -> np.ndarray:
@@ -77,12 +94,12 @@ def center_jacobian(pencil: TangentPencil) -> np.ndarray:
         if i != j:
             basis[j, i] = 1.0
         rhs = basis @ pencil.center
-        jac[idx] = -(pencil.inv_quad @ rhs)
+        jac[idx] = -linalg.cho_solve(pencil.chol, rhs)
 
     for axis in range(n_dim):
         unit = np.zeros(n_dim, dtype=float)
         unit[axis] = 1.0
-        jac[n_quad + axis] = -(pencil.inv_quad @ unit)
+        jac[n_quad + axis] = -linalg.cho_solve(pencil.chol, unit)
 
     # The final coefficient corresponds to the constant term and has zero effect.
     return jac

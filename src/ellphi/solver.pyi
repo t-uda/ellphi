@@ -43,6 +43,7 @@ def tangency(
     backend: str = "auto",
     hybrid_bracket_maxiter: int | None = ...,
     hybrid_newton_maxiter: int | None = ...,
+    failsafe: bool = True,
 ) -> TangencyResult: ...
 def pdist_tangency(
     ellcloud: Iterable[FloatArray],

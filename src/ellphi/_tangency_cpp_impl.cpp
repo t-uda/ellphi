@@ -13,12 +13,15 @@
 namespace {
 
 constexpr double EPS = std::numeric_limits<double>::epsilon();
-constexpr double XTOL = std::numeric_limits<double>::epsilon();
-constexpr int HYBRID_BRACKET_MAXITER_2D = 8;
+constexpr double BRENT_XTOL = std::numeric_limits<double>::epsilon();
+constexpr double NEWTON_RTOL = 4.0 * EPS;
+constexpr double NEWTON_XTOL = 1e-8;
+constexpr int HYBRID_BRACKET_MAXITER_2D = 28;
 constexpr int HYBRID_NEWTON_MAXITER_2D = 3;
 constexpr int HYBRID_BRACKET_MAXITER_ND = 28;
-constexpr int HYBRID_NEWTON_MAXITER_ND = 6;
+constexpr int HYBRID_NEWTON_MAXITER_ND = 3;
 constexpr int HYBRID_BRACKET_MAXITER_FAILSAFE = 64;
+constexpr int NEWTON_ONLY_MAXITER = 50;
 
 std::pair<int, int> default_hybrid_iterations(int dim) {
     if (dim == 2) {
@@ -29,6 +32,10 @@ std::pair<int, int> default_hybrid_iterations(int dim) {
 
 [[noreturn]] void raise(const std::string& message) {
     throw std::runtime_error(message);
+}
+
+bool is_degenerate_error(const std::runtime_error& ex) {
+    return std::strcmp(ex.what(), "Degenerate conic (determinant zero)") == 0;
 }
 
 int infer_dim_from_coef_length(std::size_t length) {
@@ -205,6 +212,59 @@ std::vector<double> solve_with_cholesky(
     return x;
 }
 
+std::vector<double> gaussian_elimination(
+    std::vector<double> matrix,
+    std::vector<double> rhs,
+    int dim
+) {
+    for (int k = 0; k < dim; ++k) {
+        int pivot = k;
+        double pivot_value = std::abs(matrix[static_cast<std::size_t>(k * dim + k)]);
+        for (int i = k + 1; i < dim; ++i) {
+            double value = std::abs(matrix[static_cast<std::size_t>(i * dim + k)]);
+            if (value > pivot_value) {
+                pivot = i;
+                pivot_value = value;
+            }
+        }
+        if (pivot_value == 0.0) {
+            raise("Degenerate conic (determinant zero)");
+        }
+        if (pivot != k) {
+            for (int j = k; j < dim; ++j) {
+                std::swap(
+                    matrix[static_cast<std::size_t>(k * dim + j)],
+                    matrix[static_cast<std::size_t>(pivot * dim + j)]
+                );
+            }
+            std::swap(rhs[static_cast<std::size_t>(k)], rhs[static_cast<std::size_t>(pivot)]);
+        }
+        double diag = matrix[static_cast<std::size_t>(k * dim + k)];
+        for (int i = k + 1; i < dim; ++i) {
+            double factor = matrix[static_cast<std::size_t>(i * dim + k)] / diag;
+            rhs[static_cast<std::size_t>(i)] -= factor * rhs[static_cast<std::size_t>(k)];
+            for (int j = k; j < dim; ++j) {
+                matrix[static_cast<std::size_t>(i * dim + j)] -=
+                    factor * matrix[static_cast<std::size_t>(k * dim + j)];
+            }
+        }
+    }
+
+    std::vector<double> x(dim, 0.0);
+    for (int i = dim - 1; i >= 0; --i) {
+        double sum = rhs[static_cast<std::size_t>(i)];
+        for (int j = i + 1; j < dim; ++j) {
+            sum -= matrix[static_cast<std::size_t>(i * dim + j)] * x[static_cast<std::size_t>(j)];
+        }
+        double diag = matrix[static_cast<std::size_t>(i * dim + i)];
+        if (diag == 0.0) {
+            raise("Degenerate conic (determinant zero)");
+        }
+        x[static_cast<std::size_t>(i)] = sum / diag;
+    }
+    return x;
+}
+
 std::vector<double> matvec(
     const std::vector<double>& matrix,
     const std::vector<double>& vec,
@@ -249,6 +309,22 @@ struct PencilGeometry {
     std::vector<double> center;
 };
 
+std::vector<double> center_with_fallback(const DecodedConic& conic) {
+    std::vector<double> rhs = conic.linear;
+    for (double& value : rhs) {
+        value = -value;
+    }
+    try {
+        std::vector<double> chol = cholesky_factor(conic.quad, conic.dim);
+        return solve_with_cholesky(chol, rhs, conic.dim);
+    } catch (const std::runtime_error& ex) {
+        if (!is_degenerate_error(ex)) {
+            throw;
+        }
+        return gaussian_elimination(conic.quad, rhs, conic.dim);
+    }
+}
+
 PencilGeometry build_pencil_geometry(double mu, const SolverContext& ctx) {
     PencilGeometry geom;
     geom.conic = decode_conic(pencil(ctx.pcoef, ctx.qcoef, mu));
@@ -262,27 +338,35 @@ PencilGeometry build_pencil_geometry(double mu, const SolverContext& ctx) {
 }
 
 double target(double mu, const SolverContext& ctx) {
-    PencilGeometry geom = build_pencil_geometry(mu, ctx);
-    double p_value = quad_eval(ctx.p_dec, geom.center);
-    double q_value = quad_eval(ctx.q_dec, geom.center);
+    DecodedConic conic = decode_conic(pencil(ctx.pcoef, ctx.qcoef, mu));
+    std::vector<double> center = center_with_fallback(conic);
+    double p_value = quad_eval(ctx.p_dec, center);
+    double q_value = quad_eval(ctx.q_dec, center);
     return p_value - q_value;
 }
 
 double target_prime(double mu, const SolverContext& ctx) {
-    PencilGeometry geom = build_pencil_geometry(mu, ctx);
-    const int dim = geom.conic.dim;
-    if (ctx.diff_dec.dim != dim) {
-        raise("Dimension mismatch while computing derivative");
+    try {
+        PencilGeometry geom = build_pencil_geometry(mu, ctx);
+        const int dim = geom.conic.dim;
+        if (ctx.diff_dec.dim != dim) {
+            raise("Dimension mismatch while computing derivative");
+        }
+        std::vector<double> mat_center = matvec(ctx.diff_dec.quad, geom.center, dim);
+        std::vector<double> residual(dim, 0.0);
+        for (int i = 0; i < dim; ++i) {
+            residual[static_cast<std::size_t>(i)] =
+                -(mat_center[static_cast<std::size_t>(i)] + ctx.diff_dec.linear[static_cast<std::size_t>(i)]);
+        }
+        std::vector<double> solved = solve_with_cholesky(geom.chol, residual, dim);
+        double dot = std::inner_product(residual.begin(), residual.end(), solved.begin(), 0.0);
+        return 2.0 * dot;
+    } catch (const std::runtime_error& ex) {
+        if (is_degenerate_error(ex)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        throw;
     }
-    std::vector<double> mat_center = matvec(ctx.diff_dec.quad, geom.center, dim);
-    std::vector<double> residual(dim, 0.0);
-    for (int i = 0; i < dim; ++i) {
-        residual[static_cast<std::size_t>(i)] =
-            -(mat_center[static_cast<std::size_t>(i)] + ctx.diff_dec.linear[static_cast<std::size_t>(i)]);
-    }
-    std::vector<double> solved = solve_with_cholesky(geom.chol, residual, dim);
-    double dot = std::inner_product(residual.begin(), residual.end(), solved.begin(), 0.0);
-    return 2.0 * dot;
 }
 
 double bisect(
@@ -363,7 +447,7 @@ double brentq_impl(
             fc = fa;
         }
 
-        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
+        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * BRENT_XTOL;
         const double m = 0.5 * (c - b);
 
         if (std::abs(m) <= tol || fb == 0.0) {
@@ -512,7 +596,7 @@ double brenth_impl(
             fc = fa;
         }
 
-        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * XTOL;
+        const double tol = 2.0 * EPS * std::abs(b) + 0.5 * BRENT_XTOL;
         const double m = 0.5 * (c - b); // Half of the bracketing interval [b, c]
 
         if (std::abs(m) <= tol || fb == 0.0) {
@@ -594,7 +678,12 @@ double brenth_impl(
     return b;
 }
 
-double newton(
+struct NewtonResult {
+    double root;
+    bool converged;
+};
+
+NewtonResult newton(
     const std::function<double(double)>& f,
     const std::function<double(double)>& df,
     double x0,
@@ -604,17 +693,98 @@ double newton(
     for (int iter = 0; iter < maxiter; ++iter) {
         double fx = f(x);
         double dfx = df(x);
+        if (!std::isfinite(fx) || !std::isfinite(dfx)) {
+            break;
+        }
         if (std::abs(dfx) < EPS) {
             break;
         }
         double step = fx / dfx;
         double next = x - step;
-        if (std::abs(step) <= 8.0 * EPS * std::abs(next)) {
-            return next;
+        if (std::abs(step) <= NEWTON_RTOL * std::abs(next) + NEWTON_XTOL) {
+            return {next, true};
         }
         x = next;
     }
-    return x;
+    return {x, false};
+}
+
+// --- Algsig+Newton Helpers ---
+
+double x_from_u(double u) {
+    return 0.5 * (1.0 + u / std::sqrt(1.0 + u * u));
+}
+
+double u_from_x(double x) {
+    if (x <= 0.0 || x >= 1.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    double x_safe = std::max(1e-15, std::min(1.0 - 1e-15, x));
+    return (2.0 * x_safe - 1.0) / (2.0 * std::sqrt(x_safe * (1.0 - x_safe)));
+}
+
+double x_prime_from_u(double u) {
+    return 0.5 * std::pow(1.0 + u * u, -1.5);
+}
+
+NewtonResult algsig_newton(
+    const std::function<double(double)>& f,
+    const std::function<double(double)>& df,
+    double x0,
+    int maxiter
+) {
+    double u = u_from_x(x0);
+    if (!std::isfinite(u)) {
+        u = 0.0; // Default start if x0 is invalid
+    }
+
+    for (int i = 0; i < maxiter; ++i) {
+        double x = x_from_u(u);
+        double f_val = f(x);
+        double f_prime_val = df(x);
+        double x_prime_val = x_prime_from_u(u);
+        double F_prime_u = f_prime_val * x_prime_val;
+
+        if (!std::isfinite(f_val) || !std::isfinite(F_prime_u) || F_prime_u == 0.0) {
+            return {x_from_u(u), false};
+        }
+
+        // Backtracking Line Search to find a step that decreases the function value
+        double delta_u = -f_val / F_prime_u;
+        double alpha = 1.0;
+        double u_next = u;
+        bool step_accepted = false;
+
+        for (int j = 0; j < 10; ++j) { // Max 10 backtracking steps
+            double u_candidate = u + alpha * delta_u;
+            if (!std::isfinite(u_candidate)) {
+                alpha *= 0.5;
+                continue;
+            }
+            double x_candidate = x_from_u(u_candidate);
+            double f_candidate = f(x_candidate);
+
+            if (std::isfinite(f_candidate) && std::abs(f_candidate) < std::abs(f_val)) {
+                u_next = u_candidate;
+                step_accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+
+        if (!step_accepted) {
+            return {x_from_u(u), false}; // Backtracking failed
+        }
+        
+        // Convergence criterion on the step size in the transformed space
+        if (std::abs(u_next - u) <= NEWTON_XTOL + NEWTON_RTOL * std::abs(u_next)) {
+            return {x_from_u(u_next), true};
+        }
+
+        u = u_next;
+    }
+
+    return {x_from_u(u), false};
 }
 
 double solve_mu(
@@ -625,7 +795,8 @@ double solve_mu(
     bool has_x0,
     double x0,
     int hybrid_bracket_maxiter,
-    int hybrid_newton_maxiter
+    int hybrid_newton_maxiter,
+    bool failsafe
 ) {
     SolverContext ctx = build_solver_context(pcoef, qcoef);
     auto target_fn = [&](double mu) { return target(mu, ctx); };
@@ -639,14 +810,34 @@ double solve_mu(
     auto bisect_refined = [&]() { return bisect(target_fn, a, b, fa, fb, 128); };
     auto brentq_refined = [&]() { return brentq_impl(target_fn, a, b, fa, fb, 256); };
     auto brenth_refined = [&]() { return brenth_impl(target_fn, a, b, fa, fb, 256); };
+    auto failsafe_refined = [&]() { return brentq_impl(target_fn, a, b, fa, fb, HYBRID_BRACKET_MAXITER_FAILSAFE); };
 
     if (method == "brentq+newton") {
         if (hybrid_bracket_maxiter <= 0 || hybrid_newton_maxiter <= 0) {
             raise("Hybrid iteration counts must be positive");
         }
-        double mu0 = 0.0;
-        mu0 = brentq_impl(target_fn, a, b, fa, fb, hybrid_bracket_maxiter);
-        return newton(target_fn, target_prime_fn, mu0, hybrid_newton_maxiter);
+        double mu0 = brentq_impl(target_fn, a, b, fa, fb, hybrid_bracket_maxiter);
+
+        NewtonResult res = newton(target_fn, target_prime_fn, mu0, hybrid_newton_maxiter);
+
+        if (res.converged) {
+            return res.root;
+        } else if (failsafe) {
+            return failsafe_refined();
+        } else {
+            return mu0;
+        }
+    }
+    if (method == "algsig+newton") {
+        double mu_guess = has_x0 ? x0 : 0.5;
+        NewtonResult res = algsig_newton(target_fn, target_prime_fn, mu_guess, NEWTON_ONLY_MAXITER);
+        if (res.converged) {
+            return res.root;
+        }
+        if (failsafe) {
+            return failsafe_refined();
+        }
+        return res.root;
     }
     if (method == "bisect") {
         return bisect_refined();
@@ -661,7 +852,17 @@ double solve_mu(
         if (!has_x0) {
             raise("x0 must be provided for Newton method");
         }
-        return newton(target_fn, target_prime_fn, x0, 50);
+        NewtonResult res = newton(
+            target_fn,
+            target_prime_fn,
+            x0,
+            NEWTON_ONLY_MAXITER
+        );
+
+        if (failsafe && !res.converged) {
+            return failsafe_refined();
+        }
+        return res.root;
     }
     raise("Unknown method");
 }
@@ -693,6 +894,7 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
     double x0,
     int hybrid_bracket_maxiter,
     int hybrid_newton_maxiter,
+    int failsafe,
     double* out_t,
     double* out_point,
     std::size_t point_length,
@@ -712,22 +914,23 @@ ELLPHI_EXPORT extern "C" int tangency_solve(
             has_x0 != 0,
             x0,
             hybrid_bracket_maxiter,
-            hybrid_newton_maxiter
+            hybrid_newton_maxiter,
+            failsafe != 0
         );
-        SolverContext ctx = build_solver_context(p, q);
-        PencilGeometry geom = build_pencil_geometry(mu, ctx);
-        const std::size_t dim = static_cast<std::size_t>(geom.center.size());
+        DecodedConic conic = decode_conic(pencil(p, q, mu));
+        std::vector<double> center = center_with_fallback(conic);
+        const std::size_t dim = static_cast<std::size_t>(center.size());
         if (point_length < dim) {
             raise("Output point buffer too small");
         }
-        double value = quad_eval(geom.conic, geom.center);
+        double value = quad_eval(conic, center);
         if (value < 0.0) {
             value = 0.0;
         }
         double t = std::sqrt(value);
 
         out_t[0] = t;
-        std::copy(geom.center.begin(), geom.center.end(), out_point);
+        std::copy(center.begin(), center.end(), out_point);
         out_mu[0] = mu;
         return 0;
     } catch (const std::exception& ex) {
@@ -764,23 +967,24 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
             for (std::size_t j = i + 1; j < m; ++j) {
                 const std::vector<double>& q = conics[j];
                 auto hybrid_iters = default_hybrid_iterations(dim);
-                double mu = solve_mu(
-                    p,
-                    q,
-                    "brentq+newton",
-                    {0.0, 1.0},
-                    false,
-                    0.0,
-                    hybrid_iters.first,
-                    hybrid_iters.second
-                );
-                SolverContext ctx = build_solver_context(p, q);
-                PencilGeometry geom = build_pencil_geometry(mu, ctx);
-                double value = quad_eval(geom.conic, geom.center);
-                if (value < 0.0) {
-                    value = 0.0;
-                }
-                out[idx++] = std::sqrt(value);
+        double mu = solve_mu(
+            p,
+            q,
+            "brentq+newton",
+            {0.0, 1.0},
+            false,
+            0.0,
+            hybrid_iters.first,
+            hybrid_iters.second,
+            true // failsafe enabled by default for pdist
+        );
+        DecodedConic conic = decode_conic(pencil(p, q, mu));
+        std::vector<double> center = center_with_fallback(conic);
+        double value = quad_eval(conic, center);
+        if (value < 0.0) {
+            value = 0.0;
+        }
+        out[idx++] = std::sqrt(value);
             }
         }
         return 0;

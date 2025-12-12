@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from ellphi.solver import pdist_tangency
+from ellphi.solver import pdist_tangency, solve_mu, tangency
 
-from .factories import random_cloud
+from .factories import random_cloud, random_coef_pair
 
 
 @pytest.fixture
@@ -35,3 +35,20 @@ def test_pdist_tangency_high_dimension(rng):
     serial_auto = pdist_tangency(cloud, parallel=False, backend="auto")
     assert serial_python.shape == serial_auto.shape == (5 * 4 // 2,)
     np.testing.assert_allclose(serial_python, serial_auto)
+
+
+def test_algsig_newton_confines_mu_and_matches_bracket(rng):
+    p, q = random_coef_pair(rng, dim=4)
+    mu_brent = solve_mu(p, q, method="brentq")
+    mu_algsig = solve_mu(p, q, method="algsig+newton", x0=0.5)
+
+    assert 0.0 < mu_algsig < 1.0
+    np.testing.assert_allclose(mu_algsig, mu_brent, rtol=1e-9, atol=1e-10)
+
+    algsig_python = tangency(p, q, method="algsig+newton", backend="python", x0=0.5)
+    algsig_auto = tangency(p, q, method="algsig+newton", backend="auto", x0=0.5)
+
+    np.testing.assert_allclose(algsig_python.mu, algsig_auto.mu, rtol=1e-9, atol=1e-10)
+    np.testing.assert_allclose(
+        algsig_python.point, algsig_auto.point, rtol=1e-9, atol=1e-10
+    )
