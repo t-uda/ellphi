@@ -12,7 +12,16 @@ from .geometry import unpack_single_conic
 
 @dataclass(frozen=True)
 class TangentPencil:
-    """Geometry of the conic pencil ``(1-μ) p + μ q`` at the solution ``μ``."""
+    """Represents the geometry of the conic pencil `(1-μ) p + μ q` at the solution `μ`.
+
+    Attributes:
+        coef: The coefficient vector of the conic pencil.
+        quad: The quadratic part of the conic pencil.
+        linear: The linear part of the conic pencil.
+        det: The determinant of the quadratic part.
+        chol: The Cholesky decomposition of the quadratic part.
+        center: The center of the conic pencil.
+    """
 
     coef: np.ndarray
     quad: np.ndarray
@@ -23,22 +32,42 @@ class TangentPencil:
 
 
 def quad_matrix(coef: np.ndarray) -> np.ndarray:
-    """Return the quadratic-form matrix associated with ``coef``."""
+    """Returns the quadratic-form matrix associated with a coefficient vector.
 
+    Args:
+        coef: The coefficient vector.
+
+    Returns:
+        The quadratic-form matrix.
+    """
     quad, _, _ = unpack_single_conic(coef)
     return quad
 
 
 def linear_vector(coef: np.ndarray) -> np.ndarray:
-    """Return the linear-term vector associated with ``coef``."""
+    """Returns the linear-term vector associated with a coefficient vector.
 
+    Args:
+        coef: The coefficient vector.
+
+    Returns:
+        The linear-term vector.
+    """
     _, linear, _ = unpack_single_conic(coef)
     return linear
 
 
 def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPencil:
-    """Construct the tangent pencil for ``μ`` from ``p`` and ``q``."""
+    """Constructs the tangent pencil for a given `μ`, `p`, and `q`.
 
+    Args:
+        mu: The pencil parameter.
+        p: The first coefficient vector.
+        q: The second coefficient vector.
+
+    Returns:
+        A `TangentPencil` object representing the tangent pencil.
+    """
     coef = (1.0 - mu) * p + mu * q
     quad = quad_matrix(coef)
     linear = linear_vector(coef)
@@ -69,8 +98,16 @@ def build_tangent_pencil(mu: float, p: np.ndarray, q: np.ndarray) -> TangentPenc
 def target_prime_from_pencil(
     pencil: TangentPencil, p: np.ndarray, q: np.ndarray
 ) -> float:
-    """Evaluate ``∂F/∂μ`` for the tangency equation using cached geometry."""
+    """Evaluates `∂F/∂μ` for the tangency equation using cached geometry.
 
+    Args:
+        pencil: The `TangentPencil` object.
+        p: The first coefficient vector.
+        q: The second coefficient vector.
+
+    Returns:
+        The value of `∂F/∂μ`.
+    """
     diff = p - q
     diff_mat = quad_matrix(diff)
     diff_vec = linear_vector(diff)
@@ -81,8 +118,16 @@ def target_prime_from_pencil(
 
 
 def center_jacobian(pencil: TangentPencil) -> np.ndarray:
-    """Return ``∂x_c/∂r`` where ``r`` are pencil coefficients."""
+    """Returns the Jacobian of the center with respect to the pencil coefficients.
 
+    This function computes `∂x_c/∂r`, where `r` are the pencil coefficients.
+
+    Args:
+        pencil: The `TangentPencil` object.
+
+    Returns:
+        The Jacobian of the center with respect to the pencil coefficients.
+    """
     n_dim = pencil.center.shape[0]
     tri_i, tri_j = np.triu_indices(n_dim)
     n_quad = tri_i.size

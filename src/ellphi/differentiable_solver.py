@@ -18,23 +18,19 @@ __all__ = ["solve_mu_gradients", "solve_mu_numerical_diff"]
 def solve_mu_numerical_diff(
     p: np.ndarray, q: np.ndarray, h: float = 1e-6
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Computes the partial derivatives of solve_mu with respect to p and q
-    using the central difference method.
+    """Computes `solve_mu` partial derivatives using central differences.
 
-    Parameters
-    ----------
-    p : np.ndarray
-        Coefficient vector of the first ellipse.
-    q : np.ndarray
-        Coefficient vector of the second ellipse.
-    h : float, optional
-        The step size for the finite difference calculation, by default 1e-6.
+    This function calculates the partial derivatives of `solve_mu` with
+    respect to `p` and `q` using the central difference method for
+    numerical differentiation.
 
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        A tuple containing the gradients (d_mu_dp, d_mu_dq).
+    Args:
+        p: The coefficient vector of the first ellipse.
+        q: The coefficient vector of the second ellipse.
+        h: The step size for the finite difference calculation.
+
+    Returns:
+        A tuple containing the gradients `(d_mu_dp, d_mu_dq)`.
     """
     d_mu_dp = np.zeros_like(p)
     d_mu_dq = np.zeros_like(q)
@@ -67,30 +63,26 @@ def solve_mu_gradients(
     hybrid_bracket_maxiter: int | None = None,
     hybrid_newton_maxiter: int | None = None,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Return ``μ`` and its partial derivatives with respect to ``p`` and ``q``.
+    """Returns `μ` and its partial derivatives with respect to `p` and `q`.
 
-    Parameters
-    ----------
-    p, q:
-        Coefficient vectors defining the two conics.
-    mu:
-        Optional pre-computed value of ``μ``. When omitted the function
-        solves for ``μ`` using :func:`ellphi.solver.solve_mu` with the
-        supplied keyword arguments.
-    method, bracket, x0:
-        Parameters forwarded to :func:`ellphi.solver.solve_mu` when ``mu``
-        is not given.
-    hybrid_bracket_maxiter, hybrid_newton_maxiter:
-        Number of iterations used by the hybrid ``brentq`` + ``newton`` solver.
-        When omitted, the defaults depend on the ambient dimension (8/3 in 2D,
-        28/6 otherwise).
+    Args:
+        p: The coefficient vector of the first conic.
+        q: The coefficient vector of the second conic.
+        mu: An optional pre-computed value of `μ`. If not provided, it will be
+            computed using `solve_mu`.
+        method: The root-finding method to use if `mu` is not provided.
+        bracket: The bracketing interval to use if `mu` is not provided.
+        x0: An optional initial guess for Newton's method if `mu` is not
+            provided.
+        hybrid_bracket_maxiter: An optional maximum number of iterations for
+            the bracket phase in the hybrid method.
+        hybrid_newton_maxiter: An optional maximum number of iterations for
+            the Newton phase in the hybrid method.
 
-    Returns
-    -------
-    Tuple[float, np.ndarray, np.ndarray]
-        The solved ``μ`` together with ``∂μ/∂p`` and ``∂μ/∂q``.
+    Returns:
+        A tuple containing the solved `μ`, and its partial derivatives
+        `∂μ/∂p` and `∂μ/∂q`.
     """
-
     if mu is None:
         mu = solve_mu(
             p,

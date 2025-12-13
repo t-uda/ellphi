@@ -91,6 +91,11 @@ except (OSError, FileNotFoundError, RuntimeError) as exc:  # pragma: no cover
 
 
 def is_available() -> bool:
+    """Checks if the C++ backend is available.
+
+    Returns:
+        `True` if the C++ backend is available, `False` otherwise.
+    """
     return _LIB is not None
 
 
@@ -124,6 +129,26 @@ def tangency(
     hybrid_newton_maxiter: int,
     failsafe: bool,
 ) -> TangencyResult:
+    """Computes the tangency point between two ellipses using the C++ backend.
+
+    Args:
+        pcoef: The coefficient vector for the first ellipse.
+        qcoef: The coefficient vector for the second ellipse.
+        method: The root-finding method to use.
+        bracket: The bracketing interval for bracket methods.
+        x0: An optional initial guess for Newton's method.
+        hybrid_bracket_maxiter: The maximum number of iterations for the
+            bracket phase in the hybrid method.
+        hybrid_newton_maxiter: The maximum number of iterations for the
+            Newton phase in the hybrid method.
+        failsafe: If `True`, a failsafe fallback is enabled.
+
+    Returns:
+        A `TangencyResult` named tuple with the following fields:
+        - `t`: The tangency time.
+        - `point`: The tangent point.
+        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
+    """
     lib = _ensure_available()
 
     func = lib.tangency_solve
@@ -193,6 +218,15 @@ def tangency(
 
 
 def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
+    """Computes pairwise tangency distances for a cloud of ellipses.
+
+    Args:
+        coef: A NumPy array of shape `(m, n)` containing the coefficient
+            vectors for `m` ellipses.
+
+    Returns:
+        A condensed distance matrix of tangency distances.
+    """
     lib = _ensure_available()
 
     func = lib.pdist_tangency
