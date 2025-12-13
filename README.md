@@ -73,7 +73,6 @@ distances = ellipses.pdist_tangency()
 
 print("Computed tangency distances for", len(distances), "pairs of ellipses.")
 ```
-```
 
 For deeper workflows, see the accompanying notebooks:
 
