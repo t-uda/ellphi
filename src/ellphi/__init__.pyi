@@ -25,6 +25,7 @@ from .solver import (
 from ._version import __version__ as __version__
 
 def version_info() -> str: ...
+def _main() -> None: ...
 
 __all__ = [
     "unit_vector",
