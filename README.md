@@ -59,8 +59,8 @@ import ellphi
 print(ellphi.version_info())
 ```
 
-From the shell (requires a Poetry/`pip` installation):
+From the shell:
 
 ```bash
-ellphi --version
+python -m ellphi --version
 ```
