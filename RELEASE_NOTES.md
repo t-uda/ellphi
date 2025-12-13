@@ -1,5 +1,9 @@
 ## Unreleased
 
+_No unreleased changes yet._
+
+## 0.1.2 - 2025-12-01
+
 ### Added
 
 - `scripts/hybrid_tuning.py` plus the accompanying
