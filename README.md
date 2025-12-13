@@ -68,5 +68,5 @@ print(ellphi.version_info())
 From the shell:
 
 ```bash
-python -m ellphi --version
+poetry run python -m ellphi --version
 ```
