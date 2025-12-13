@@ -80,6 +80,7 @@ def test_ellipse_cloud_records_dimension_and_guards_plot():
     with pytest.raises(NotImplementedError):
         cloud.rescale()
 
+
 def test_post_init_value_errors():
     coef = np.zeros((2, 5))
     mean = np.zeros((2, 2))
@@ -88,11 +89,11 @@ def test_post_init_value_errors():
     with pytest.raises(ValueError):
         EllipseCloud(coef.ravel(), mean, cov, 2, nbd)
     with pytest.raises(ValueError):
-        EllipseCloud(coef, np.zeros((3,2)), cov, 2, nbd)
+        EllipseCloud(coef, np.zeros((3, 2)), cov, 2, nbd)
     with pytest.raises(ValueError):
-        EllipseCloud(coef, mean, np.zeros((2,3,3)), 2, nbd)
+        EllipseCloud(coef, mean, np.zeros((2, 3, 3)), 2, nbd)
     with pytest.raises(ValueError):
-        EllipseCloud(coef, mean, cov, 2, np.zeros((3,2)))
+        EllipseCloud(coef, mean, cov, 2, np.zeros((3, 2)))
 
 
 def test_str_method():
@@ -105,6 +106,7 @@ def test_str_method():
     assert "cov=array<(1, 2, 2)>" in s
     assert "k=3" in s
     assert "nbd=array<(1, 3)>" in s
+
 
 def test_from_point_cloud_rescaling():
     X = np.random.rand(10, 2)

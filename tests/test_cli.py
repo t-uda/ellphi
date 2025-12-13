@@ -6,6 +6,7 @@ import pytest
 
 from ellphi import _main, version_info
 
+
 def test_cli_version():
     """Test the --version argument."""
     with unittest.mock.patch("sys.argv", ["ellphi", "--version"]):
@@ -13,6 +14,7 @@ def test_cli_version():
             _main()
             output = buf.getvalue().strip()
     assert output == version_info()
+
 
 def test_cli_help():
     """Test the --help argument."""
@@ -22,6 +24,7 @@ def test_cli_help():
                 _main()
             output = buf.getvalue()
     assert "usage: ellphi" in output
+
 
 def test_cli_no_args():
     """Test running with no arguments."""

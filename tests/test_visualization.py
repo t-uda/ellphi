@@ -3,6 +3,7 @@ import numpy as np
 from matplotlib.patches import Ellipse
 from ellphi.visualization import ellipse_patch
 
+
 def test_ellipse_patch_from_cov():
     """Test creating an ellipse patch from a covariance matrix."""
     center = np.array([1.0, 2.0])
@@ -21,6 +22,7 @@ def test_ellipse_patch_from_cov():
     assert np.isclose(patch.width, 2 * r_major)
     assert np.isclose(patch.height, 2 * r_minor)
     assert np.isclose(patch.angle, np.degrees(theta))
+
 
 def test_ellipse_patch_direct_params():
     """Test creating an ellipse patch with direct parameters."""
