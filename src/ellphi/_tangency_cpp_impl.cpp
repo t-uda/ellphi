@@ -10,6 +10,12 @@
 #include <utility>
 #include <vector>
 
+#ifndef TANGENCY_VERSION
+#define TANGENCY_VERSION "0+unknown"
+#endif
+
+extern "C" const char* tangency_backend_version() { return TANGENCY_VERSION; }
+
 namespace {
 
 constexpr double EPS = std::numeric_limits<double>::epsilon();

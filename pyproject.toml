@@ -67,6 +67,7 @@ script = "build_tangency_cpp.py"
 pandas = "^2.2.0"
 homcloud = "^4.8.0"
 tqdm = "^4.67.1"
+setuptools = ">=65"
 flake8 = "^7.3.0"
 black = { version = "^25.1.0", extras = ["jupyter"] }
 mypy = "^1.8"

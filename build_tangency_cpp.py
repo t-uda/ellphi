@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import ctypes
 import sys
 import sysconfig
 from pathlib import Path
 from typing import Iterable
+
+import tomllib
 
 try:  # pragma: no cover - import guard is environment dependent
     from setuptools import Distribution, Extension
@@ -36,16 +39,51 @@ def _output_path() -> Path:
     return _source_path().with_suffix(_library_suffix())
 
 
+def _project_version() -> str:
+    project_root = Path(__file__).resolve().parent
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.exists():
+        raise FileNotFoundError(f"pyproject.toml not found at {pyproject}")
+
+    with pyproject.open("rb") as file:
+        data = tomllib.load(file)
+    project = data.get("project", {})
+    version = project.get("version")
+    if not version:
+        raise RuntimeError("Project version is not defined in pyproject.toml")
+    return str(version)
+
+
+def _existing_library_version(path: Path) -> str | None:
+    try:
+        lib = ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+    try:
+        func = lib.tangency_backend_version
+    except AttributeError:
+        return None
+
+    func.restype = ctypes.c_char_p
+    value = func()
+    if not value:
+        return None
+    return value.decode("utf-8", errors="replace")
+
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
 class _TangencyExtension(Extension):
     def __init__(self) -> None:
+        version = _project_version()
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
+            define_macros=[("TANGENCY_VERSION", f"\"{version}\"")],
         )
 
 
@@ -72,6 +110,7 @@ class _BuildTangency(build_ext):
             ext.sources,  # type: ignore[arg-type]
             output_dir=self.build_temp,
             include_dirs=ext.include_dirs,
+            macros=ext.define_macros,
             extra_postargs=compile_opts,
             depends=ext.depends,
         )
@@ -99,11 +138,17 @@ class _BuildTangency(build_ext):
 def build() -> Path:
     source = _source_path()
     output = _output_path()
+    project_version = _project_version()
 
     if not source.exists():
         raise FileNotFoundError(f"C++ source not found: {source}")
 
-    if output.exists() and output.stat().st_mtime >= source.stat().st_mtime:
+    existing_version = _existing_library_version(output)
+    if (
+        output.exists()
+        and output.stat().st_mtime >= source.stat().st_mtime
+        and existing_version == project_version
+    ):
         return output
 
     dist = Distribution()

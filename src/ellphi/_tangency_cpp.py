@@ -3,10 +3,13 @@ from __future__ import annotations
 """Bindings for the pre-built C++ tangency backend."""
 
 import ctypes
+from importlib.metadata import PackageNotFoundError, version as package_version
 import sys
 import sysconfig
 from pathlib import Path
 from typing import Tuple
+
+import tomllib
 
 import numpy
 
@@ -32,18 +35,67 @@ def _library_path() -> Path:
     return Path(__file__).with_name(f"{_LIB_NAME}{_library_suffix()}")
 
 
+def _expected_backend_version() -> str:
+    try:
+        return package_version(__package__ or "ellphi")
+    except PackageNotFoundError:
+        pass
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if pyproject.exists():
+        with pyproject.open("rb") as file:
+            data = tomllib.load(file)
+        project = data.get("project", {})
+        version = project.get("version")
+        if version:
+            return str(version)
+    return "0+unknown"
+
+
+def _library_version(lib: ctypes.CDLL) -> str:
+    try:
+        func = lib.tangency_backend_version
+    except AttributeError as exc:
+        raise RuntimeError(
+            "C++ backend is missing version metadata. Please rebuild the extension."
+        ) from exc
+    func.restype = ctypes.c_char_p
+    value = func()
+    if value is None:
+        raise RuntimeError("C++ backend returned an empty version string")
+    return value.decode("utf-8", errors="replace")
+
+
+def _validate_library_version(lib: ctypes.CDLL) -> None:
+    expected = _expected_backend_version()
+    actual = _library_version(lib)
+    if actual != expected:
+        raise RuntimeError(
+            "C++ backend version mismatch: "
+            f"library reports '{actual}' but ellphi expects '{expected}'. "
+            "Rebuild the extension yourself (e.g., run 'python "
+            "build_tangency_cpp.py' or 'poetry install'); it is not rebuilt "
+            "automatically during import."
+        )
+
+
 def _load_library() -> ctypes.CDLL:
     lib_path = _library_path()
     if not lib_path.exists():
         raise FileNotFoundError(f"C++ backend library missing: {lib_path}")
-    return ctypes.CDLL(str(lib_path))
+    lib = ctypes.CDLL(str(lib_path))
+    _validate_library_version(lib)
+    return lib
 
 
 _LIB: ctypes.CDLL | None
+_LIB_ERROR: str | None
 try:  # pragma: no cover - build process is environment dependent
     _LIB = _load_library()
-except (OSError, FileNotFoundError):  # pragma: no cover
+    _LIB_ERROR = None
+except (OSError, FileNotFoundError, RuntimeError) as exc:  # pragma: no cover
     _LIB = None
+    _LIB_ERROR = str(exc)
 
 
 def is_available() -> bool:
@@ -52,9 +104,12 @@ def is_available() -> bool:
 
 def _ensure_available() -> ctypes.CDLL:
     if _LIB is None:
-        raise RuntimeError(
-            "C++ backend not available. Run 'python build_tangency_cpp.py' to build it."
+        message = (
+            _LIB_ERROR
+            or "C++ backend not available. Run 'python build_tangency_cpp.py' "
+            "to build it."
         )
+        raise RuntimeError(message)
     return _LIB
 
 
