@@ -1,4 +1,5 @@
 """Tests for the ellphi CLI."""
+
 import unittest.mock
 from contextlib import redirect_stdout
 import io

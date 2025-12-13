@@ -1,4 +1,5 @@
 """Tests for the ellphi visualization module."""
+
 import numpy as np
 from matplotlib.patches import Ellipse
 from ellphi.visualization import ellipse_patch
