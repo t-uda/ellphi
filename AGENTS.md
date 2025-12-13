@@ -34,11 +34,11 @@ In this repository, all CI tests must pass before PRs are merged. Therefore, bef
 
 ```bash
 # Format and verify formatting
-poetry run black src tests
-poetry run black --check src tests
+poetry run black src tests scripts
+poetry run black --check src tests scripts
 
 # Lint and static analysis
-poetry run flake8
+poetry run flake8 src tests scripts
 poetry run mypy src tests
 
 # Type Stub Validation

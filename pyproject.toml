@@ -61,10 +61,11 @@ include = [
   { path = "src/ellphi/_tangency_cpp_impl.*", format = ["sdist", "wheel"] },
   { path = "src/ellphi/*.pyi", format = ["sdist", "wheel"] },
   { path = "src/ellphi/py.typed", format = ["sdist", "wheel"] },
+  { path = "scripts/build_tangency_cpp.py", format = ["sdist"] },
 ]
 
 [tool.poetry.build]
-script = "build_tangency_cpp.py"
+script = "scripts/build_tangency_cpp.py"
 
 [tool.poetry.group.dev.dependencies]
 pandas = "^2.2.0"
