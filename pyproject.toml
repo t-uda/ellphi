@@ -74,6 +74,7 @@ mypy = "^1.8"
 scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 pytest = "^8.4.1"
 seaborn = "^0.13"
+packaging = "^25.0"
 
 [tool.mypy]
 mypy_path = "src"

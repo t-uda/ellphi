@@ -8,9 +8,10 @@ Re-exports the most frequently used symbols so users can::
     el.tangency(...)
 """
 
-from importlib.metadata import PackageNotFoundError, version as _version
 import numpy as np
 from numpy.typing import NDArray
+
+from ._version import __version__
 
 # geometry
 from .geometry import (
@@ -53,9 +54,5 @@ __all__ = [
     "pdist_tangency",
     "TangencyResult",
     "has_cpp_backend",
+    "__version__",
 ]
-
-try:
-    __version__ = _version(__name__)
-except PackageNotFoundError:
-    __version__ = "0+unknown"
