@@ -39,7 +39,7 @@ def _output_path() -> Path:
 
 
 def _project_version() -> str:
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parent.parent
     pyproject = project_root / "pyproject.toml"
     if not pyproject.exists():
         raise FileNotFoundError(f"pyproject.toml not found at {pyproject}")
