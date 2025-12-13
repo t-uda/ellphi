@@ -123,11 +123,15 @@ def tangency(
     backend : str, default="auto"
         Backend to use: "auto", "cpp", or "python".
     hybrid_bracket_maxiter : int, optional
-        Maximum iterations for bracket phase in hybrid method.
-        Default: 28 for all dimensions.
+        Maximum iterations for the bracket phase in the hybrid method. Defaults
+        depend on dimensionality: 28 iterations in 2D and 28 iterations for
+        dimensions greater than 2. Explicit values override these defaults as
+        resolved by `_resolve_backend_hybrid_iterations`.
     hybrid_newton_maxiter : int, optional
-        Maximum iterations for Newton phase in hybrid method.
-        Default: 3 for all dimensions.
+        Maximum iterations for the Newton phase in the hybrid method. Defaults
+        depend on dimensionality: 3 iterations in 2D and 3 iterations for
+        dimensions greater than 2. Explicit values override these defaults as
+        resolved by `_resolve_backend_hybrid_iterations`.
     failsafe : bool, default=True
         Enable failsafe fallback. When True, if Newton refinement fails to
         converge in the hybrid method, falls back to high-precision Brent's
