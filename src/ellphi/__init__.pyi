@@ -24,6 +24,8 @@ from .solver import (
 )
 from ._version import __version__ as __version__
 
+def version_info() -> str: ...
+
 __all__ = [
     "unit_vector",
     "axes_from_cov",
@@ -40,4 +42,5 @@ __all__ = [
     "has_cpp_backend",
     "FloatArray",
     "__version__",
+    "version_info",
 ]
