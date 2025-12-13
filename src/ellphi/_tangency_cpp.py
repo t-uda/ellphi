@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ctypes
 from importlib.metadata import PackageNotFoundError, version as package_version
-import re
 import sys
 import sysconfig
 from pathlib import Path
@@ -13,6 +12,7 @@ from typing import Tuple
 import numpy
 
 from ._solver_python import TangencyResult
+from ._version import __version__
 from .geometry import infer_dim_from_coef_length
 
 _LIB_NAME = "_tangency_cpp_impl"
@@ -35,38 +35,13 @@ def _library_path() -> Path:
 
 
 def _expected_backend_version() -> str:
+    if __version__ != "0+unknown":
+        return __version__
+
     try:
         return package_version(__package__ or "ellphi")
     except PackageNotFoundError:
-        pass
-
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-    version = _project_version_from_pyproject(pyproject)
-    if version:
-        return version
-    return "0+unknown"
-
-
-def _project_version_from_pyproject(path: Path) -> str | None:
-    if not path.exists():
-        return None
-
-    version: str | None = None
-    in_project = False
-    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("["):
-            in_project = line == "[project]"
-            continue
-        if not in_project:
-            continue
-        match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
-        if match:
-            version = match.group(1)
-            break
-    return version
+        return "0+unknown"
 
 
 def _library_version(lib: ctypes.CDLL) -> str:

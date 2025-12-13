@@ -4,6 +4,8 @@ import importlib
 import sys
 from importlib.metadata import PackageNotFoundError
 
+from ellphi._version import __version__ as _CANONICAL_VERSION
+
 
 def test_import_without_package_metadata(monkeypatch):
     """The package should fall back to a sensible version when metadata is missing."""
@@ -24,7 +26,7 @@ def test_import_without_package_metadata(monkeypatch):
 
     try:
         module = importlib.import_module("ellphi")
-        assert module.__version__ == "0+unknown"
+        assert module.__version__ == _CANONICAL_VERSION
     finally:
         for name in [
             key for key in sys.modules if key == "ellphi" or key.startswith("ellphi.")

@@ -22,6 +22,7 @@ from .solver import (
     quad_eval as quad_eval,
     tangency as tangency,
 )
+from ._version import __version__ as __version__
 
 __all__ = [
     "unit_vector",
@@ -38,4 +39,5 @@ __all__ = [
     "TangencyResult",
     "has_cpp_backend",
     "FloatArray",
+    "__version__",
 ]
