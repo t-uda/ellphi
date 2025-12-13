@@ -82,6 +82,58 @@ jobs:
     - name: stubtest
       run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
 
+  package-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build package
+      run: poetry build
+
+    - name: Check sdist content
+      run: |
+        # Ensure sdist contains C++ source but NO binaries
+        tar -tf dist/*.tar.gz > sdist_content.txt
+        if ! grep -q "src/ellphi/_tangency_cpp_impl.cpp" sdist_content.txt; then
+          echo "Error: C++ source missing from sdist"
+          exit 1
+        fi
+        if grep -q -E "\.(so|dylib|dll|pyd)$" sdist_content.txt; then
+          echo "Error: Binary files found in sdist"
+          cat sdist_content.txt | grep -E "\.(so|dylib|dll|pyd)$"
+          exit 1
+        fi
+        echo "sdist content check passed."
+
+    - name: Install wheel and test
+      run: |
+        # Create a fresh venv to test installation
+        python -m venv test-env
+        source test-env/bin/activate
+        
+        # Install the built wheel
+        pip install dist/*.whl
+        
+        # Install test dependencies (pytest)
+        # Note: runtime dependencies (numpy, etc.) are installed by pip automatically from the wheel metadata
+        pip install pytest
+        
+        # Run tests against the installed package
+        # We assume tests are in 'tests/' and we want to avoid importing from local 'src/'
+        # So we move to a different directory or explicitely tell pytest where to look
+        mkdir -p test_run
+        cd test_run
+        pytest ../tests
+
   build-docs:
     runs-on: ubuntu-latest
     steps:
