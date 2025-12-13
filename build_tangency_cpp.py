@@ -99,7 +99,7 @@ class _TangencyExtension(Extension):
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
-            define_macros=[("TANGENCY_VERSION", f"\"{version}\"")],
+            define_macros=[("TANGENCY_VERSION", f'"{version}"')],
         )
 
 
