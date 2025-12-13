@@ -2,7 +2,11 @@
 
 _No unreleased changes yet._
 
-## 0.1.2 - 2025-12-01
+## 0.1.2 - 2025-12-13
+
+This release packages the empirical hybrid tuning work and exposes the
+resulting iteration controls end-to-end so Python and C++ callers can
+reproduce the performance improvements.
 
 ### Added
 
