@@ -39,7 +39,7 @@ jobs:
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install
+      run: poetry install --with dev # Install core and development dependencies
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
@@ -74,10 +74,37 @@ jobs:
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install      # stub も OK
+      run: poetry install --with dev # Install core and development dependencies
 
     - name: mypy
       run: poetry run mypy src
 
     - name: stubtest
       run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Cache Poetry env
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+
+    - name: Install project (demo extras)
+      run: poetry install --with demo # Install core and demo dependencies
+
+    # Add steps for building documentation here, e.g., mkdocs build or sphinx build
+    # - name: Build documentation
+    #   run: poetry run mkdocs build

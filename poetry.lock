@@ -3985,9 +3985,9 @@ files = [
 ]
 
 [extras]
-demo = ["homcloud", "ipykernel", "jupyterlab", "matplotlib", "nbformat", "pandas", "plotly", "seaborn", "tqdm"]
+demo = ["homcloud", "ipykernel", "jupyterlab", "nbformat", "pandas", "plotly", "seaborn", "tqdm"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "7b7f9f5fe6ea964a80a66e23e755a37b0968e747f9fc53a856743b3a10f50403"
+content-hash = "4180f04f2d393c50410ac50ef638a55ed8be6194f1f1be06a6a6a6c09595cc01"
