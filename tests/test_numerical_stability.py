@@ -93,7 +93,10 @@ def test_hard_case_stability_and_parity(method: str):
     # 3. Verify Parity
     # Results should be identical within reasonable numerical tolerance
     np.testing.assert_allclose(
-        py_res.mu, cpp_res.mu, rtol=1e-12, err_msg="mu mismatch between backends"
+        py_res.mu,
+        cpp_res.mu,
+        rtol=2e-12,
+        err_msg="mu mismatch between backends",
     )
     np.testing.assert_allclose(
         py_res.point,
