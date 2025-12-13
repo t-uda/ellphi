@@ -9,7 +9,10 @@ import sysconfig
 from pathlib import Path
 from typing import Iterable
 
-import tomllib
+if sys.version_info >= (3, 11):  # pragma: no cover - version dependent import
+    import tomllib
+else:  # pragma: no cover - version dependent import
+    import tomli as tomllib
 
 try:  # pragma: no cover - import guard is environment dependent
     from setuptools import Distribution, Extension

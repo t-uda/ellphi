@@ -9,7 +9,10 @@ import sysconfig
 from pathlib import Path
 from typing import Tuple
 
-import tomllib
+if sys.version_info >= (3, 11):  # pragma: no cover - version dependent import
+    import tomllib
+else:  # pragma: no cover - version dependent import
+    import tomli as tomllib
 
 import numpy
 
