@@ -55,4 +55,31 @@ __all__ = [
     "TangencyResult",
     "has_cpp_backend",
     "__version__",
+    "version_info",
 ]
+
+
+def version_info() -> str:
+    """Return the current :mod:`ellphi` version string."""
+
+    return __version__
+
+
+def _main() -> None:
+    """A minimal CLI for printing the current version."""
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ellphi command-line interface")
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Print the installed ellphi version and exit",
+    )
+
+    args = parser.parse_args()
+
+    if args.version:
+        print(version_info())
+    else:
+        parser.print_help()
