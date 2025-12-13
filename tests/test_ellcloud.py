@@ -79,3 +79,47 @@ def test_ellipse_cloud_records_dimension_and_guards_plot():
         cloud.plot()
     with pytest.raises(NotImplementedError):
         cloud.rescale()
+
+
+def test_post_init_value_errors():
+    coef = np.zeros((2, 5))
+    mean = np.zeros((2, 2))
+    cov = np.zeros((2, 2, 2))
+    nbd = np.zeros((2, 2))
+    with pytest.raises(ValueError):
+        EllipseCloud(coef.ravel(), mean, cov, 2, nbd)
+    with pytest.raises(ValueError):
+        EllipseCloud(coef, np.zeros((3, 2)), cov, 2, nbd)
+    with pytest.raises(ValueError):
+        EllipseCloud(coef, mean, np.zeros((2, 3, 3)), 2, nbd)
+    with pytest.raises(ValueError):
+        EllipseCloud(coef, mean, cov, 2, np.zeros((3, 2)))
+
+
+def test_str_method():
+    X = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0]])
+    ellcloud = EllipseCloud.from_local_cov(X, k=3)
+    s = str(ellcloud)
+    assert "EllipseCloud" in s
+    assert "coef=array<(1, 6)>" in s
+    assert "mean=array<(1, 2)>" in s
+    assert "cov=array<(1, 2, 2)>" in s
+    assert "k=3" in s
+    assert "nbd=array<(1, 3)>" in s
+
+
+def test_from_point_cloud_rescaling():
+    X = np.random.rand(10, 2)
+    ellcloud_median = EllipseCloud.from_point_cloud(X, k=5, rescaling="median")
+    ellcloud_avg = EllipseCloud.from_point_cloud(X, k=5, rescaling="average")
+
+    assert ellcloud_median.cov.shape == (ellcloud_median.n, 2, 2)
+    assert ellcloud_avg.cov.shape == (ellcloud_avg.n, 2, 2)
+    assert ellcloud_median.n <= 10
+    assert ellcloud_avg.n <= 10
+
+    with pytest.raises(NotImplementedError):
+        EllipseCloud.from_point_cloud(X, k=5, method="unknown")
+
+    with pytest.raises(NotImplementedError):
+        ellcloud_median.rescale(method="unknown")
