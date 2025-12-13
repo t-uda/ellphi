@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from ellphi._solver_python import _u_from_x
 from ellphi.solver import pdist_tangency, solve_mu, tangency
 
 from .factories import random_cloud, random_coef_pair
@@ -52,3 +53,27 @@ def test_algsig_newton_confines_mu_and_matches_bracket(rng):
     np.testing.assert_allclose(
         algsig_python.point, algsig_auto.point, rtol=1e-9, atol=1e-10
     )
+
+
+def test_u_from_x_boundaries():
+    """_u_from_x handles boundary conditions at 0 and 1 correctly."""
+    # At the boundaries, the transform should go to infinity
+    assert _u_from_x(0.0) == -np.inf
+    assert _u_from_x(1.0) == np.inf
+
+    # Near the boundaries
+    eps = 1e-9
+    assert np.isfinite(_u_from_x(eps))
+    assert _u_from_x(eps) < 0
+    assert np.isfinite(_u_from_x(1.0 - eps))
+    assert _u_from_x(1.0 - eps) > 0
+
+    # Outside the [0, 1] domain should be NaN
+    assert np.isnan(_u_from_x(-0.1))
+    assert np.isnan(_u_from_x(1.1))
+
+    # Test with array inputs
+    x_array = np.array([0.0, 1.0, 0.5, -0.1, 1.1, 0.25])
+    expected = np.array([-np.inf, np.inf, 0.0, np.nan, np.nan, -0.5773502691896257])
+    result = _u_from_x(x_array)
+    np.testing.assert_allclose(result, expected, equal_nan=True)

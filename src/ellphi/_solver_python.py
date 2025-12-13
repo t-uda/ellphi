@@ -47,14 +47,26 @@ def _x_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
 
 def _u_from_x(x: float | numpy.ndarray) -> float | numpy.ndarray:
     """Inverse: u = (2x - 1) / (2 * sqrt(x(1-x)))"""
-    if numpy.any(x <= 0) or numpy.any(x >= 1):
-        return numpy.nan
+    is_scalar = not isinstance(x, numpy.ndarray)
+    x_arr = numpy.atleast_1d(x)
 
-    # Clip to avoid domain errors at the boundaries
-    x_safe = numpy.clip(x, 1e-15, 1.0 - 1e-15)
+    # Initialize output array with NaNs for out-of-domain values
+    u = numpy.full(x_arr.shape, numpy.nan)
 
-    # Numerically stable calculation for u
-    return (2.0 * x_safe - 1.0) / (2.0 * numpy.sqrt(x_safe * (1.0 - x_safe)))
+    # Handle boundary cases: x=0 -> u=-inf, x=1 -> u=inf
+    u[x_arr == 0] = -numpy.inf
+    u[x_arr == 1] = numpy.inf
+
+    # Process valid interior points (0 < x < 1)
+    mask = (x_arr > 0) & (x_arr < 1)
+    x_safe = x_arr[mask]
+
+    # Add a small epsilon to the denominator to prevent division by zero
+    # for values extremely close to 0 or 1.
+    denominator = 2.0 * numpy.sqrt(x_safe * (1.0 - x_safe) + 1e-30)
+    u[mask] = (2.0 * x_safe - 1.0) / denominator
+
+    return u.item() if is_scalar else u
 
 
 def _x_prime_from_u(u: float | numpy.ndarray) -> float | numpy.ndarray:
