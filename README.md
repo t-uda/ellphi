@@ -18,10 +18,30 @@ pip install ellphi
 
 Python 3.10 or later.
 
-## Quick start (under construction)
+## Quick start
 
-* [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour  
-* [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline  
+Install and solve a tangency query in just a few lines:
+
+```bash
+pip install ellphi
+```
+
+```python
+import numpy as np
+import ellphi
+
+pcoef = ellphi.coef_from_cov([0.0, 0.0], [[0.2, 0.0], [0.0, 0.1]])[0]
+qcoef = ellphi.coef_from_cov([1.0, 0.25], [[0.15, 0.0], [0.0, 0.25]])[0]
+
+result = ellphi.tangency(pcoef, qcoef)
+print(f"t = {result.t:.3f}")       # tangency distance
+print(f"point = {result.point}")
+```
+
+For deeper workflows, see the accompanying notebooks:
+
+* [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour
+* [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline
 * [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
 * [`ndim-demo-3d.ipynb`](https://github.com/t-uda/ellphi/notebooks/ndim-demo-3d.ipynb) – 3-D ellipsoid cloud + tangency distance walkthrough
 
