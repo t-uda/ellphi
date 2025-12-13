@@ -14,6 +14,12 @@ Install from PyPI:
 pip install ellphi
 ```
 
+To install with demo dependencies for notebooks and examples:
+
+```bash
+pip install ellphi[demo]
+```
+
 ## Supported Python Versions
 
 Python 3.10 or later.
