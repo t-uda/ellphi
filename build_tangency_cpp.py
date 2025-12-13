@@ -4,15 +4,11 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import sys
 import sysconfig
 from pathlib import Path
 from typing import Iterable
-
-if sys.version_info >= (3, 11):  # pragma: no cover - version dependent import
-    import tomllib
-else:  # pragma: no cover - version dependent import
-    import tomli as tomllib
 
 try:  # pragma: no cover - import guard is environment dependent
     from setuptools import Distribution, Extension
@@ -48,13 +44,30 @@ def _project_version() -> str:
     if not pyproject.exists():
         raise FileNotFoundError(f"pyproject.toml not found at {pyproject}")
 
-    with pyproject.open("rb") as file:
-        data = tomllib.load(file)
-    project = data.get("project", {})
-    version = project.get("version")
+    version = _project_version_from_pyproject(pyproject)
     if not version:
         raise RuntimeError("Project version is not defined in pyproject.toml")
-    return str(version)
+    return version
+
+
+def _project_version_from_pyproject(path: Path) -> str | None:
+    if not path.exists():
+        return None
+
+    in_project = False
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            in_project = line == "[project]"
+            continue
+        if not in_project:
+            continue
+        match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _existing_library_version(path: Path) -> str | None:

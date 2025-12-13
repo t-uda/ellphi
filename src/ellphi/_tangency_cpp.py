@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import ctypes
 from importlib.metadata import PackageNotFoundError, version as package_version
+import re
 import sys
 import sysconfig
 from pathlib import Path
 from typing import Tuple
-
-if sys.version_info >= (3, 11):  # pragma: no cover - version dependent import
-    import tomllib
-else:  # pragma: no cover - version dependent import
-    import tomli as tomllib
 
 import numpy
 
@@ -45,14 +41,32 @@ def _expected_backend_version() -> str:
         pass
 
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-    if pyproject.exists():
-        with pyproject.open("rb") as file:
-            data = tomllib.load(file)
-        project = data.get("project", {})
-        version = project.get("version")
-        if version:
-            return str(version)
+    version = _project_version_from_pyproject(pyproject)
+    if version:
+        return version
     return "0+unknown"
+
+
+def _project_version_from_pyproject(path: Path) -> str | None:
+    if not path.exists():
+        return None
+
+    version: str | None = None
+    in_project = False
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            in_project = line == "[project]"
+            continue
+        if not in_project:
+            continue
+        match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
+        if match:
+            version = match.group(1)
+            break
+    return version
 
 
 def _library_version(lib: ctypes.CDLL) -> str:
