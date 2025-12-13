@@ -1,7 +1,15 @@
 ## Unreleased
 
+- No changes yet.
+
+## 0.1.1 - 2025-12-13
+
 ### Added
 
+- Full n-dimensional support for tangency solving across Python and C++ backends, including new conic
+packing helpers, EllipseCloud dimension tracking, and expanded differentiable gradient coverage with
+high-dimensional regression tests.
+- A dedicated 3-D ellipsoid demo notebook plus documentation of the ndim extension review.
 - `scripts/hybrid_tuning.py` plus the accompanying
   `docs/hybrid_tuning_summary.json` artifact summarising the empirical tuning
   run. The script generates extreme ellipse pairs across dimensions,
@@ -16,23 +24,6 @@
   multiple scenarios side by side, making it easy to reproduce and compare
   the parameter sweep backing the hybrid defaults.
 
-### Changed
-
-- The `brentq+newton` hybrid now exposes configurable iteration counts all the
-  way through the Python and C++ backends. Defaults are dimension aware: the
-  historical 2D tuning (8 Brent / 3 Newton iterations) is retained, while n>2
-  problems use the empirically tuned 28 / 6 budget. Dispatch helpers,
-  differentiable solvers, and tests now accept the new keyword arguments.
-
-## 0.1.1 - 2025-11-09
-
-### Added
-
-- Full n-dimensional support for tangency solving across Python and C++ backends, including new conic
-packing helpers, EllipseCloud dimension tracking, and expanded differentiable gradient coverage with
-high-dimensional regression tests.
-- A dedicated 3-D ellipsoid demo notebook plus documentation of the ndim extension review.
-
 ### Fixed
 
 - The C++ backend now validates coefficient/point buffer lengths and clamps negative quadratic
@@ -42,6 +33,11 @@ early.
 ### Changed
 
 - Dropped support for Python 3.9. Python 3.10 or newer is now required.
+- The `brentq+newton` hybrid now exposes configurable iteration counts all the
+  way through the Python and C++ backends. Defaults are dimension aware: the
+  historical 2D tuning (8 Brent / 3 Newton iterations) is retained, while n>2
+  problems use the empirically tuned 28 / 6 budget. Dispatch helpers,
+  differentiable solvers, and tests now accept the new keyword arguments.
 
 ### Tooling
 
