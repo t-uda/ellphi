@@ -23,6 +23,10 @@ No unreleased changes.
   packing helpers, EllipseCloud dimension tracking, and expanded differentiable gradient coverage with
   high-dimensional regression tests.
 - A dedicated 3-D ellipsoid demo notebook plus documentation of the ndim extension review.
+- A new `ellphi` CLI entrypoint with a `--version` flag, and a runtime `ellphi.version_info()` helper
+  to programmatically check the installed version.
+- PEP 561 type marker (`py.typed`) and `.pyi` stub files are now included in the distribution,
+  enabling better type checking and IDE autocompletion support.
 
 ### Changed
 
@@ -32,12 +36,16 @@ No unreleased changes.
   problems use the empirically tuned 28 / 6 budget. Dispatch helpers,
   differentiable solvers, and tests now accept the new keyword arguments.
 - Dropped support for Python 3.9. Python 3.10 or newer is now required.
+- Updated `README.md` with a "Quick Start" section demonstrating basic tangency usage.
 
 ### Fixed
 
 - The C++ backend now validates coefficient/point buffer lengths and clamps negative quadratic
   evaluations before taking square roots, while the Python wrapper rejects malformed coefficient arrays
   early.
+- The Python backend now uses pivoted Gaussian elimination (via LU decomposition) as a robust fallback
+  for singular pencils, matching the C++ backend's stability and preventing divergence in near-singular
+  geometric configurations.
 
 ### Tooling
 
