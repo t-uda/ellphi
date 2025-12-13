@@ -59,7 +59,11 @@ demo = [
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
 include = [
-  { path = "src/ellphi/_tangency_cpp_impl.*", format = ["sdist", "wheel"] },
+  { path = "src/ellphi/_tangency_cpp_impl.cpp", format = "sdist" },
+  { path = "src/ellphi/_tangency_cpp_impl.so", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.dylib", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.dll", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.pyd", format = "wheel" },
   { path = "src/ellphi/*.pyi", format = ["sdist", "wheel"] },
   { path = "src/ellphi/py.typed", format = ["sdist", "wheel"] },
   { path = "scripts/build_tangency_cpp.py", format = ["sdist"] },
