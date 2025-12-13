@@ -122,8 +122,15 @@ def _gaussian_elimination(matrix: numpy.ndarray, rhs: numpy.ndarray) -> numpy.nd
 
 
 def quad_eval(coef: numpy.ndarray, center: Tuple[float, ...] | numpy.ndarray) -> float:
-    """Evaluate ``xᵀAx + 2bᵀx + c`` for the provided coefficients."""
+    """Evaluates the quadratic form `xᵀAx + 2bᵀx + c` for the given coefficients.
 
+    Args:
+        coef: The coefficient vector of the quadratic form.
+        center: The point at which to evaluate the quadratic form.
+
+    Returns:
+        The value of the quadratic form at the given point.
+    """
     A, b, c = unpack_single_conic(coef)
     x = numpy.asarray(center, dtype=float)
     if x.ndim != 1 or x.shape[0] != b.shape[0]:
@@ -132,8 +139,16 @@ def quad_eval(coef: numpy.ndarray, center: Tuple[float, ...] | numpy.ndarray) ->
 
 
 def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
-    """Linear blend ``(1-μ) p + μ q`` of two conic-coefficient arrays."""
+    """Computes the linear blend `(1-μ) p + μ q` of two conic-coefficient arrays.
 
+    Args:
+        p: The first conic-coefficient array.
+        q: The second conic-coefficient array.
+        mu: The blending factor.
+
+    Returns:
+        The blended conic-coefficient array.
+    """
     return (1.0 - mu) * p + mu * q
 
 
@@ -303,6 +318,23 @@ def solve_mu(
     hybrid_newton_maxiter: int | None = None,
     failsafe: bool = True,
 ) -> float:
+    """Solves for the pencil parameter `μ` at which two ellipses are tangent.
+
+    Args:
+        p: The coefficient vector for the first ellipse.
+        q: The coefficient vector for the second ellipse.
+        method: The root-finding method to use.
+        bracket: The bracketing interval for bracket methods.
+        x0: An optional initial guess for Newton's method.
+        hybrid_bracket_maxiter: An optional maximum number of iterations for
+            the bracket phase in the hybrid method.
+        hybrid_newton_maxiter: An optional maximum number of iterations for
+            the Newton phase in the hybrid method.
+        failsafe: If `True`, a failsafe fallback is enabled.
+
+    Returns:
+        The pencil parameter `μ` at which the two ellipses are tangent.
+    """
     curry_f = cast(Callable[[float], float], partial(_target, p=p, q=q))
     curry_df = cast(Callable[[float], float], partial(_target_prime, p=p, q=q))
 
@@ -434,39 +466,30 @@ def tangency(
     hybrid_newton_maxiter: int | None = None,
     failsafe: bool = True,
 ) -> TangencyResult:
-    """Compute the tangency point between two ellipses (Python backend).
+    """Computes the tangency point between two ellipses using the Python backend.
 
-    Parameters
-    ----------
-    pcoef : numpy.ndarray
-        Coefficient vector for the first ellipse.
-    qcoef : numpy.ndarray
-        Coefficient vector for the second ellipse.
-    method : str, default="brentq+newton"
-        Root-finding method.
-    bracket : tuple of float, default=(0.0, 1.0)
-        Bracketing interval for bracket methods.
-    x0 : float, optional
-        Initial guess for Newton's method.
-    hybrid_bracket_maxiter : int, optional
-        Maximum iterations for bracket phase. Default: 28.
-    hybrid_newton_maxiter : int, optional
-        Maximum iterations for Newton phase. Default: 3.
-    failsafe : bool, default=True
-        Enable failsafe fallback to high-precision Brent's method
-        if Newton fails to converge.
+    Args:
+        pcoef: The coefficient vector for the first ellipse.
+        qcoef: The coefficient vector for the second ellipse.
+        method: The root-finding method to use.
+        bracket: The bracketing interval for bracket methods.
+        x0: An optional initial guess for Newton's method.
+        hybrid_bracket_maxiter: An optional maximum number of iterations for
+            the bracket phase in the hybrid method.
+        hybrid_newton_maxiter: An optional maximum number of iterations for
+            the Newton phase in the hybrid method.
+        failsafe: If `True`, a failsafe fallback is enabled.
 
-    Returns
-    -------
-    TangencyResult
-        Named tuple with fields (t, point, mu).
+    Returns:
+        A `TangencyResult` named tuple with the following fields:
+        - `t`: The tangency time.
+        - `point`: The tangent point.
+        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
 
-    Raises
-    ------
-    RuntimeError
-        If the solver fails to converge to a valid solution within the bracket.
+    Raises:
+        RuntimeError: If the solver fails to converge to a valid solution
+            within the bracket.
     """
-
     mu = solve_mu(
         pcoef,
         qcoef,
@@ -527,6 +550,16 @@ def _pdist_tangency_parallel(
 def pdist_tangency(
     ellcloud: EllipseCloud, *, parallel: bool = True, n_jobs: int | None = -1
 ) -> numpy.ndarray:
+    """Computes pairwise tangency distances for a cloud of ellipses.
+
+    Args:
+        ellcloud: An `EllipseCloud` object containing the ellipses.
+        parallel: If `True`, the computation is performed in parallel.
+        n_jobs: The number of jobs to run in parallel.
+
+    Returns:
+        A condensed distance matrix of tangency distances.
+    """
     if parallel:
         return _pdist_tangency_parallel(ellcloud, n_jobs=n_jobs)
     return _pdist_tangency_serial(ellcloud)

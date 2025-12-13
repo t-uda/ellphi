@@ -38,13 +38,34 @@ __all__ = [
 # ------------------------------------------------------------------
 # Pure helpers
 # ------------------------------------------------------------------
-def unit_vector(theta: float) -> numpy.ndarray:  # noqa: D401
-    """Return the unit vector (cosθ, sinθ)."""
+def unit_vector(theta: float) -> numpy.ndarray:
+    """Computes the unit vector for a given angle.
+
+    Args:
+        theta: The angle in radians.
+
+    Returns:
+        The unit vector (cosθ, sinθ) as a NumPy array.
+    """
     return numpy.transpose([numpy.cos(theta), numpy.sin(theta)])
 
 
 def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
-    """Covariance (2×2) → (r0, r1, θ) with r0 ≥ r1."""
+    """Computes the axes and orientation of an ellipse from a covariance matrix.
+
+    This function takes a 2x2 covariance matrix and returns the major axis,
+    minor axis, and angle of the major axis. The axes are scaled by the
+    provided scale factor.
+
+    Args:
+        cov: A 2x2 covariance matrix.
+        scale: A scaling factor for the axes.
+
+    Returns:
+        A tuple containing the major axis, minor axis, and angle of the major
+        axis in radians. The major axis is always greater than or equal to the
+        minor axis.
+    """
     if len(cov.shape) <= 2:
         cov = cov[None, :, :]
     eigvals, eigvecs = numpy.linalg.eigh(cov)
@@ -78,14 +99,22 @@ def _coef_core(X, r0, r1, cos, sin):
 
 
 def infer_dim_from_coef_length(length: int) -> int:
-    """Infer the ambient dimension ``n`` from the flattened coefficient length.
+    """Infers the ambient dimension `n` from the flattened coefficient length.
 
     The coefficient vector stores the upper triangular part of the quadratic
-    matrix, followed by the linear term and the constant term.  Its length is
-    therefore ``m = (n + 1)(n + 2) / 2``.  The function validates that the
-    supplied length matches this formula and returns ``n``.
-    """
+    matrix, followed by the linear term and the constant term. Its length is
+    therefore `m = (n + 1)(n + 2) / 2`. The function validates that the
+    supplied length matches this formula and returns `n`.
 
+    Args:
+        length: The length of the flattened coefficient vector.
+
+    Returns:
+        The inferred ambient dimension `n`.
+
+    Raises:
+        ValueError: If the length does not correspond to a valid dimension.
+    """
     if length < 6:
         raise ValueError("Coefficient vector too short to represent a conic")
     disc = 1 + 8 * length
@@ -116,23 +145,21 @@ def _broadcast_shapes(
 def pack_conic(
     matrices: numpy.ndarray, linear: numpy.ndarray, constant: numpy.ndarray
 ) -> numpy.ndarray:
-    """Pack ``(A, b, c)`` into the flattened coefficient representation.
+    """Packs a conic's components into a flattened coefficient vector.
 
-    Parameters
-    ----------
-    matrices
-        Symmetric positive-definite matrices ``A`` with shape ``(..., n, n)``.
-    linear
-        Linear coefficients ``b`` with shape ``(..., n)``.
-    constant
-        Constant term ``c`` with shape ``(...)``.
+    This function takes the quadratic, linear, and constant terms of a conic's
+    equation and packs them into a single, flattened NumPy array.
 
-    Returns
-    -------
-    numpy.ndarray
-        Array of shape ``(..., m)`` with ``m = (n + 1)(n + 2) / 2``.
+    Args:
+        matrices: A NumPy array of symmetric positive-definite matrices `A` with
+            shape `(..., n, n)`.
+        linear: A NumPy array of linear coefficients `b` with shape `(..., n)`.
+        constant: A NumPy array of the constant term `c` with shape `(...)`.
+
+    Returns:
+        A NumPy array of shape `(..., m)` where `m = (n + 1)(n + 2) / 2`,
+        representing the packed conic coefficients.
     """
-
     matrices = numpy.asarray(matrices, dtype=float)
     linear = numpy.asarray(linear, dtype=float)
     constant = numpy.asarray(constant, dtype=float)
@@ -163,8 +190,19 @@ def pack_conic(
 def unpack_conic(
     coef: numpy.ndarray,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """Inverse of :func:`pack_conic` returning ``(A, b, c)``."""
+    """Unpacks a flattened coefficient vector into a conic's components.
 
+    This function is the inverse of :func:`pack_conic`. It takes a flattened
+    coefficient vector and returns the quadratic, linear, and constant terms
+    of the conic's equation.
+
+    Args:
+        coef: A NumPy array of packed conic coefficients.
+
+    Returns:
+        A tuple containing the quadratic matrix `A`, the linear coefficients
+        `b`, and the constant term `c`.
+    """
     coef = numpy.asarray(coef, dtype=float)
     squeeze = False
     if coef.ndim == 1:
@@ -194,12 +232,19 @@ def unpack_conic(
 def unpack_single_conic(
     coef: numpy.ndarray,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """Return ``(A, b, c)`` for a single flattened coefficient array.
+    """Unpacks a single flattened coefficient vector into a conic's components.
 
-    Accepts either shape ``(m,)`` or ``(1, m)`` and preserves the batched
-    semantics of :func:`unpack_conic` for ``m`` corresponding to a single conic.
+    This function is a convenience wrapper around :func:`unpack_conic` for a
+    single conic. It accepts a coefficient array of shape `(m,)` or `(1, m)`
+    and returns the conic's components.
+
+    Args:
+        coef: A NumPy array of packed conic coefficients for a single conic.
+
+    Returns:
+        A tuple containing the quadratic matrix `A`, the linear coefficients
+        `b`, and the constant term `c`.
     """
-
     matrices, linear, constant = unpack_conic(coef)
     if matrices.ndim == 3:
         if matrices.shape[0] != 1:
@@ -214,7 +259,17 @@ def unpack_single_conic(
 
 
 def coef_from_axes(X: float, r0: float, r1: float, theta: float) -> numpy.ndarray:
-    """Centre & axes → conic coefficient array (6,)."""
+    """Computes the conic coefficient array from the center and axes.
+
+    Args:
+        X: The center of the conic.
+        r0: The major axis.
+        r1: The minor axis.
+        theta: The angle of the major axis in radians.
+
+    Returns:
+        A NumPy array of shape (6,) representing the conic coefficients.
+    """
     return _coef_core(X, r0, r1, numpy.cos(theta), numpy.sin(theta))
 
 
@@ -225,32 +280,22 @@ def coef_from_cov(
     *,
     scale: float = 1.0,
 ) -> numpy.ndarray:
-    """Convert centres and covariances to packed conic coefficients.
+    """Converts centers and covariances to packed conic coefficients.
 
-    Parameters
-    ----------
-    X
-        Array of centres with shape ``(n, d)`` or a single centre with shape ``(d,)``.
-        Single centres are promoted to ``(1, d)`` so that the return value always
-        keeps a leading dimension.
-    cov
-        Covariance matrices with shape ``(n, d, d)`` or a single covariance with
-        shape ``(d, d)``. Each matrix must be square and match the dimensionality
-        of the corresponding centre.
-    scale
-        Optional scale factor applied to the covariance before conversion. Values
-        greater than 1 inflate the ellipsoid radii, while values less than 1 shrink
-        them.
+    This function takes an array of centers and covariance matrices and
+    converts them into packed conic coefficients.
 
-    Returns
-    -------
-    numpy.ndarray
-        Packed coefficients as produced by :func:`pack_conic` with shape
-        ``(n, m)`` where ``m = (d + 1)(d + 2) / 2``. When a single centre and
-        covariance are provided, ``n`` equals 1 so callers can rely on a consistent
-        two-dimensional output.
+    Args:
+        X: An array of centers with shape `(n, d)` or a single center with
+            shape `(d,)`. Single centers are promoted to `(1, d)`.
+        cov: An array of covariance matrices with shape `(n, d, d)` or a
+            single covariance with shape `(d, d)`.
+        scale: An optional scaling factor for the covariance matrices.
+
+    Returns:
+        A NumPy array of packed conic coefficients with shape `(n, m)`, where
+        `m = (d + 1)(d + 2) / 2`.
     """
-
     centers = numpy.asarray(X, dtype=float)
     cov = numpy.asarray(cov, dtype=float)
 

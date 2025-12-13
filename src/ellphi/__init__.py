@@ -1,11 +1,19 @@
-"""
-ellphi top-level package initialisation
---------------------------------------
+"""A Python library for ellipse-based geometric analysis.
 
-Re-exports the most frequently used symbols so users can::
+This package provides a comprehensive set of tools for working with ellipses,
+including geometric calculations, ellipse cloud generation, and tangency
+analysis. It is designed to be both efficient and user-friendly, with a
+high-level API that abstracts away the complexities of the underlying
+mathematics.
 
-    import ellphi as el
-    el.tangency(...)
+The library is organized into the following subpackages:
+
+- `ellphi.geometry`: Core geometric functions for working with ellipses.
+- `ellphi.ellcloud`: Tools for creating and manipulating ellipse clouds.
+- `ellphi.solver`: Tangency solvers for finding the point of contact between
+    two ellipses.
+- `ellphi.visualization`: Helper functions for visualizing ellipses and
+    ellipse clouds.
 """
 
 import numpy as np

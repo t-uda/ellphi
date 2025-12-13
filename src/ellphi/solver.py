@@ -44,8 +44,11 @@ _BACKEND_NAMES: BackendLiteral = ("auto", "python", "cpp")
 
 
 def has_cpp_backend() -> bool:
-    """Return True if the compiled tangency backend is available."""
+    """Checks if the compiled C++ backend for tangency calculations is available.
 
+    Returns:
+        `True` if the C++ backend is available, `False` otherwise.
+    """
     return _cpp.is_available()
 
 
@@ -102,44 +105,35 @@ def tangency(
     hybrid_newton_maxiter: int | None = None,
     failsafe: bool = True,
 ) -> TangencyResult:
-    """Compute the tangency point between two ellipses.
+    """Computes the tangency point between two ellipses.
 
-    Returns the tangency time `t`, the tangent point `point`, and the
-    pencil parameter `μ` at which the two ellipses are tangent.
+    This function returns the tangency time `t`, the tangent point `point`,
+    and the pencil parameter `μ` at which the two ellipses are tangent.
 
-    Parameters
-    ----------
-    pcoef : numpy.ndarray
-        Coefficient vector for the first ellipse.
-    qcoef : numpy.ndarray
-        Coefficient vector for the second ellipse.
-    method : str, default="brentq+newton"
-        Root-finding method. Options: "brentq+newton", "brentq", "brenth",
-        "bisect", or "newton".
-    bracket : tuple of float, default=(0.0, 1.0)
-        Bracketing interval for bracket methods.
-    x0 : float, optional
-        Initial guess for Newton's method (required if method="newton").
-    backend : str, default="auto"
-        Backend to use: "auto", "cpp", or "python".
-    hybrid_bracket_maxiter : int, optional
-        Maximum iterations for bracket phase in hybrid method.
-        Default: 28 for all dimensions.
-    hybrid_newton_maxiter : int, optional
-        Maximum iterations for Newton phase in hybrid method.
-        Default: 3 for all dimensions.
-    failsafe : bool, default=True
-        Enable failsafe fallback. When True, if Newton refinement fails to
-        converge in the hybrid method, falls back to high-precision Brent's
-        method (64 iterations). When False, returns the initial bracket result
-        if Newton fails, allowing measurement of accuracy degradation.
+    Args:
+        pcoef: The coefficient vector for the first ellipse.
+        qcoef: The coefficient vector for the second ellipse.
+        method: The root-finding method to use. Can be one of "brentq+newton",
+            "brentq", "brenth", "bisect", or "newton".
+        bracket: The bracketing interval for bracket methods.
+        x0: An optional initial guess for Newton's method. Required if
+            `method` is "newton".
+        backend: The backend to use for the computation. Can be one of "auto",
+            "cpp", or "python".
+        hybrid_bracket_maxiter: An optional maximum number of iterations for
+            the bracket phase in the hybrid method.
+        hybrid_newton_maxiter: An optional maximum number of iterations for
+            the Newton phase in the hybrid method.
+        failsafe: If `True`, a failsafe fallback is enabled. If Newton
+            refinement fails to converge in the hybrid method, the function
+            falls back to the high-precision Brent's method.
 
-    Returns
-    -------
-    TangencyResult
-        Named tuple with fields (t, point, mu).
+    Returns:
+        A `TangencyResult` named tuple with the following fields:
+        - `t`: The tangency time.
+        - `point`: The tangent point.
+        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
     """
-
     method_literal = _normalize_method(method)
     pcoef_arr = numpy.asarray(pcoef, dtype=float).reshape(-1)
     qcoef_arr = numpy.asarray(qcoef, dtype=float).reshape(-1)
@@ -206,21 +200,20 @@ def pdist_tangency(
     n_jobs: int | None = -1,
     backend: str = "auto",
 ) -> numpy.ndarray:
-    """Compute pairwise tangency distances for a cloud of ellipses.
+    """Computes pairwise tangency distances for a cloud of ellipses.
 
-    Parameters
-    ----------
-    ellcloud
-        Collection of ellipse coefficient arrays or an `EllipseCloud`.
-    parallel : bool, optional
-        If True (default), compute the tangencies in parallel when using the
-        Python backend.
-    n_jobs : int or None, optional
-        Number of jobs passed to the Python parallel backend.
-    backend : {"auto", "python", "cpp"}
-        Backend used for the tangency computation.
+    Args:
+        ellcloud: A collection of ellipse coefficient arrays or an
+            `EllipseCloud` object.
+        parallel: If `True`, the computation is performed in parallel when
+            using the Python backend.
+        n_jobs: The number of jobs to run in parallel.
+        backend: The backend to use for the computation. Can be one of
+            "auto", "python", or "cpp".
+
+    Returns:
+        A condensed distance matrix of tangency distances.
     """
-
     if backend not in _BACKEND_NAMES:
         raise ValueError(
             f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
