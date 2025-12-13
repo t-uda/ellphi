@@ -43,10 +43,10 @@ jobs:
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
-      run: poetry run flake8 src tests
+      run: poetry run flake8 src tests scripts
 
     - name: black check
-      run: poetry run black --check src tests
+      run: poetry run black --check src tests scripts
 
     # -- Tests ------------------------------------------------------
     - name: pytest
