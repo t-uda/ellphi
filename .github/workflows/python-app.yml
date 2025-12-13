@@ -39,7 +39,7 @@ jobs:
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install --with dev
+      run: poetry install
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
@@ -74,7 +74,7 @@ jobs:
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install --with dev      # stub も OK
+      run: poetry install      # stub も OK
 
     - name: mypy
       run: poetry run mypy src
