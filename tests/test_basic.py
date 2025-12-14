@@ -415,7 +415,7 @@ def test_newton_method_with_initial_guess(solver_backend):
     assert res.point == pytest.approx(baseline.point, rel=1e-9, abs=1e-9)
 
 
-def test_hybrid_default_iterations_2d_match_explicit(solver_backend):
+def test_hybrid_default_iterations_2d_match_tuned(solver_backend):
     p = coef_from_axes([0.2, -0.5], 1.1, 0.8, 0.3)
     q = coef_from_axes([-0.8, 1.0], 1.3, 0.6, -0.4)
 
@@ -424,8 +424,8 @@ def test_hybrid_default_iterations_2d_match_explicit(solver_backend):
         p,
         q,
         backend=solver_backend,
-        hybrid_bracket_maxiter=8,
-        hybrid_newton_maxiter=3,
+        hybrid_bracket_maxiter=28,
+        hybrid_newton_maxiter=6,
     )
 
     assert explicit.t == pytest.approx(baseline.t, rel=1e-9)
