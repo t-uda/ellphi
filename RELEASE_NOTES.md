@@ -1,7 +1,13 @@
-## 0.1.1 - 2025-12-01
+## 0.1.1 - 2025-12-14
 
 ### Added
 
+- Full n-dimensional support for tangency solving across Python and C++ backends, including new conic
+  packing helpers, EllipseCloud dimension tracking, and expanded differentiable gradient coverage with
+  high-dimensional regression tests. (PR #31, #37, #38)
+- A dedicated 3-D ellipsoid demo notebook plus documentation of the ndim extension review.
+- Added the Algebraic Sigmoid Newton (`algsig+newton`) method. This provides an alternative unconstrained formulation for comparative studies and specific C++ backend use cases, though standard hybrid solvers remain recommended for general stability, especially in Python. (PR #54)
+- Added support for Brent's hyperbolic method (`brenth`) as a robust alternative bracketing solver alongside the standard `brentq`. (PR #52)
 - `scripts/hybrid_tuning.py` and the accompanying
   `docs/hybrid_tuning_summary.json` artifact summarising the empirical tuning
   run. The script generates extreme ellipse pairs across dimensions,
@@ -14,23 +20,22 @@
   persisting case sets (`--cases-input/--cases-output`), overriding hybrid
   iteration pairs (`--hybrid-combos`), and prefixing plot names to keep
   multiple scenarios side by side, making it easy to reproduce and compare the
-  parameter sweep backing the hybrid defaults.
-- Full n-dimensional support for tangency solving across Python and C++ backends, including new conic
-  packing helpers, EllipseCloud dimension tracking, and expanded differentiable gradient coverage with
-  high-dimensional regression tests.
-- A dedicated 3-D ellipsoid demo notebook plus documentation of the ndim extension review.
+  parameter sweep backing the hybrid defaults. (PR #53)
 - A new `ellphi` CLI entrypoint with a `--version` flag, and a runtime `ellphi.version_info()` helper
-  to programmatically check the installed version.
+  to programmatically check the installed version. (PR #66)
 - PEP 561 type marker (`py.typed`) and `.pyi` stub files are now included in the distribution,
-  enabling better type checking and IDE autocompletion support.
+  enabling better type checking and IDE autocompletion support. (PR #46)
+- Added a test coverage badge to `README.md` to track code quality. (PR #77)
+- Added comprehensive docstrings and documentation across the codebase to improve developer
+  experience. (PR #76)
 
 ### Changed
 
 - The `brentq+newton` hybrid now exposes configurable iteration counts all the
   way through the Python and C++ backends. Defaults are 28 Brent / 3 Newton iterations.
-  Dispatch helpers, differentiable solvers, and tests now accept the new keyword arguments.
-- Dropped support for Python 3.9. Python 3.10 or newer is now required.
-- Updated `README.md` with a "Quick Start" section demonstrating basic tangency usage.
+  Dispatch helpers, differentiable solvers, and tests now accept the new keyword arguments. (PR #80)
+- Dropped support for Python 3.9. Python 3.10 or newer is now required. (PR #48)
+- Updated `README.md` with a "Quick Start" section demonstrating basic tangency usage. (PR #61)
 
 ### Fixed
 
@@ -45,3 +50,5 @@
 
 - AGENTS.md documents the exact CI command checklist and black[jupyter] is added so notebooks are
   formatted consistently.
+- Expanded CI workflows to include documentation build checks, a dedicated test-build job, and
+  dependency optimizations for faster execution. (PR #70, #71, #72)
