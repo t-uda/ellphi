@@ -4,7 +4,7 @@
 
 **EllPHi** brings anisotropy to persistent-homology workflows.
 
-Starting from an ordinary 2-D point cloud, it estimates local covariance, inflates **ellipses** instead of balls, and feeds the resulting *tangency distance* into your favourite PH backend (HomCloud, Ripser, and so on). The result: cleaner barcodes, longer lifetimes, and ring structures that survive heavy noise — all without rewriting your topology code.
+Starting from an ordinary point cloud, it estimates local covariance, inflates **ellipsoids** instead of balls, and feeds the resulting *tangency distance* into your favourite PH backend (HomCloud, Ripser, and so on). The result: cleaner barcodes, longer lifetimes, and ring structures that survive heavy noise — all without rewriting your topology code.
 
 ## Features
 
@@ -50,6 +50,7 @@ qcoef = ellphi.coef_from_cov([1.0, 0.25], [[0.15, 0.0], [0.0, 0.25]])[0]
 result = ellphi.tangency(pcoef, qcoef)
 print(f"t = {result.t:.3f}")       # tangency distance
 print(f"point = {result.point}")
+```
 
 ## Usage
 
@@ -78,12 +79,8 @@ For deeper workflows, see the accompanying notebooks:
 
 * [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour
 * [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline
-* [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 2025 poster
+* [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 11 poster
 * [`ndim-demo-3d.ipynb`](https://github.com/t-uda/ellphi/notebooks/ndim-demo-3d.ipynb) – 3-D ellipsoid cloud + tangency distance walkthrough
-
-> **For ATMCS 2025 attendees**
-> See **[`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb)**
-> which accompanies the conference poster.
 
 ## Check the installed version
 
