@@ -1,6 +1,6 @@
 [project]
 name = "ellphi"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fast ellipse tangency solver"
 authors = [
   { name = "Tomoki Uda", email = "tomoki.uda@gmail.com" }
@@ -31,45 +31,75 @@ keywords = [
 dependencies = [
   "numpy>=1.26",
   "scipy>=1.12",
-  "joblib>=1.3"
+  "joblib>=1.3",
+  "matplotlib>=3.9",
 ]
+
+[project.scripts]
+ellphi = "ellphi.__init__:_main"
 
 [project.urls]
 Homepage = "https://github.com/t-uda/ellphi"
 Repository = "https://github.com/t-uda/ellphi"
 
 [project.optional-dependencies]
-# `pip install ellphi[dev]` / `poetry install -E dev`
-dev = [
+# `pip install ellphi[demo]` / `poetry install --with demo`
+demo = [
   "jupyterlab>=4.1",
   "ipykernel>=6.28",
   "nbformat>=5.10",
-  "matplotlib>=3.9",
   "plotly>=5.22",
-  # "anywidget>=0.9",
-  # "ripser>=0.6",
-  # "persim>=0.3"
+  "pandas>=2.2.0",
+  "homcloud>=4.8.0",
+  "tqdm>=4.67.1",
+  "seaborn>=0.13",
 ]
 
 [tool.poetry]
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
 include = [
-  { path = "src/ellphi/_tangency_cpp_impl.*", format = ["sdist", "wheel"] },
+  { path = "src/ellphi/_tangency_cpp_impl.cpp", format = "sdist" },
+  { path = "src/ellphi/_tangency_cpp_impl.so", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.dylib", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.dll", format = "wheel" },
+  { path = "src/ellphi/_tangency_cpp_impl.pyd", format = "wheel" },
+  { path = "src/ellphi/*.pyi", format = ["sdist", "wheel"] },
+  { path = "src/ellphi/py.typed", format = ["sdist", "wheel"] },
+  { path = "scripts/build_tangency_cpp.py", format = ["sdist"] },
 ]
 
 [tool.poetry.build]
-script = "build_tangency_cpp.py"
+script = "scripts/build_tangency_cpp.py"
 
 [tool.poetry.group.dev.dependencies]
-pandas = "^2.2.0"
-homcloud = "^4.8.0"
-tqdm = "^4.67.1"
+setuptools = ">=65"
 flake8 = "^7.3.0"
-black = "^25.1.0"
+black = { version = "^25.1.0", extras = ["jupyter"] }
 mypy = "^1.8"
 scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
 pytest = "^8.4.1"
+packaging = "^25.0"
+pytest-cov = "^7.0.0"
+
+[tool.poetry.group.demo]
+optional = true
+
+[tool.poetry.group.demo.dependencies]
+jupyterlab = ">=4.1"
+ipykernel = ">=6.28"
+nbformat = ">=5.10"
+plotly = ">=5.22"
+pandas = "^2.2.0"
+homcloud = "^4.8.0"
+tqdm = "^4.67.1"
+seaborn = "^0.13"
+
+[tool.mypy]
+mypy_path = "src"
+
+[tool.stubtest]
+allowlist = "stubtest-allowlist.txt"
 
 [build-system]
 requires = ["poetry-core>=1.9.0", "setuptools>=65"]

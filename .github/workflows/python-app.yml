@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11"]
 
     steps:
     - uses: actions/checkout@v4
@@ -36,21 +36,26 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install --with dev
+      run: poetry install --with dev # Install core and development dependencies
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
-      run: poetry run flake8 src tests
+      run: poetry run flake8 src tests scripts
 
     - name: black check
-      run: poetry run black --check src tests
+      run: poetry run black --check src tests scripts
 
     # -- Tests ------------------------------------------------------
-    - name: pytest
-      run: poetry run pytest -q
+    - name: pytest with coverage
+      run: poetry run pytest --cov=src/ellphi --cov-report=xml
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4.0.1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   # 3.11 限定で mypy
   typecheck:
@@ -71,10 +76,92 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (dev extras)
-      run: poetry install --with dev      # stub も OK
+      run: poetry install --with dev # Install core and development dependencies
 
     - name: mypy
       run: poetry run mypy src
+
+    - name: stubtest
+      run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+
+  package-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build package
+      run: poetry build
+
+    - name: Check sdist content
+      run: |
+        # Ensure sdist contains C++ source but NO binaries
+        tar -tf dist/*.tar.gz > sdist_content.txt
+        if ! grep -q "src/ellphi/_tangency_cpp_impl.cpp" sdist_content.txt; then
+          echo "Error: C++ source missing from sdist"
+          exit 1
+        fi
+        if grep -q -E "\.(so|dylib|dll|pyd)$" sdist_content.txt; then
+          echo "Error: Binary files found in sdist"
+          cat sdist_content.txt | grep -E "\.(so|dylib|dll|pyd)$"
+          exit 1
+        fi
+        echo "sdist content check passed."
+
+    - name: Install wheel and test
+      run: |
+        # Create a fresh venv to test installation
+        python -m venv test-env
+        source test-env/bin/activate
+        
+        # Install the built wheel
+        pip install dist/*.whl
+        
+        # Install test dependencies (pytest)
+        # Note: runtime dependencies (numpy, etc.) are installed by pip automatically from the wheel metadata
+        pip install pytest
+        
+        # Run tests against the installed package
+        # We assume tests are in 'tests/' and we want to avoid importing from local 'src/'
+        # So we move to a different directory or explicitely tell pytest where to look
+        mkdir -p test_run
+        cd test_run
+        pytest ../tests
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Cache Poetry env
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+
+    - name: Install project (demo extras)
+      run: poetry install --with demo # Install core and demo dependencies
+
+    # Add steps for building documentation here, e.g., mkdocs build or sphinx build
+    # - name: Build documentation
+    #   run: poetry run mkdocs build

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import re
 import sys
 import sysconfig
 from pathlib import Path
@@ -12,9 +14,7 @@ try:  # pragma: no cover - import guard is environment dependent
     from setuptools import Distribution, Extension
     from setuptools.command.build_ext import build_ext
 except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for users
-    raise RuntimeError(
-        "setuptools is required to build the C++ backend. "
-    ) from exc
+    raise RuntimeError("setuptools is required to build the C++ backend. ") from exc
 
 _LIB_NAME = "_tangency_cpp_impl"
 
@@ -31,11 +31,61 @@ def _library_suffix() -> str:
 
 
 def _source_path() -> Path:
-    return Path(__file__).resolve().parent / "src" / "ellphi" / f"{_LIB_NAME}.cpp"
+    return Path(__file__).resolve().parents[1] / "src" / "ellphi" / f"{_LIB_NAME}.cpp"
 
 
 def _output_path() -> Path:
     return _source_path().with_suffix(_library_suffix())
+
+
+def _project_version() -> str:
+    project_root = Path(__file__).resolve().parent.parent
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.exists():
+        raise FileNotFoundError(f"pyproject.toml not found at {pyproject}")
+
+    version = _project_version_from_pyproject(pyproject)
+    if not version:
+        raise RuntimeError("Project version is not defined in pyproject.toml")
+    return version
+
+
+def _project_version_from_pyproject(path: Path) -> str | None:
+    if not path.exists():
+        return None
+
+    in_project = False
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            in_project = line == "[project]"
+            continue
+        if not in_project:
+            continue
+        match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _existing_library_version(path: Path) -> str | None:
+    try:
+        lib = ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+    try:
+        func = lib.tangency_backend_version
+    except AttributeError:
+        return None
+
+    func.restype = ctypes.c_char_p
+    value = func()
+    if not value:
+        return None
+    return value.decode("utf-8", errors="replace")
 
 
 def _ensure_parent(path: Path) -> None:
@@ -44,10 +94,12 @@ def _ensure_parent(path: Path) -> None:
 
 class _TangencyExtension(Extension):
     def __init__(self) -> None:
+        version = _project_version()
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
+            define_macros=[("TANGENCY_VERSION", f'"{version}"')],
         )
 
 
@@ -74,6 +126,7 @@ class _BuildTangency(build_ext):
             ext.sources,  # type: ignore[arg-type]
             output_dir=self.build_temp,
             include_dirs=ext.include_dirs,
+            macros=ext.define_macros,
             extra_postargs=compile_opts,
             depends=ext.depends,
         )
@@ -101,11 +154,17 @@ class _BuildTangency(build_ext):
 def build() -> Path:
     source = _source_path()
     output = _output_path()
+    project_version = _project_version()
 
     if not source.exists():
         raise FileNotFoundError(f"C++ source not found: {source}")
 
-    if output.exists() and output.stat().st_mtime >= source.stat().st_mtime:
+    existing_version = _existing_library_version(output)
+    if (
+        output.exists()
+        and output.stat().st_mtime >= source.stat().st_mtime
+        and existing_version == project_version
+    ):
         return output
 
     dist = Distribution()

@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-
 from ._tangent_pencil import (
     TangentPencil,
     build_tangent_pencil,
@@ -19,23 +18,19 @@ __all__ = ["solve_mu_gradients", "solve_mu_numerical_diff"]
 def solve_mu_numerical_diff(
     p: np.ndarray, q: np.ndarray, h: float = 1e-6
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Computes the partial derivatives of solve_mu with respect to p and q
-    using the central difference method.
+    """Computes `solve_mu` partial derivatives using central differences.
 
-    Parameters
-    ----------
-    p : np.ndarray
-        Coefficient vector of the first ellipse.
-    q : np.ndarray
-        Coefficient vector of the second ellipse.
-    h : float, optional
-        The step size for the finite difference calculation, by default 1e-6.
+    This function calculates the partial derivatives of `solve_mu` with
+    respect to `p` and `q` using the central difference method for
+    numerical differentiation.
 
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        A tuple containing the gradients (d_mu_dp, d_mu_dq).
+    Args:
+        p: The coefficient vector of the first ellipse.
+        q: The coefficient vector of the second ellipse.
+        h: The step size for the finite difference calculation.
+
+    Returns:
+        A tuple containing the gradients `(d_mu_dp, d_mu_dq)`.
     """
     d_mu_dp = np.zeros_like(p)
     d_mu_dq = np.zeros_like(q)
@@ -65,29 +60,39 @@ def solve_mu_gradients(
     method: MethodName = "brentq+newton",
     bracket: Tuple[float, float] = (0.0, 1.0),
     x0: float | None = None,
+    hybrid_bracket_maxiter: int | None = None,
+    hybrid_newton_maxiter: int | None = None,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Return ``μ`` and its partial derivatives with respect to ``p`` and ``q``.
+    """Returns `μ` and its partial derivatives with respect to `p` and `q`.
 
-    Parameters
-    ----------
-    p, q:
-        Coefficient vectors defining the two conics.
-    mu:
-        Optional pre-computed value of ``μ``. When omitted the function
-        solves for ``μ`` using :func:`ellphi.solver.solve_mu` with the
-        supplied keyword arguments.
-    method, bracket, x0:
-        Parameters forwarded to :func:`ellphi.solver.solve_mu` when ``mu``
-        is not given.
+    Args:
+        p: The coefficient vector of the first conic.
+        q: The coefficient vector of the second conic.
+        mu: An optional pre-computed value of `μ`. If not provided, it will be
+            computed using `solve_mu`.
+        method: The root-finding method to use if `mu` is not provided.
+        bracket: The bracketing interval to use if `mu` is not provided.
+        x0: An optional initial guess for Newton's method if `mu` is not
+            provided.
+        hybrid_bracket_maxiter: An optional maximum number of iterations for
+            the bracket phase in the hybrid method.
+        hybrid_newton_maxiter: An optional maximum number of iterations for
+            the Newton phase in the hybrid method.
 
-    Returns
-    -------
-    Tuple[float, np.ndarray, np.ndarray]
-        The solved ``μ`` together with ``∂μ/∂p`` and ``∂μ/∂q``.
+    Returns:
+        A tuple containing the solved `μ`, and its partial derivatives
+        `∂μ/∂p` and `∂μ/∂q`.
     """
-
     if mu is None:
-        mu = solve_mu(p, q, method=method, bracket=bracket, x0=x0)
+        mu = solve_mu(
+            p,
+            q,
+            method=method,
+            bracket=bracket,
+            x0=x0,
+            hybrid_bracket_maxiter=hybrid_bracket_maxiter,
+            hybrid_newton_maxiter=hybrid_newton_maxiter,
+        )
 
     pencil: TangentPencil = build_tangent_pencil(mu, p, q)
     diff = p - q
@@ -100,8 +105,17 @@ def solve_mu_gradients(
         raise ZeroDivisionError("Derivative with respect to mu is numerically zero")
 
     phi_x = -2.0 * residual
-    xc0, xc1 = pencil.center
-    base = np.array([xc0**2, 2.0 * xc0 * xc1, xc1**2, 2.0 * xc0, 2.0 * xc1, 1.0])
+    center = pencil.center
+    n_dim = center.shape[0]
+    tri_i, tri_j = np.triu_indices(n_dim)
+    quad_entries = np.empty(tri_i.size, dtype=float)
+    for idx, (i, j) in enumerate(zip(tri_i, tri_j)):
+        if i == j:
+            quad_entries[idx] = center[i] ** 2
+        else:
+            quad_entries[idx] = 2.0 * center[i] * center[j]
+    linear_entries = 2.0 * center
+    base = np.concatenate([quad_entries, linear_entries, np.array([1.0])])
 
     jac_center = center_jacobian(pencil)
     dx_dp = (1.0 - mu) * jac_center
