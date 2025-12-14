@@ -22,18 +22,15 @@ constexpr double EPS = std::numeric_limits<double>::epsilon();
 constexpr double BRENT_XTOL = std::numeric_limits<double>::epsilon();
 constexpr double NEWTON_RTOL = 4.0 * EPS;
 constexpr double NEWTON_XTOL = 1e-8;
-constexpr int HYBRID_BRACKET_MAXITER_2D = 28;
-constexpr int HYBRID_NEWTON_MAXITER_2D = 3;
-constexpr int HYBRID_BRACKET_MAXITER_ND = 28;
-constexpr int HYBRID_NEWTON_MAXITER_ND = 3;
+constexpr int HYBRID_BRACKET_MAXITER = 28;
+constexpr int HYBRID_NEWTON_MAXITER = 3;
 constexpr int HYBRID_BRACKET_MAXITER_FAILSAFE = 64;
 constexpr int NEWTON_ONLY_MAXITER = 50;
 
 std::pair<int, int> default_hybrid_iterations(int dim) {
-    if (dim == 2) {
-        return {HYBRID_BRACKET_MAXITER_2D, HYBRID_NEWTON_MAXITER_2D};
-    }
-    return {HYBRID_BRACKET_MAXITER_ND, HYBRID_NEWTON_MAXITER_ND};
+    // The dimension argument `dim` is preserved for API compatibility, even
+    // though the defaults are now dimension-independent.
+    return {HYBRID_BRACKET_MAXITER, HYBRID_NEWTON_MAXITER};
 }
 
 [[noreturn]] void raise(const std::string& message) {

@@ -254,7 +254,7 @@ MethodName = Literal[
 ]
 _BRACKET_METHODS: tuple[SingleStageMethodName, ...] = ("bisect", "brentq", "brenth")
 _DEFAULT_HYBRID_BRACKET_MAXITER = 28
-_DEFAULT_HYBRID_NEWTON_MAXITER = 6
+_DEFAULT_HYBRID_NEWTON_MAXITER = 3
 _HYBRID_BRACKET_MAXITER_FAILSAFE = 64
 _NEWTON_ONLY_MAXITER = 50
 _NEWTON_RTOL = 4.0 * numpy.finfo(float).eps

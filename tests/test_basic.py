@@ -425,7 +425,7 @@ def test_hybrid_default_iterations_2d_match_tuned(solver_backend):
         q,
         backend=solver_backend,
         hybrid_bracket_maxiter=28,
-        hybrid_newton_maxiter=6,
+        hybrid_newton_maxiter=3,
     )
 
     assert explicit.t == pytest.approx(baseline.t, rel=1e-9)
