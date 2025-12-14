@@ -253,10 +253,8 @@ MethodName = Literal[
     "brentq+newton", "algsig+newton", "bisect", "brentq", "brenth", "newton"
 ]
 _BRACKET_METHODS: tuple[SingleStageMethodName, ...] = ("bisect", "brentq", "brenth")
-_DEFAULT_HYBRID_BRACKET_MAXITER_2D = 28
-_DEFAULT_HYBRID_NEWTON_MAXITER_2D = 3
-_DEFAULT_HYBRID_BRACKET_MAXITER_ND = 28
-_DEFAULT_HYBRID_NEWTON_MAXITER_ND = 3
+_DEFAULT_HYBRID_BRACKET_MAXITER = 28
+_DEFAULT_HYBRID_NEWTON_MAXITER = 6
 _HYBRID_BRACKET_MAXITER_FAILSAFE = 64
 _NEWTON_ONLY_MAXITER = 50
 _NEWTON_RTOL = 4.0 * numpy.finfo(float).eps
@@ -264,9 +262,9 @@ _NEWTON_XTOL = 1e-8
 
 
 def _hybrid_iteration_defaults(dim: int) -> tuple[int, int]:
-    if dim == 2:
-        return (_DEFAULT_HYBRID_BRACKET_MAXITER_2D, _DEFAULT_HYBRID_NEWTON_MAXITER_2D)
-    return (_DEFAULT_HYBRID_BRACKET_MAXITER_ND, _DEFAULT_HYBRID_NEWTON_MAXITER_ND)
+    # The dimension argument `dim` is preserved for API compatibility, even
+    # though the defaults are now dimension-independent.
+    return (_DEFAULT_HYBRID_BRACKET_MAXITER, _DEFAULT_HYBRID_NEWTON_MAXITER)
 
 
 def _resolve_hybrid_iterations(

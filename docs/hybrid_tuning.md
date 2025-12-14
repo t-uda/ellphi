@@ -36,9 +36,6 @@ those quadratic values and the reported scaling factor, normalised by
 * `brentq+newton` with 28 Brent iterations followed by 6 Newton steps
   delivered zero failures across 120 cases while keeping mean absolute
   μ error below 5×10⁻⁹.
-* The historical 2D tuning (8 Brent / 3 Newton iterations) remains
-  optimal for planar ellipses, so the library keeps that shortcut and
-  only ups the budget for n>2 configurations.
 * The tuned hybrid (`28×6`) halves the mean runtime compared to
   pure bisection (1.09 ms vs. 2.32 ms) while retaining the robustness of
 the bracketing stage.
