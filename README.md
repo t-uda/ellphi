@@ -77,10 +77,10 @@ print("Computed tangency distances for", len(distances), "pairs of ellipses.")
 
 For deeper workflows, see the accompanying notebooks:
 
-* [`quickstart.ipynb`](https://github.com/t-uda/ellphi/notebooks/quickstart.ipynb) – 5-minute tour
-* [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH.ipynb) – full pipeline
-* [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 11 poster
-* [`ndim-demo-3d.ipynb`](https://github.com/t-uda/ellphi/notebooks/ndim-demo-3d.ipynb) – 3-D ellipsoid cloud + tangency distance walkthrough
+* [`quickstart.ipynb`](https://github.com/t-uda/ellphi/blob/main/notebooks/quickstart.ipynb) – 5-minute tour
+* [`eph-6rings-PH.ipynb`](https://github.com/t-uda/ellphi/blob/main/notebooks/eph-6rings-PH.ipynb) – full pipeline
+* [`eph-6rings-PH-figures.ipynb`](https://github.com/t-uda/ellphi/blob/main/notebooks/eph-6rings-PH-figures.ipynb) – figures presented in ATMCS 11 poster
+* [`ndim-demo-3d.ipynb`](https://github.com/t-uda/ellphi/blob/main/notebooks/ndim-demo-3d.ipynb) – 3-D ellipsoid cloud + tangency distance walkthrough
 
 ## Check the installed version
 
