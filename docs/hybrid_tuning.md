@@ -33,10 +33,10 @@ those quadratic values and the reported scaling factor, normalised by
 
 ## Key Findings
 
-* `brentq+newton` with 28 Brent iterations followed by 6 Newton steps
+* `brentq+newton` with 28 Brent iterations followed by 3 Newton steps
   delivered zero failures across 120 cases while keeping mean absolute
   μ error below 5×10⁻⁹.
-* The tuned hybrid (`28×6`) halves the mean runtime compared to
+* The tuned hybrid (`28×3`) halves the mean runtime compared to
   pure bisection (1.09 ms vs. 2.32 ms) while retaining the robustness of
 the bracketing stage.
 * Plain Newton with a naïve `x0=0.5` frequently diverges (28/120
