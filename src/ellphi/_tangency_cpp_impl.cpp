@@ -74,52 +74,83 @@ struct DecodedConic {
     double constant;
 };
 
+// Forward declarations for optimization functions
+void decode_conic_into(const std::vector<double>& coef, DecodedConic& out);
+void pencil_into(const std::vector<double>& p, const std::vector<double>& q, double mu, std::vector<double>& out);
+void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out);
+void solve_with_cholesky_into(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
+void gaussian_elimination_into(std::vector<double> matrix, std::vector<double> rhs, int dim, std::vector<double>& out);
+void matvec_into(const std::vector<double>& matrix, const std::vector<double>& vec, int dim, std::vector<double>& out);
+void center_with_fallback_into(const DecodedConic& conic, std::vector<double>& out_center, std::vector<double>& work_rhs, std::vector<double>& work_chol);
+
 DecodedConic decode_conic(const std::vector<double>& coef) {
     DecodedConic decoded{};
-    decoded.dim = infer_dim_from_coef_length(coef.size());
-    const int dim = decoded.dim;
-    const std::size_t quad_entries = static_cast<std::size_t>(dim * (dim + 1) / 2);
-    decoded.quad.assign(static_cast<std::size_t>(dim * dim), 0.0);
-    decoded.linear.assign(dim, 0.0);
+    decode_conic_into(coef, decoded);
+    return decoded;
+}
+
+void decode_conic_into(const std::vector<double>& coef, DecodedConic& out) {
+    out.dim = infer_dim_from_coef_length(coef.size());
+    const int dim = out.dim;
+    const std::size_t quad_size = static_cast<std::size_t>(dim * dim);
+    if (out.quad.size() != quad_size) {
+        out.quad.resize(quad_size);
+    }
+    if (out.linear.size() != static_cast<std::size_t>(dim)) {
+        out.linear.resize(dim);
+    }
+
+    std::fill(out.quad.begin(), out.quad.end(), 0.0);
 
     std::size_t idx = 0;
     for (int i = 0; i < dim; ++i) {
         for (int j = i; j < dim; ++j) {
             double value = coef[idx++];
-            decoded.quad[static_cast<std::size_t>(i * dim + j)] = value;
-            decoded.quad[static_cast<std::size_t>(j * dim + i)] = value;
+            out.quad[static_cast<std::size_t>(i * dim + j)] = value;
+            out.quad[static_cast<std::size_t>(j * dim + i)] = value;
         }
     }
 
     for (int i = 0; i < dim; ++i) {
-        decoded.linear[static_cast<std::size_t>(i)] = coef[idx++];
+        out.linear[static_cast<std::size_t>(i)] = coef[idx++];
     }
     if (idx >= coef.size()) {
         raise("Coefficient vector too short to contain constant term");
     }
-    decoded.constant = coef[idx];
+    out.constant = coef[idx];
 
-    const std::size_t expected_length = quad_entries + static_cast<std::size_t>(dim) + 1U;
+    const std::size_t expected_length = idx + 1;
     if (coef.size() != expected_length) {
         raise("Coefficient length mismatch during decoding");
     }
-    return decoded;
 }
-
 std::vector<double> pencil(
     const std::vector<double>& p,
     const std::vector<double>& q,
     double mu
 ) {
+    std::vector<double> result(p.size());
+    pencil_into(p, q, mu, result);
+    return result;
+}
+
+void pencil_into(
+    const std::vector<double>& p,
+    const std::vector<double>& q,
+    double mu,
+    std::vector<double>& out
+) {
     if (p.size() != q.size()) {
         raise("Coefficient vectors must have the same length");
     }
-    std::vector<double> result(p.size(), 0.0);
-    const double alpha = 1.0 - mu;
-    for (std::size_t i = 0; i < result.size(); ++i) {
-        result[i] = alpha * p[i] + mu * q[i];
+    if (out.size() != p.size()) {
+        out.resize(p.size());
     }
-    return result;
+    const double alpha = 1.0 - mu;
+    const std::size_t n = p.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        out[i] = alpha * p[i] + mu * q[i];
+    }
 }
 
 struct SolverContext {
@@ -129,6 +160,15 @@ struct SolverContext {
     DecodedConic q_dec;
     std::vector<double> diff_coef;
     DecodedConic diff_dec;
+    
+    // Working buffers to avoid reallocation
+    std::vector<double> work_coef;
+    DecodedConic work_conic;
+    std::vector<double> work_chol;
+    std::vector<double> work_rhs;
+    std::vector<double> work_center;
+    std::vector<double> work_residual;
+    std::vector<double> work_solved;
 };
 
 SolverContext build_solver_context(
@@ -144,82 +184,122 @@ SolverContext build_solver_context(
         decode_conic(pcoef),
         decode_conic(qcoef),
         {},
-        {}
+        {},
+        {}, {}, {}, {}, {}, {}, {}
     };
     ctx.diff_coef.resize(pcoef.size());
     for (std::size_t i = 0; i < pcoef.size(); ++i) {
         ctx.diff_coef[i] = pcoef[i] - qcoef[i];
     }
     ctx.diff_dec = decode_conic(ctx.diff_coef);
+    
+    // Initialize working buffers
+    int dim = ctx.p_dec.dim;
+    ctx.work_coef.resize(pcoef.size());
+    // work_conic will be resized in decode_conic_into
+    ctx.work_chol.resize(static_cast<std::size_t>(dim * dim));
+    ctx.work_rhs.resize(dim);
+    ctx.work_center.resize(dim);
+    ctx.work_residual.resize(dim);
+    ctx.work_solved.resize(dim);
+    
     return ctx;
 }
 
-std::vector<double> cholesky_factor(const std::vector<double>& matrix, int dim) {
-    std::vector<double> chol(static_cast<std::size_t>(dim * dim), 0.0);
+
+
+void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
+    const std::size_t size = static_cast<std::size_t>(dim * dim);
+    if (out.size() != size) {
+        out.resize(size);
+    }
+    std::fill(out.begin(), out.end(), 0.0);
+    
+    // Pointer access for optimization
+    const double* mat_ptr = matrix.data();
+    double* out_ptr = out.data();
+
     for (int i = 0; i < dim; ++i) {
+        double* row_i = out_ptr + i * dim;
+        const double* mat_row_i = mat_ptr + i * dim;
+
         for (int j = 0; j <= i; ++j) {
+            double* row_j = out_ptr + j * dim;
             double sum = 0.0;
+            
+            // Vectorizable loop
             for (int k = 0; k < j; ++k) {
-                sum += chol[static_cast<std::size_t>(i * dim + k)] *
-                    chol[static_cast<std::size_t>(j * dim + k)];
+                sum += row_i[k] * row_j[k];
             }
+
             if (i == j) {
-                double value = matrix[static_cast<std::size_t>(i * dim + i)] - sum;
+                double value = mat_row_i[i] - sum;
                 if (value <= 0.0) {
                     raise("Degenerate conic (determinant zero)");
                 }
-                chol[static_cast<std::size_t>(i * dim + j)] = std::sqrt(value);
+                row_i[j] = std::sqrt(value);
             } else {
-                double diag = chol[static_cast<std::size_t>(j * dim + j)];
+                double diag = row_j[j];
                 if (diag == 0.0) {
                     raise("Degenerate conic (determinant zero)");
                 }
-                chol[static_cast<std::size_t>(i * dim + j)] =
-                    (matrix[static_cast<std::size_t>(i * dim + j)] - sum) / diag;
+                row_i[j] = (mat_row_i[j] - sum) / diag;
             }
         }
     }
-    return chol;
 }
 
-std::vector<double> solve_with_cholesky(
+
+
+void solve_with_cholesky_into(
     const std::vector<double>& chol,
     const std::vector<double>& rhs,
-    int dim
+    int dim,
+    std::vector<double>& out
 ) {
-    std::vector<double> y(dim, 0.0);
+    if (out.size() != static_cast<std::size_t>(dim)) {
+        out.resize(dim);
+    }
+    // Forward substitution (Ly = b)
+    // Reuse out as y
     for (int i = 0; i < dim; ++i) {
         double sum = 0.0;
         for (int k = 0; k < i; ++k) {
-            sum += chol[static_cast<std::size_t>(i * dim + k)] * y[static_cast<std::size_t>(k)];
+            sum += chol[static_cast<std::size_t>(i * dim + k)] * out[static_cast<std::size_t>(k)];
         }
         double diag = chol[static_cast<std::size_t>(i * dim + i)];
         if (diag == 0.0) {
             raise("Degenerate conic (determinant zero)");
         }
-        y[static_cast<std::size_t>(i)] = (rhs[static_cast<std::size_t>(i)] - sum) / diag;
+        out[static_cast<std::size_t>(i)] = (rhs[static_cast<std::size_t>(i)] - sum) / diag;
     }
 
-    std::vector<double> x(dim, 0.0);
+    // Backward substitution (L^T x = y)
+    // Reuse out as x (in-place)
     for (int i = dim - 1; i >= 0; --i) {
         double sum = 0.0;
         for (int k = i + 1; k < dim; ++k) {
-            sum += chol[static_cast<std::size_t>(k * dim + i)] * x[static_cast<std::size_t>(k)];
+            sum += chol[static_cast<std::size_t>(k * dim + i)] * out[static_cast<std::size_t>(k)];
         }
         double diag = chol[static_cast<std::size_t>(i * dim + i)];
         if (diag == 0.0) {
             raise("Degenerate conic (determinant zero)");
         }
-        x[static_cast<std::size_t>(i)] = (y[static_cast<std::size_t>(i)] - sum) / diag;
+        out[static_cast<std::size_t>(i)] = (out[static_cast<std::size_t>(i)] - sum) / diag;
     }
-    return x;
 }
 
-std::vector<double> gaussian_elimination(
-    std::vector<double> matrix,
-    std::vector<double> rhs,
-    int dim
+
+
+void gaussian_elimination_into(
+    std::vector<double> matrix, // Pass by value to copy
+    std::vector<double> rhs,    // Pass by value to copy
+    int dim,
+    std::vector<double>& out
 ) {
+    if (out.size() != static_cast<std::size_t>(dim)) {
+        out.resize(dim);
+    }
     for (int k = 0; k < dim; ++k) {
         int pivot = k;
         double pivot_value = std::abs(matrix[static_cast<std::size_t>(k * dim + k)]);
@@ -253,35 +333,37 @@ std::vector<double> gaussian_elimination(
         }
     }
 
-    std::vector<double> x(dim, 0.0);
     for (int i = dim - 1; i >= 0; --i) {
         double sum = rhs[static_cast<std::size_t>(i)];
         for (int j = i + 1; j < dim; ++j) {
-            sum -= matrix[static_cast<std::size_t>(i * dim + j)] * x[static_cast<std::size_t>(j)];
+            sum -= matrix[static_cast<std::size_t>(i * dim + j)] * out[static_cast<std::size_t>(j)];
         }
         double diag = matrix[static_cast<std::size_t>(i * dim + i)];
         if (diag == 0.0) {
             raise("Degenerate conic (determinant zero)");
         }
-        x[static_cast<std::size_t>(i)] = sum / diag;
+        out[static_cast<std::size_t>(i)] = sum / diag;
     }
-    return x;
 }
 
-std::vector<double> matvec(
+
+
+void matvec_into(
     const std::vector<double>& matrix,
     const std::vector<double>& vec,
-    int dim
+    int dim,
+    std::vector<double>& out
 ) {
-    std::vector<double> result(dim, 0.0);
+    if (out.size() != static_cast<std::size_t>(dim)) {
+        out.resize(dim);
+    }
     for (int i = 0; i < dim; ++i) {
         double sum = 0.0;
         for (int j = 0; j < dim; ++j) {
             sum += matrix[static_cast<std::size_t>(i * dim + j)] * vec[static_cast<std::size_t>(j)];
         }
-        result[static_cast<std::size_t>(i)] = sum;
+        out[static_cast<std::size_t>(i)] = sum;
     }
-    return result;
 }
 
 double quad_eval(const DecodedConic& conic, const std::vector<double>& point) {
@@ -313,56 +395,94 @@ struct PencilGeometry {
 };
 
 std::vector<double> center_with_fallback(const DecodedConic& conic) {
-    std::vector<double> rhs = conic.linear;
-    for (double& value : rhs) {
-        value = -value;
+    std::vector<double> center(conic.dim);
+    std::vector<double> work_rhs(conic.dim);
+    std::vector<double> work_chol(static_cast<std::size_t>(conic.dim * conic.dim));
+    center_with_fallback_into(conic, center, work_rhs, work_chol);
+    return center;
+}
+
+void center_with_fallback_into(
+    const DecodedConic& conic,
+    std::vector<double>& out_center,
+    std::vector<double>& work_rhs,
+    std::vector<double>& work_chol
+) {
+    const int dim = conic.dim;
+    if (work_rhs.size() != static_cast<std::size_t>(dim)) {
+        work_rhs.resize(dim);
     }
+    // Copy linear to work_rhs and negate
+    for(int i=0; i<dim; ++i) {
+        work_rhs[i] = -conic.linear[i];
+    }
+    
     try {
-        std::vector<double> chol = cholesky_factor(conic.quad, conic.dim);
-        return solve_with_cholesky(chol, rhs, conic.dim);
+        cholesky_factor_into(conic.quad, dim, work_chol);
+        solve_with_cholesky_into(work_chol, work_rhs, dim, out_center);
     } catch (const std::runtime_error& ex) {
         if (!is_degenerate_error(ex)) {
             throw;
         }
-        return gaussian_elimination(conic.quad, rhs, conic.dim);
+        // Fallback: gaussian_elimination copies inputs, so we can pass quad and work_rhs
+        gaussian_elimination_into(conic.quad, work_rhs, dim, out_center);
     }
 }
 
-PencilGeometry build_pencil_geometry(double mu, const SolverContext& ctx) {
-    PencilGeometry geom;
-    geom.conic = decode_conic(pencil(ctx.pcoef, ctx.qcoef, mu));
-    geom.chol = cholesky_factor(geom.conic.quad, geom.conic.dim);
-    std::vector<double> rhs = geom.conic.linear;
-    for (double& value : rhs) {
-        value = -value;
-    }
-    geom.center = solve_with_cholesky(geom.chol, rhs, geom.conic.dim);
-    return geom;
-}
-
-double target(double mu, const SolverContext& ctx) {
-    DecodedConic conic = decode_conic(pencil(ctx.pcoef, ctx.qcoef, mu));
-    std::vector<double> center = center_with_fallback(conic);
-    double p_value = quad_eval(ctx.p_dec, center);
-    double q_value = quad_eval(ctx.q_dec, center);
+double target(double mu, SolverContext& ctx) {
+    pencil_into(ctx.pcoef, ctx.qcoef, mu, ctx.work_coef);
+    decode_conic_into(ctx.work_coef, ctx.work_conic);
+    center_with_fallback_into(ctx.work_conic, ctx.work_center, ctx.work_rhs, ctx.work_chol);
+    
+    double p_value = quad_eval(ctx.p_dec, ctx.work_center);
+    double q_value = quad_eval(ctx.q_dec, ctx.work_center);
     return p_value - q_value;
 }
 
-double target_prime(double mu, const SolverContext& ctx) {
+double target_prime(double mu, SolverContext& ctx) {
     try {
-        PencilGeometry geom = build_pencil_geometry(mu, ctx);
-        const int dim = geom.conic.dim;
+        // Equivalent to build_pencil_geometry but using buffers
+        pencil_into(ctx.pcoef, ctx.qcoef, mu, ctx.work_coef);
+        decode_conic_into(ctx.work_coef, ctx.work_conic);
+        // Note: target() also computes center, but target_prime re-computes it.
+        // In the optimization loop, they are called sequentially.
+        // We could optimize further by caching, but that's more complex.
+        
+        // Compute center and cholesky
+        const int dim = ctx.work_conic.dim;
+        // Copy linear to work_rhs and negate (for center calculation)
+        if (ctx.work_rhs.size() != static_cast<std::size_t>(dim)) {
+            ctx.work_rhs.resize(dim);
+        }
+        for(int i=0; i<dim; ++i) {
+            ctx.work_rhs[i] = -ctx.work_conic.linear[i];
+        }
+        
+        cholesky_factor_into(ctx.work_conic.quad, dim, ctx.work_chol);
+        // Reuse work_center for center
+        // solve_with_cholesky_into reuses the output buffer as input, but here we have work_rhs as input
+        // So we copy work_rhs to work_center first? No, solve_with_cholesky_into(chol, rhs, dim, out)
+        // does Forward Sub (Ly=b) into out, then Backward Sub (L^T x=y) into out.
+        solve_with_cholesky_into(ctx.work_chol, ctx.work_rhs, dim, ctx.work_center);
+        
+        // Now compute derivative
         if (ctx.diff_dec.dim != dim) {
             raise("Dimension mismatch while computing derivative");
         }
-        std::vector<double> mat_center = matvec(ctx.diff_dec.quad, geom.center, dim);
-        std::vector<double> residual(dim, 0.0);
+        
+        // matvec_into(ctx.diff_dec.quad, geom.center, dim, work_residual)
+        matvec_into(ctx.diff_dec.quad, ctx.work_center, dim, ctx.work_residual);
+        
+        // residual = -(mat_center + diff_linear)
         for (int i = 0; i < dim; ++i) {
-            residual[static_cast<std::size_t>(i)] =
-                -(mat_center[static_cast<std::size_t>(i)] + ctx.diff_dec.linear[static_cast<std::size_t>(i)]);
+            ctx.work_residual[i] = -(ctx.work_residual[i] + ctx.diff_dec.linear[i]);
         }
-        std::vector<double> solved = solve_with_cholesky(geom.chol, residual, dim);
-        double dot = std::inner_product(residual.begin(), residual.end(), solved.begin(), 0.0);
+        
+        // solved = solve_with_cholesky(chol, residual)
+        // use work_solved
+        solve_with_cholesky_into(ctx.work_chol, ctx.work_residual, dim, ctx.work_solved);
+        
+        double dot = std::inner_product(ctx.work_residual.begin(), ctx.work_residual.end(), ctx.work_solved.begin(), 0.0);
         return 2.0 * dot;
     } catch (const std::runtime_error& ex) {
         if (is_degenerate_error(ex)) {
