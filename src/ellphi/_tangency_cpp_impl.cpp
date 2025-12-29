@@ -10,6 +10,22 @@
 #include <utility>
 #include <vector>
 
+#if defined(ELLPHI_USE_LAPACK)
+extern "C" {
+void dpotrf_(const char* uplo, const int* n, double* a, const int* lda, int* info);
+void dpotrs_(
+    const char* uplo,
+    const int* n,
+    const int* nrhs,
+    const double* a,
+    const int* lda,
+    double* b,
+    const int* ldb,
+    int* info
+);
+}
+#endif
+
 #ifndef TANGENCY_VERSION
 #define TANGENCY_VERSION "0+unknown"
 #endif
@@ -79,6 +95,12 @@ void decode_conic_into(const std::vector<double>& coef, DecodedConic& out);
 void pencil_into(const std::vector<double>& p, const std::vector<double>& q, double mu, std::vector<double>& out);
 void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out);
 void solve_with_cholesky_into(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
+void cholesky_factor_into_internal(const std::vector<double>& matrix, int dim, std::vector<double>& out);
+void solve_with_cholesky_into_internal(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
+#if defined(ELLPHI_USE_LAPACK)
+void cholesky_factor_into_lapack(const std::vector<double>& matrix, int dim, std::vector<double>& out);
+void solve_with_cholesky_into_lapack(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
+#endif
 void gaussian_elimination_into(std::vector<double> matrix, std::vector<double> rhs, int dim, std::vector<double>& out);
 void matvec_into(const std::vector<double>& matrix, const std::vector<double>& vec, int dim, std::vector<double>& out);
 void center_with_fallback_into(const DecodedConic& conic, std::vector<double>& out_center, std::vector<double>& work_rhs, std::vector<double>& work_chol);
@@ -208,7 +230,7 @@ SolverContext build_solver_context(
 
 
 
-void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
+void cholesky_factor_into_internal(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
     const std::size_t size = static_cast<std::size_t>(dim * dim);
     if (out.size() != size) {
         out.resize(size);
@@ -251,7 +273,7 @@ void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vecto
 
 
 
-void solve_with_cholesky_into(
+void solve_with_cholesky_into_internal(
     const std::vector<double>& chol,
     const std::vector<double>& rhs,
     int dim,
@@ -287,6 +309,70 @@ void solve_with_cholesky_into(
         }
         out[static_cast<std::size_t>(i)] = (out[static_cast<std::size_t>(i)] - sum) / diag;
     }
+}
+
+#if defined(ELLPHI_USE_LAPACK)
+void cholesky_factor_into_lapack(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
+    const std::size_t size = static_cast<std::size_t>(dim * dim);
+    if (out.size() != size) {
+        out.resize(size);
+    }
+    std::copy(matrix.begin(), matrix.end(), out.begin());
+    int n = dim;
+    int lda = dim;
+    int info = 0;
+    char uplo = 'L';
+    dpotrf_(&uplo, &n, out.data(), &lda, &info);
+    if (info > 0) {
+        raise("Degenerate conic (determinant zero)");
+    }
+    if (info < 0) {
+        raise("LAPACK dpotrf argument error");
+    }
+}
+
+void solve_with_cholesky_into_lapack(
+    const std::vector<double>& chol,
+    const std::vector<double>& rhs,
+    int dim,
+    std::vector<double>& out
+) {
+    if (out.size() != static_cast<std::size_t>(dim)) {
+        out.resize(dim);
+    }
+    std::copy(rhs.begin(), rhs.end(), out.begin());
+    int n = dim;
+    int nrhs = 1;
+    int lda = dim;
+    int ldb = dim;
+    int info = 0;
+    char uplo = 'L';
+    dpotrs_(&uplo, &n, &nrhs, chol.data(), &lda, out.data(), &ldb, &info);
+    if (info != 0) {
+        raise("LAPACK dpotrs argument error");
+    }
+}
+#endif
+
+void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
+#if defined(ELLPHI_USE_LAPACK)
+    cholesky_factor_into_lapack(matrix, dim, out);
+#else
+    cholesky_factor_into_internal(matrix, dim, out);
+#endif
+}
+
+void solve_with_cholesky_into(
+    const std::vector<double>& chol,
+    const std::vector<double>& rhs,
+    int dim,
+    std::vector<double>& out
+) {
+#if defined(ELLPHI_USE_LAPACK)
+    solve_with_cholesky_into_lapack(chol, rhs, dim, out);
+#else
+    solve_with_cholesky_into_internal(chol, rhs, dim, out);
+#endif
 }
 
 

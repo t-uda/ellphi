@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import re
+import shlex
 import sys
 import sysconfig
 from pathlib import Path
@@ -17,6 +19,20 @@ except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for us
     raise RuntimeError("setuptools is required to build the C++ backend. ") from exc
 
 _LIB_NAME = "_tangency_cpp_impl"
+
+
+def _use_lapack() -> bool:
+    value = os.getenv("ELLPHI_USE_LAPACK", "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _lapack_link_args() -> list[str]:
+    if sys.platform == "darwin":
+        return ["-framework", "Accelerate"]
+    raw = os.getenv("ELLPHI_LAPACK_LINK_ARGS", "")
+    if raw:
+        return shlex.split(raw)
+    return []
 
 
 def _library_suffix() -> str:
@@ -95,11 +111,22 @@ def _ensure_parent(path: Path) -> None:
 class _TangencyExtension(Extension):
     def __init__(self) -> None:
         version = _project_version()
+        define_macros = [("TANGENCY_VERSION", f'"{version}"')]
+        extra_link_args: list[str] = []
+        if _use_lapack():
+            define_macros.append(("ELLPHI_USE_LAPACK", "1"))
+            extra_link_args = _lapack_link_args()
+            if not extra_link_args:
+                raise RuntimeError(
+                    "ELLPHI_USE_LAPACK is set but no LAPACK link flags were provided. "
+                    "Set ELLPHI_LAPACK_LINK_ARGS or build on macOS."
+                )
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
-            define_macros=[("TANGENCY_VERSION", f'"{version}"')],
+            define_macros=define_macros,
+            extra_link_args=extra_link_args,
         )
 
 
@@ -121,6 +148,10 @@ class _BuildTangency(build_ext):
         ctype = compiler.compiler_type
         compile_opts = list(self.c_opts.get(ctype, []))
         link_opts = list(self.l_opts.get(ctype, []))
+        if getattr(ext, "extra_compile_args", None):
+            compile_opts.extend(ext.extra_compile_args)
+        if getattr(ext, "extra_link_args", None):
+            link_opts.extend(ext.extra_link_args)
 
         objects = compiler.compile(
             ext.sources,  # type: ignore[arg-type]
