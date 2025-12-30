@@ -12,4 +12,4 @@ export CIBW_ENVIRONMENT_LINUX="ELLPHI_USE_LAPACK=1 ELLPHI_LAPACK_LINK_ARGS='-lop
 export CIBW_TEST_COMMAND="python -c 'import ellphi; print(\"cpp backend:\", ellphi.has_cpp_backend())'"
 
 # Run cibuildwheel
-/home/uda.linux/.local/bin/cibuildwheel --output-dir wheelhouse
+python3 -m cibuildwheel --output-dir wheelhouse
