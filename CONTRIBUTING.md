@@ -19,6 +19,13 @@ They define the required local checks and the order CI will run them.
 - Each release is developed on its own branch (e.g., `ellphi-0.1.2`).
 - Feature PRs are merged into the release branch, not into `main`.
 
+## Build System Tools
+
+This project leverages `cibuildwheel` and `auditwheel` to produce robust Python wheels, particularly for `manylinux` compatibility. Developers should be aware of their roles:
+
+-   **`cibuildwheel`**: Orchestrates the building of wheels across different Python versions and platforms within CI/CD pipelines.
+-   **`auditwheel`**: Analyzes and modifies Linux wheels to ensure adherence to `manylinux` standards, including bundling shared library dependencies (such as OpenBLAS) directly into the wheel.
+
 ## Versioning
 
 We only bump versions at two moments:

@@ -6,6 +6,15 @@ This file provides instructions for AI agents working on this repository. Read i
 2. **Track executed commands.** Keep a short checklist while you work. Before you hand off or open a PR, verify that every command below has been run in the current branch and note any intentional omissions in your PR summary.
 3. **No-skip policy.** Even for small edits, formatting and linting are mandatory. If a command cannot be run (e.g., tooling unavailable), stop and communicate the blocker rather than submitting unverified code.
 
+## Build System Tools
+
+This project uses `cibuildwheel` and `auditwheel` for building and repairing Python wheels, especially for `manylinux` compatibility.
+
+- **`cibuildwheel`**: Automates building wheels for various Python versions and platforms in a CI/CD environment.
+- **`auditwheel`**: Inspects and repairs Linux wheels to ensure `manylinux` compatibility, bundling external shared libraries (like OpenBLAS) into the wheel.
+
+Understanding these tools is crucial for local checks and CI awareness.
+
 ## Development Workflow with pre-commit
 
 ### 1. One-Time Setup
