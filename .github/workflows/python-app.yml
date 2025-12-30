@@ -139,6 +139,36 @@ jobs:
         cd test_run
         pytest ../tests
 
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Cache Poetry env
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+
+    - name: Install project (dev extras)
+      run: poetry install --with dev
+
+    - name: Build wheel smoke check
+      env:
+        CIBW_BUILD: "cp311-manylinux_x86_64"
+        CIBW_ARCHS_LINUX: "x86_64"
+        CIBW_SKIP: "*-musllinux*"
+      run: scripts/manylinux_build.sh dist
+
   build-docs:
     runs-on: ubuntu-latest
     steps:

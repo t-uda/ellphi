@@ -1,0 +1,76 @@
+name: Release Wheels
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install --upgrade poetry
+
+      - name: Cache Poetry env
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+
+      - name: Build sdist
+        run: poetry build --format sdist
+
+  build-linux-wheels:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+        arch: ["x86_64", "aarch64"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install --upgrade poetry
+
+      - name: Cache Poetry env
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+
+      - name: Install project (dev extras)
+        run: poetry install --with dev
+
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'aarch64' }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build manylinux wheels
+        env:
+          CIBW_BUILD: "cp310-* cp311-*"
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_SKIP: "*-musllinux*"
+        run: scripts/manylinux_build.sh dist
