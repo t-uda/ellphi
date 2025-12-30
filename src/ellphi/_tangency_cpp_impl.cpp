@@ -191,6 +191,9 @@ struct SolverContext {
     std::vector<double> work_center;
     std::vector<double> work_residual;
     std::vector<double> work_solved;
+    double cache_mu = std::numeric_limits<double>::quiet_NaN();
+    bool cache_valid = false;
+    bool cache_chol_ok = false;
 };
 
 SolverContext build_solver_context(
@@ -515,11 +518,42 @@ void center_with_fallback_into(
     }
 }
 
-double target(double mu, SolverContext& ctx) {
+void compute_geometry_for_mu(double mu, SolverContext& ctx) {
+    if (ctx.cache_valid && mu == ctx.cache_mu) {
+        return;
+    }
+    ctx.cache_valid = false;
+    ctx.cache_chol_ok = false;
+
     pencil_into(ctx.pcoef, ctx.qcoef, mu, ctx.work_coef);
     decode_conic_into(ctx.work_coef, ctx.work_conic);
-    center_with_fallback_into(ctx.work_conic, ctx.work_center, ctx.work_rhs, ctx.work_chol);
-    
+
+    const int dim = ctx.work_conic.dim;
+    if (ctx.work_rhs.size() != static_cast<std::size_t>(dim)) {
+        ctx.work_rhs.resize(dim);
+    }
+    for (int i = 0; i < dim; ++i) {
+        ctx.work_rhs[i] = -ctx.work_conic.linear[i];
+    }
+
+    try {
+        cholesky_factor_into(ctx.work_conic.quad, dim, ctx.work_chol);
+        solve_with_cholesky_into(ctx.work_chol, ctx.work_rhs, dim, ctx.work_center);
+        ctx.cache_chol_ok = true;
+    } catch (const std::runtime_error& ex) {
+        if (!is_degenerate_error(ex)) {
+            throw;
+        }
+        gaussian_elimination_into(ctx.work_conic.quad, ctx.work_rhs, dim, ctx.work_center);
+    }
+
+    ctx.cache_mu = mu;
+    ctx.cache_valid = true;
+}
+
+double target(double mu, SolverContext& ctx) {
+    compute_geometry_for_mu(mu, ctx);
+
     double p_value = quad_eval(ctx.p_dec, ctx.work_center);
     double q_value = quad_eval(ctx.q_dec, ctx.work_center);
     return p_value - q_value;
@@ -527,29 +561,12 @@ double target(double mu, SolverContext& ctx) {
 
 double target_prime(double mu, SolverContext& ctx) {
     try {
-        // Equivalent to build_pencil_geometry but using buffers
-        pencil_into(ctx.pcoef, ctx.qcoef, mu, ctx.work_coef);
-        decode_conic_into(ctx.work_coef, ctx.work_conic);
-        // Note: target() also computes center, but target_prime re-computes it.
-        // In the optimization loop, they are called sequentially.
-        // We could optimize further by caching, but that's more complex.
-        
-        // Compute center and cholesky
+        compute_geometry_for_mu(mu, ctx);
+        if (!ctx.cache_chol_ok) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+
         const int dim = ctx.work_conic.dim;
-        // Copy linear to work_rhs and negate (for center calculation)
-        if (ctx.work_rhs.size() != static_cast<std::size_t>(dim)) {
-            ctx.work_rhs.resize(dim);
-        }
-        for(int i=0; i<dim; ++i) {
-            ctx.work_rhs[i] = -ctx.work_conic.linear[i];
-        }
-        
-        cholesky_factor_into(ctx.work_conic.quad, dim, ctx.work_chol);
-        // Reuse work_center for center
-        // solve_with_cholesky_into reuses the output buffer as input, but here we have work_rhs as input
-        // So we copy work_rhs to work_center first? No, solve_with_cholesky_into(chol, rhs, dim, out)
-        // does Forward Sub (Ly=b) into out, then Backward Sub (L^T x=y) into out.
-        solve_with_cholesky_into(ctx.work_chol, ctx.work_rhs, dim, ctx.work_center);
         
         // Now compute derivative
         if (ctx.diff_dec.dim != dim) {
