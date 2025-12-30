@@ -219,3 +219,4 @@ docs/hybrid_tuning_summary*.json
 docs/hybrid_tuning_summary*.md
 docs/*hybrid_time_vs_error_*.png
 build/benchmarks/
+LICENSES/
