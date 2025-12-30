@@ -4,7 +4,9 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Configuration for cibuildwheel
+export CIBW_BUILD="${CIBW_BUILD:-cp310-* cp311-*}"
 export CIBW_ARCHS_LINUX="${CIBW_ARCHS_LINUX:-x86_64 aarch64}"
+export CIBW_SKIP="${CIBW_SKIP:-*-musllinux*}"
 export CIBW_PLATFORM="linux"
 export CIBW_MANYLINUX_X86_64_IMAGE="manylinux_2_28"
 export CIBW_MANYLINUX_AARCH64_IMAGE="manylinux_2_28"

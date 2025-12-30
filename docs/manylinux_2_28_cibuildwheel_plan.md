@@ -18,16 +18,18 @@ The build script currently supports:
 These are compile-time switches, so the wheel must be built with LAPACK enabled.
 
 ## CI build outline (Linux wheel with OpenBLAS)
-Use `cibuildwheel` and the manylinux_2_28 image. Install OpenBLAS dev packages,
-compile with LAPACK enabled, then let `auditwheel` bundle the shared libs.
+Use a release-only workflow (manual trigger or tags) so normal PR CI stays fast.
+Limit the matrix to Python 3.10/3.11 and at most 2-3 architectures, then build
+manylinux_2_28 wheels with OpenBLAS bundled.
 
 Example CI step (conceptual):
 ```bash
 # inside CI job
 python -m pip install cibuildwheel
 
-export CIBW_BUILD="cp310-* cp311-* cp312-*"
+export CIBW_BUILD="cp310-* cp311-*"
 export CIBW_ARCHS_LINUX="x86_64 aarch64"
+export CIBW_SKIP="*-musllinux*"
 export CIBW_MANYLINUX_X86_64_IMAGE="manylinux_2_28"
 export CIBW_MANYLINUX_AARCH64_IMAGE="manylinux_2_28"
 
@@ -43,6 +45,9 @@ export CIBW_REPAIR_WHEEL_COMMAND_LINUX="auditwheel repair -w {dest_dir} {wheel}"
 
 cibuildwheel --output-dir wheelhouse
 ```
+
+If you need a third architecture, add it explicitly (for example, `ppc64le`)
+instead of building every available target.
 
 Note on linker flags:
 - `ELLPHI_LAPACK_LINK_ARGS` must include the correct OpenBLAS link flags.
