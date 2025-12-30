@@ -59,6 +59,8 @@ Finalize the content right before release.
    - finalize `RELEASE_NOTES.md`
    - bump to the release version (e.g., `0.1.2`)
    - run all required local checks
+   - build release artifacts (cleans `dist/` and writes all wheels for `poetry publish`):
+     `poetry run scripts/release_build.sh`
    - merge into `main`
    - tag the release and publish
 

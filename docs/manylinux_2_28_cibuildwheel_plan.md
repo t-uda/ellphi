@@ -31,7 +31,7 @@ export CIBW_ARCHS_LINUX="x86_64 aarch64"
 export CIBW_MANYLINUX_X86_64_IMAGE="manylinux_2_28"
 export CIBW_MANYLINUX_AARCH64_IMAGE="manylinux_2_28"
 
-export CIBW_BEFORE_BUILD_LINUX="yum install -y openblas-devel pkgconfig"
+export CIBW_BEFORE_BUILD_LINUX="yum install -y openblas-devel pkgconf-pkg-config"
 export CIBW_ENVIRONMENT_LINUX="ELLPHI_USE_LAPACK=1"
 
 export CIBW_TEST_COMMAND="python - <<'PY'
@@ -101,7 +101,7 @@ Example manual container workflow:
 ```bash
 docker run --rm -it -v "$PWD:/project" -w /project quay.io/pypa/manylinux_2_28_x86_64 /bin/bash
 # inside container:
-yum install -y python3 python3-pip openblas-devel pkgconfig
+yum install -y python3 python3-pip openblas-devel pkgconf-pkg-config
 python3 -m pip install cibuildwheel
 export ELLPHI_LAPACK_LINK_ARGS="$(pkg-config --libs openblas)"
 export CIBW_ENVIRONMENT_LINUX="ELLPHI_USE_LAPACK=1 ELLPHI_LAPACK_LINK_ARGS=$ELLPHI_LAPACK_LINK_ARGS"
