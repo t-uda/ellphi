@@ -73,4 +73,4 @@ jobs:
           CIBW_BUILD: "cp310-* cp311-*"
           CIBW_ARCHS_LINUX: ${{ matrix.arch }}
           CIBW_SKIP: "*-musllinux*"
-        run: scripts/manylinux_build.sh dist
+        run: poetry run scripts/manylinux_build.sh dist

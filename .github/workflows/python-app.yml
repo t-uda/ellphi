@@ -167,7 +167,7 @@ jobs:
         CIBW_BUILD: "cp311-manylinux_x86_64"
         CIBW_ARCHS_LINUX: "x86_64"
         CIBW_SKIP: "*-musllinux*"
-      run: scripts/manylinux_build.sh dist
+      run: poetry run scripts/manylinux_build.sh dist
 
   build-docs:
     runs-on: ubuntu-latest
