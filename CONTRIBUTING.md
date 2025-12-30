@@ -36,6 +36,26 @@ poetry run auditwheel show dist/*.whl
 
 `auditwheel` runs on Linux; on macOS, use a manylinux Docker image.
 
+## macOS + Lima Notes (Release Builds)
+
+If you develop on macOS using Lima for Docker, you must start the VM with
+Rosetta enabled so x86_64 manylinux images can run on Apple Silicon:
+
+```bash
+limactl start docker --rosetta
+```
+
+If you already created the VM without Rosetta, stop it and restart with the
+flag (or recreate the VM with Rosetta enabled). Confirm x86_64 containers run
+before release builds:
+
+```bash
+docker run --rm --platform=linux/amd64 alpine uname -m
+```
+
+Expect `x86_64`. If it fails, fix the emulation setup before running
+`scripts/release_build.sh`.
+
 ## Versioning
 
 We only bump versions at two moments:
