@@ -102,6 +102,10 @@ python -m ellphi --version
 
 Interested in contributing? We welcome pull requests!
 
+Please read `CONTRIBUTING.md` for the branching/versioning flow and
+`AGENTS.md` (plus `.github/workflows/python-app.yml`) for the required local
+checks before opening a PR.
+
 To get started with development, clone the repository and set up your environment:
 
 ```bash
