@@ -26,6 +26,16 @@ This project leverages `cibuildwheel` and `auditwheel` to produce robust Python 
 -   **`cibuildwheel`**: Orchestrates the building of wheels across different Python versions and platforms within CI/CD pipelines.
 -   **`auditwheel`**: Analyzes and modifies Linux wheels to ensure adherence to `manylinux` standards, including bundling shared library dependencies (such as OpenBLAS) directly into the wheel.
 
+## Auditwheel Quick Checks
+
+`auditwheel` is available as a dev dependency. Use it to inspect wheel tags and external shared library dependencies:
+
+```bash
+poetry run auditwheel show dist/*.whl
+```
+
+`auditwheel` runs on Linux; on macOS, use a manylinux Docker image.
+
 ## Versioning
 
 We only bump versions at two moments:

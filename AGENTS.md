@@ -48,6 +48,8 @@ poetry run black --check src tests scripts
 
 # Lint and static analysis
 poetry run flake8 src tests scripts
+# If flake8 fails with a multiprocessing PermissionError, rerun serially:
+poetry run flake8 --jobs=1 src tests scripts
 poetry run mypy src tests
 
 # Type Stub Validation
