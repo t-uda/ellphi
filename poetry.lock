@@ -161,6 +161,22 @@ tests = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothe
 tests-mypy = ["mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\""]
 
 [[package]]
+name = "auditwheel"
+version = "6.5.1"
+description = "Cross-distribution Linux wheels"
+optional = false
+python-versions = ">=3.10"
+groups = ["dev"]
+files = [
+    {file = "auditwheel-6.5.1-py3-none-any.whl", hash = "sha256:0a4611a711ce1e930072708336fabf0b6b221bb69caeb5f4e1e6c3949e79d32b"},
+    {file = "auditwheel-6.5.1.tar.gz", hash = "sha256:11e611f7090b6cf4075535b88f4364819b849d82702dabb0947cf7c9c5d587a0"},
+]
+
+[package.dependencies]
+packaging = ">=20.9"
+pyelftools = ">=0.24"
+
+[[package]]
 name = "babel"
 version = "2.17.0"
 description = "Internationalization utilities"
@@ -2842,6 +2858,18 @@ files = [
 ]
 
 [[package]]
+name = "pyelftools"
+version = "0.32"
+description = "Library for analyzing ELF files and DWARF debugging information"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+files = [
+    {file = "pyelftools-0.32-py3-none-any.whl", hash = "sha256:013df952a006db5e138b1edf6d8a68ecc50630adbd0d83a2d41e7f846163d738"},
+    {file = "pyelftools-0.32.tar.gz", hash = "sha256:6de90ee7b8263e740c8715a925382d4099b354f29ac48ea40d840cf7aa14ace5"},
+]
+
+[[package]]
 name = "pyflakes"
 version = "3.4.0"
 description = "passive checker of Python programs"
@@ -4199,4 +4227,4 @@ demo = ["homcloud", "ipykernel", "jupyterlab", "nbformat", "pandas", "plotly", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "10fd6cce3b64c232fbcafb1e643b71c15f6f6694ec70154415f9831945bf1ae0"
+content-hash = "b0ce09042042c306de956626a5b6d33d944f182ead2bc469263b4c48338d5849"
