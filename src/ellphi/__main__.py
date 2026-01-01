@@ -1,7 +1,7 @@
 """Command-line entry point for :mod:`ellphi`.
 
 Allows executing ``python -m ellphi`` to access the minimal CLI that exposes
-version information.
+version/build information.
 """
 
 from . import _main

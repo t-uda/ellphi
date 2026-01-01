@@ -21,18 +21,21 @@ except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for us
 _LIB_NAME = "_tangency_cpp_impl"
 
 
-def _use_lapack() -> bool:
-    value = os.getenv("ELLPHI_USE_LAPACK", "")
+def _use_eigen() -> bool:
+    value = os.getenv("ELLPHI_USE_EIGEN", "")
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-def _lapack_link_args() -> list[str]:
-    if sys.platform == "darwin":
-        return ["-framework", "Accelerate"]
-    raw = os.getenv("ELLPHI_LAPACK_LINK_ARGS", "")
+def _eigen_include_dirs() -> list[str]:
+    raw = os.getenv("ELLPHI_EIGEN_INCLUDE", "")
     if raw:
         return shlex.split(raw)
-    return []
+    candidates = [
+        "/usr/include/eigen3",
+        "/usr/local/include/eigen3",
+        "/opt/homebrew/include/eigen3",
+    ]
+    return [path for path in candidates if Path(path).exists()]
 
 
 def _library_suffix() -> str:
@@ -113,13 +116,14 @@ class _TangencyExtension(Extension):
         version = _project_version()
         define_macros = [("TANGENCY_VERSION", f'"{version}"')]
         extra_link_args: list[str] = []
-        if _use_lapack():
-            define_macros.append(("ELLPHI_USE_LAPACK", "1"))
-            extra_link_args = _lapack_link_args()
-            if not extra_link_args:
+        include_dirs: list[str] = []
+        if _use_eigen():
+            define_macros.append(("ELLPHI_USE_EIGEN", "1"))
+            include_dirs = _eigen_include_dirs()
+            if not include_dirs:
                 raise RuntimeError(
-                    "ELLPHI_USE_LAPACK is set but no LAPACK link flags were provided. "
-                    "Set ELLPHI_LAPACK_LINK_ARGS or build on macOS."
+                    "ELLPHI_USE_EIGEN is set but no Eigen include path was found. "
+                    "Set ELLPHI_EIGEN_INCLUDE to the Eigen headers."
                 )
         super().__init__(
             name=_LIB_NAME,
@@ -127,6 +131,7 @@ class _TangencyExtension(Extension):
             language="c++",
             define_macros=define_macros,
             extra_link_args=extra_link_args,
+            include_dirs=include_dirs,
         )
 
 

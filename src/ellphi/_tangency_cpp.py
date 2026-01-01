@@ -99,6 +99,41 @@ def is_available() -> bool:
     return _LIB is not None
 
 
+def linalg_kind() -> str | None:
+    """Return the C++ linear algebra build kind.
+
+    Returns:
+        The build kind ("eigen" or "internal") if the C++ backend is available,
+        otherwise `None`.
+    """
+    if _LIB is None:
+        return None
+    try:
+        func = _LIB.tangency_linalg_kind
+    except AttributeError as exc:
+        raise RuntimeError(
+            "C++ backend is missing linear algebra metadata. "
+            "Please rebuild the extension."
+        ) from exc
+    func.restype = ctypes.c_char_p
+    value = func()
+    if value is None:
+        raise RuntimeError("C++ backend returned an empty linear algebra kind")
+    return value.decode("utf-8", errors="replace")
+
+
+def backend_version() -> str | None:
+    """Return the C++ backend build version string.
+
+    Returns:
+        The embedded build version if the C++ backend is available, otherwise
+        `None`.
+    """
+    if _LIB is None:
+        return None
+    return _library_version(_LIB)
+
+
 def _ensure_available() -> ctypes.CDLL:
     if _LIB is None:
         message = (

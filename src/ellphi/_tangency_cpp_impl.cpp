@@ -10,27 +10,25 @@
 #include <utility>
 #include <vector>
 
-#if defined(ELLPHI_USE_LAPACK)
-extern "C" {
-void dpotrf_(const char* uplo, const int* n, double* a, const int* lda, int* info);
-void dpotrs_(
-    const char* uplo,
-    const int* n,
-    const int* nrhs,
-    const double* a,
-    const int* lda,
-    double* b,
-    const int* ldb,
-    int* info
-);
-}
+#if defined(ELLPHI_USE_EIGEN)
+#include <Eigen/Cholesky>
+#include <Eigen/Core>
 #endif
 
 #ifndef TANGENCY_VERSION
 #define TANGENCY_VERSION "0+unknown"
 #endif
 
+#ifndef TANGENCY_LINALG_KIND
+#if defined(ELLPHI_USE_EIGEN)
+#define TANGENCY_LINALG_KIND "eigen"
+#else
+#define TANGENCY_LINALG_KIND "internal"
+#endif
+#endif
+
 extern "C" const char* tangency_backend_version() { return TANGENCY_VERSION; }
+extern "C" const char* tangency_linalg_kind() { return TANGENCY_LINALG_KIND; }
 
 namespace {
 
@@ -97,9 +95,9 @@ void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vecto
 void solve_with_cholesky_into(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
 void cholesky_factor_into_internal(const std::vector<double>& matrix, int dim, std::vector<double>& out);
 void solve_with_cholesky_into_internal(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
-#if defined(ELLPHI_USE_LAPACK)
-void cholesky_factor_into_lapack(const std::vector<double>& matrix, int dim, std::vector<double>& out);
-void solve_with_cholesky_into_lapack(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
+#if defined(ELLPHI_USE_EIGEN)
+void cholesky_factor_into_eigen(const std::vector<double>& matrix, int dim, std::vector<double>& out);
+void solve_with_cholesky_into_eigen(const std::vector<double>& chol, const std::vector<double>& rhs, int dim, std::vector<double>& out);
 #endif
 void gaussian_elimination_into(std::vector<double> matrix, std::vector<double> rhs, int dim, std::vector<double>& out);
 void matvec_into(const std::vector<double>& matrix, const std::vector<double>& vec, int dim, std::vector<double>& out);
@@ -314,27 +312,29 @@ void solve_with_cholesky_into_internal(
     }
 }
 
-#if defined(ELLPHI_USE_LAPACK)
-void cholesky_factor_into_lapack(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
+#if defined(ELLPHI_USE_EIGEN)
+void cholesky_factor_into_eigen(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
     const std::size_t size = static_cast<std::size_t>(dim * dim);
     if (out.size() != size) {
         out.resize(size);
     }
-    std::copy(matrix.begin(), matrix.end(), out.begin());
-    int n = dim;
-    int lda = dim;
-    int info = 0;
-    char uplo = 'L';
-    dpotrf_(&uplo, &n, out.data(), &lda, &info);
-    if (info > 0) {
+    std::fill(out.begin(), out.end(), 0.0);
+
+    using RowMajorMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    Eigen::Map<const RowMajorMat> mat(matrix.data(), dim, dim);
+    Eigen::LLT<RowMajorMat> llt(mat);
+    if (llt.info() != Eigen::Success) {
         raise("Degenerate conic (determinant zero)");
     }
-    if (info < 0) {
-        raise("LAPACK dpotrf argument error");
+    const auto L = llt.matrixL();
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            out[static_cast<std::size_t>(i * dim + j)] = L(i, j);
+        }
     }
 }
 
-void solve_with_cholesky_into_lapack(
+void solve_with_cholesky_into_eigen(
     const std::vector<double>& chol,
     const std::vector<double>& rhs,
     int dim,
@@ -343,23 +343,19 @@ void solve_with_cholesky_into_lapack(
     if (out.size() != static_cast<std::size_t>(dim)) {
         out.resize(dim);
     }
-    std::copy(rhs.begin(), rhs.end(), out.begin());
-    int n = dim;
-    int nrhs = 1;
-    int lda = dim;
-    int ldb = dim;
-    int info = 0;
-    char uplo = 'L';
-    dpotrs_(&uplo, &n, &nrhs, chol.data(), &lda, out.data(), &ldb, &info);
-    if (info != 0) {
-        raise("LAPACK dpotrs argument error");
-    }
+    using RowMajorMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    using Vec = Eigen::Matrix<double, Eigen::Dynamic, 1>;
+    Eigen::Map<const RowMajorMat> L(chol.data(), dim, dim);
+    Eigen::Map<const Vec> b(rhs.data(), dim);
+    Eigen::Map<Vec> x(out.data(), dim);
+    x = L.template triangularView<Eigen::Lower>().solve(b);
+    x = L.transpose().template triangularView<Eigen::Upper>().solve(x);
 }
 #endif
 
 void cholesky_factor_into(const std::vector<double>& matrix, int dim, std::vector<double>& out) {
-#if defined(ELLPHI_USE_LAPACK)
-    cholesky_factor_into_lapack(matrix, dim, out);
+#if defined(ELLPHI_USE_EIGEN)
+    cholesky_factor_into_eigen(matrix, dim, out);
 #else
     cholesky_factor_into_internal(matrix, dim, out);
 #endif
@@ -371,8 +367,8 @@ void solve_with_cholesky_into(
     int dim,
     std::vector<double>& out
 ) {
-#if defined(ELLPHI_USE_LAPACK)
-    solve_with_cholesky_into_lapack(chol, rhs, dim, out);
+#if defined(ELLPHI_USE_EIGEN)
+    solve_with_cholesky_into_eigen(chol, rhs, dim, out);
 #else
     solve_with_cholesky_into_internal(chol, rhs, dim, out);
 #endif
