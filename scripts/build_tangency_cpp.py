@@ -21,23 +21,9 @@ except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for us
 _LIB_NAME = "_tangency_cpp_impl"
 
 
-def _use_lapack() -> bool:
-    value = os.getenv("ELLPHI_USE_LAPACK", "")
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def _use_eigen() -> bool:
     value = os.getenv("ELLPHI_USE_EIGEN", "")
     return value.lower() in {"1", "true", "yes", "on"}
-
-
-def _lapack_link_args() -> list[str]:
-    if sys.platform == "darwin":
-        return ["-framework", "Accelerate"]
-    raw = os.getenv("ELLPHI_LAPACK_LINK_ARGS", "")
-    if raw:
-        return shlex.split(raw)
-    return []
 
 
 def _eigen_include_dirs() -> list[str]:
@@ -131,16 +117,6 @@ class _TangencyExtension(Extension):
         define_macros = [("TANGENCY_VERSION", f'"{version}"')]
         extra_link_args: list[str] = []
         include_dirs: list[str] = []
-        if _use_lapack() and _use_eigen():
-            raise RuntimeError("Set only one of ELLPHI_USE_LAPACK or ELLPHI_USE_EIGEN.")
-        if _use_lapack():
-            define_macros.append(("ELLPHI_USE_LAPACK", "1"))
-            extra_link_args = _lapack_link_args()
-            if not extra_link_args:
-                raise RuntimeError(
-                    "ELLPHI_USE_LAPACK is set but no LAPACK link flags were provided. "
-                    "Set ELLPHI_LAPACK_LINK_ARGS or build on macOS."
-                )
         if _use_eigen():
             define_macros.append(("ELLPHI_USE_EIGEN", "1"))
             include_dirs = _eigen_include_dirs()

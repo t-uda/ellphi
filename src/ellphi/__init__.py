@@ -38,6 +38,9 @@ from .solver import (
     pdist_tangency,
     TangencyResult,
     has_cpp_backend,
+    cpp_linalg_kind,
+    BuildInfo,
+    build_info,
 )
 
 
@@ -62,6 +65,9 @@ __all__ = [
     "pdist_tangency",
     "TangencyResult",
     "has_cpp_backend",
+    "cpp_linalg_kind",
+    "BuildInfo",
+    "build_info",
     "__version__",
     "version_info",
 ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy
 import pytest
 
+from ellphi import build_info, cpp_linalg_kind
 from ellphi.geometry import coef_from_cov
 from ellphi.solver import (
     has_cpp_backend,
@@ -22,6 +23,21 @@ def example_coefficients():
     q = _sample_coef([0.8, 0.3], [[0.9, -0.05], [-0.05, 0.5]])
     r = _sample_coef([-0.4, 0.5], [[0.7, 0.2], [0.2, 0.6]])
     return numpy.stack([p, q, r], axis=0)
+
+
+def test_build_info():
+    info = build_info()
+    assert info.version
+    assert info.backend_default == "auto"
+    assert info.backend_choices == ("auto", "python", "cpp")
+    assert info.cpp_backend_available == has_cpp_backend()
+    assert info.cpp_linalg_kind == cpp_linalg_kind()
+    if has_cpp_backend():
+        assert info.cpp_linalg_kind in {"eigen", "internal"}
+        assert info.cpp_backend_version is not None
+    else:
+        assert info.cpp_linalg_kind is None
+        assert info.cpp_backend_version is None
 
 
 @pytest.mark.skipif(not has_cpp_backend(), reason="C++ backend not available")
