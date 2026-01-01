@@ -110,7 +110,7 @@ def _gaussian_elimination(matrix: numpy.ndarray, rhs: numpy.ndarray) -> numpy.nd
     x = numpy.zeros(dim, dtype=float)
     for i in range(dim - 1, -1, -1):
         diag = A[i, i]
-        if diag == 0.0:
+        if diag == 0.0:  # pragma: no cover - guarded by pivot checks
             raise numpy.linalg.LinAlgError("Matrix is singular")
         residual = b[i] - A[i, i + 1 :] @ x[i + 1 :]
         x[i] = residual / diag
@@ -349,7 +349,7 @@ def solve_mu(
         return wrapper
 
     def solve_single_stage(method_name: SingleStageMethodName, **kwargs: Any) -> float:
-        if method_name == "newton":
+        if method_name == "newton":  # pragma: no cover - currently unused
             kwargs.setdefault("fprime", curry_df)
         result = root_scalar(curry_f, method=method_name, **kwargs)
         return float(result.root)

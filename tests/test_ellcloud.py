@@ -1,8 +1,12 @@
 import numpy as np
 import pytest
+import matplotlib.pyplot as plt
 
 from ellphi.ellcloud import EllipseCloud
-from ellphi.geometry import coef_from_cov
+from ellphi.geometry import coef_from_axes, coef_from_cov
+from ellphi.solver import pdist_tangency
+
+from .factories import random_cloud
 
 
 def test_local_cov_uses_actual_neighbourhood_size():
@@ -94,6 +98,91 @@ def test_post_init_value_errors():
         EllipseCloud(coef, mean, np.zeros((2, 3, 3)), 2, nbd)
     with pytest.raises(ValueError):
         EllipseCloud(coef, mean, cov, 2, np.zeros((3, 2)))
+
+
+def test_post_init_validates_mean_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((3, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    with pytest.raises(ValueError, match="Mean array has shape"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_post_init_validates_cov_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.zeros((2, 3, 3))
+    nbd = np.zeros((2, 0), dtype=int)
+    with pytest.raises(ValueError, match="Covariance array has shape"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_post_init_validates_neighbourhood_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((3, 1), dtype=int)
+    with pytest.raises(ValueError, match="Neighbourhood index array"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_iter_returns_coefficients():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    cloud = EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+    first = next(iter(cloud))
+    np.testing.assert_allclose(first, coef[0])
+
+
+def test_plot_creates_axes_and_patches():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.array([[0.0, 0.0], [1.0, 0.5]])
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    cloud = EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+    ax = cloud.plot()
+    assert len(ax.patches) == 2
+    plt.close(ax.figure)
+
+
+def test_pdist_tangency_wrapper_matches_solver(rng):
+    cloud = random_cloud(rng, n_ellipses=4)
+    wrapper = cloud.pdist_tangency(backend="python", parallel=False)
+    direct = pdist_tangency(cloud, backend="python", parallel=False)
+    np.testing.assert_allclose(wrapper, direct)
 
 
 def test_str_method():

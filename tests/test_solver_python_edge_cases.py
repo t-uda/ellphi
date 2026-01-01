@@ -110,6 +110,14 @@ def test_initial_mu_for_newton_defaults_on_all_nan_scores():
     assert mu == 0.5
 
 
+def test_initial_mu_for_newton_handles_exceptions():
+    def df(mu: float) -> float:
+        raise RuntimeError("boom")
+
+    mu = solver_py._initial_mu_for_newton(df)
+    assert mu == 0.5
+
+
 def test_initial_mu_for_newton_prefers_larger_gradient():
     def df(mu: float) -> float:
         return 1.0 if mu < 0.5 else 2.0
@@ -127,6 +135,30 @@ def test_solve_mu_brentq_newton_failsafe_uses_brentq(rng, monkeypatch):
 
     monkeypatch.setattr(solver_py, "scipy_newton", raise_newton)
     result = solver_py.solve_mu(p, q, method="brentq+newton", failsafe=True)
+    assert result == pytest.approx(expected)
+
+
+def test_solve_mu_brentq_newton_rejects_invalid_maxiter(rng):
+    p, q = random_coef_pair(rng)
+    with pytest.raises(ValueError, match="hybrid_bracket_maxiter"):
+        solver_py.solve_mu(
+            p, q, method="brentq+newton", hybrid_bracket_maxiter=0, x0=0.5
+        )
+    with pytest.raises(ValueError, match="hybrid_newton_maxiter"):
+        solver_py.solve_mu(
+            p, q, method="brentq+newton", hybrid_newton_maxiter=0, x0=0.5
+        )
+
+
+def test_solve_mu_brentq_newton_without_failsafe_returns_mu0(rng, monkeypatch):
+    p, q = random_coef_pair(rng)
+    expected = solver_py.solve_mu(p, q, method="brentq")
+
+    def fake_newton(*args, **kwargs):
+        return 0.123, SimpleNamespace(converged=False)
+
+    monkeypatch.setattr(solver_py, "scipy_newton", fake_newton)
+    result = solver_py.solve_mu(p, q, method="brentq+newton", failsafe=False)
     assert result == pytest.approx(expected)
 
 
@@ -179,6 +211,12 @@ def test_solve_mu_newton_nonconverged_without_failsafe_raises(rng, monkeypatch):
         solver_py.solve_mu(p, q, method="newton", x0=0.5, failsafe=False)
 
 
+def test_solve_mu_rejects_unknown_method(rng):
+    p, q = random_coef_pair(rng)
+    with pytest.raises(ValueError, match="Unknown method"):
+        solver_py.solve_mu(p, q, method="not-a-method")
+
+
 def test_solve_mu_rejects_nonfinite_target(monkeypatch, rng):
     p, q = random_coef_pair(rng)
     monkeypatch.setattr(solver_py, "_target", lambda mu, p, q: np.nan)
@@ -205,4 +243,11 @@ def test_pdist_tangency_serial_branch_matches_serial(rng):
     cloud = random_cloud(rng, n_ellipses=3)
     result = solver_py.pdist_tangency(cloud, parallel=False)
     expected = solver_py._pdist_tangency_serial(cloud)
+    np.testing.assert_allclose(result, expected)
+
+
+def test_pdist_tangency_parallel_branch_matches_parallel(rng):
+    cloud = random_cloud(rng, n_ellipses=3)
+    result = solver_py.pdist_tangency(cloud, parallel=True, n_jobs=1)
+    expected = solver_py._pdist_tangency_parallel(cloud, n_jobs=1)
     np.testing.assert_allclose(result, expected)
