@@ -45,7 +45,9 @@ def test_build_info():
 
 def test_cpp_linalg_kind_missing_backend(monkeypatch):
     monkeypatch.setattr(_cpp, "_LIB", None)
+    assert _cpp.is_available() is False
     assert _cpp.linalg_kind() is None
+    assert _cpp.backend_version() is None
 
 
 def test_cpp_linalg_kind_missing_symbol(monkeypatch):
