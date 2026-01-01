@@ -63,8 +63,8 @@ def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
 
     Returns:
         A tuple containing the major axis, minor axis, and angle of the major
-        axis in radians. The major axis is always greater than or equal to the
-        minor axis.
+            axis in radians. The major axis is always greater than or equal to the
+            minor axis.
     """
     if len(cov.shape) <= 2:
         cov = cov[None, :, :]
@@ -158,7 +158,7 @@ def pack_conic(
 
     Returns:
         A NumPy array of shape `(..., m)` where `m = (n + 1)(n + 2) / 2`,
-        representing the packed conic coefficients.
+            representing the packed conic coefficients.
     """
     matrices = numpy.asarray(matrices, dtype=float)
     linear = numpy.asarray(linear, dtype=float)
@@ -201,7 +201,7 @@ def unpack_conic(
 
     Returns:
         A tuple containing the quadratic matrix `A`, the linear coefficients
-        `b`, and the constant term `c`.
+            `b`, and the constant term `c`.
     """
     coef = numpy.asarray(coef, dtype=float)
     squeeze = False
@@ -243,7 +243,7 @@ def unpack_single_conic(
 
     Returns:
         A tuple containing the quadratic matrix `A`, the linear coefficients
-        `b`, and the constant term `c`.
+            `b`, and the constant term `c`.
     """
     matrices, linear, constant = unpack_conic(coef)
     if matrices.ndim == 3:
@@ -294,7 +294,7 @@ def coef_from_cov(
 
     Returns:
         A NumPy array of packed conic coefficients with shape `(n, m)`, where
-        `m = (d + 1)(d + 2) / 2`.
+            `m = (d + 1)(d + 2) / 2`.
     """
     centers = numpy.asarray(X, dtype=float)
     cov = numpy.asarray(cov, dtype=float)

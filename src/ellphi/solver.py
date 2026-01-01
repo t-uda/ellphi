@@ -176,10 +176,7 @@ def tangency(
             falls back to the high-precision Brent's method.
 
     Returns:
-        A `TangencyResult` named tuple with the following fields:
-        - `t`: The tangency time.
-        - `point`: The tangent point.
-        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
+        A `TangencyResult` containing the tangency time, point, and pencil parameter.
     """
     method_literal = _normalize_method(method)
     pcoef_arr = numpy.asarray(pcoef, dtype=float).reshape(-1)
