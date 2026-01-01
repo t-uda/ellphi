@@ -125,7 +125,7 @@ def infer_dim_from_coef_length(length: int) -> int:
             "quadratic form"
         )
     n = (sqrt_disc - 3) // 2
-    if n < 2 or ((n + 1) * (n + 2)) // 2 != length:
+    if n < 2 or ((n + 1) * (n + 2)) // 2 != length:  # pragma: no cover
         raise ValueError(
             f"Coefficient length {length} does not correspond to a valid " "dimension"
         )
