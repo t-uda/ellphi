@@ -60,3 +60,25 @@ Finalize the content right before release.
 Mirror CI locally. Run the exact commands listed in `AGENTS.md` and
 `.github/workflows/python-app.yml`, in the same order when relevant. Do not
 skip steps. If something cannot run, stop and document the blocker.
+
+## Optional Eigen Build (C++ linear algebra)
+
+If you want to test the Eigen build locally:
+
+1. Install Eigen headers:
+   - Ubuntu: `apt-get install libeigen3-dev`
+   - macOS (Homebrew): `brew install eigen`
+2. Rebuild the extension with:
+
+```bash
+ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 poetry install
+```
+
+On macOS, use `/opt/homebrew/include/eigen3` (Apple Silicon) or
+`/usr/local/include/eigen3` (Intel).
+
+Verify via:
+
+```bash
+python -m ellphi --build-info
+```
