@@ -1,0 +1,36 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install poetry
+        run: pipx install poetry
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
+
+      - name: Install dependencies
+        run: poetry install --with docs
+
+      - name: Build and deploy
+        if: github.event_name == 'push'
+        run: poetry run mkdocs gh-deploy --force
+
+      - name: Build only (PR)
+        if: github.event_name == 'pull_request'
+        run: poetry run mkdocs build
