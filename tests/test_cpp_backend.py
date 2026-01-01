@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import types
+
 import numpy
 import pytest
 
+import ellphi._tangency_cpp as _cpp
 from ellphi import build_info, cpp_linalg_kind
 from ellphi.geometry import coef_from_cov
 from ellphi.solver import (
@@ -38,6 +41,38 @@ def test_build_info():
     else:
         assert info.cpp_linalg_kind is None
         assert info.cpp_backend_version is None
+
+
+def test_cpp_linalg_kind_missing_backend(monkeypatch):
+    monkeypatch.setattr(_cpp, "_LIB", None)
+    assert _cpp.linalg_kind() is None
+
+
+def test_cpp_linalg_kind_missing_symbol(monkeypatch):
+    monkeypatch.setattr(_cpp, "_LIB", types.SimpleNamespace())
+    with pytest.raises(RuntimeError, match="linear algebra metadata"):
+        _cpp.linalg_kind()
+
+
+def test_cpp_linalg_kind_empty_value(monkeypatch):
+    def _linalg_kind():
+        return None
+
+    monkeypatch.setattr(
+        _cpp, "_LIB", types.SimpleNamespace(tangency_linalg_kind=_linalg_kind)
+    )
+    with pytest.raises(RuntimeError, match="empty linear algebra kind"):
+        _cpp.linalg_kind()
+
+
+def test_cpp_linalg_kind_dummy_value(monkeypatch):
+    def _linalg_kind():
+        return b"eigen"
+
+    monkeypatch.setattr(
+        _cpp, "_LIB", types.SimpleNamespace(tangency_linalg_kind=_linalg_kind)
+    )
+    assert _cpp.linalg_kind() == "eigen"
 
 
 @pytest.mark.skipif(not has_cpp_backend(), reason="C++ backend not available")
