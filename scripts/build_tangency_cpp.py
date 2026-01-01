@@ -26,6 +26,11 @@ def _use_lapack() -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _use_eigen() -> bool:
+    value = os.getenv("ELLPHI_USE_EIGEN", "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 def _lapack_link_args() -> list[str]:
     if sys.platform == "darwin":
         return ["-framework", "Accelerate"]
@@ -33,6 +38,18 @@ def _lapack_link_args() -> list[str]:
     if raw:
         return shlex.split(raw)
     return []
+
+
+def _eigen_include_dirs() -> list[str]:
+    raw = os.getenv("ELLPHI_EIGEN_INCLUDE", "")
+    if raw:
+        return shlex.split(raw)
+    candidates = [
+        "/usr/include/eigen3",
+        "/usr/local/include/eigen3",
+        "/opt/homebrew/include/eigen3",
+    ]
+    return [path for path in candidates if Path(path).exists()]
 
 
 def _library_suffix() -> str:
@@ -113,6 +130,9 @@ class _TangencyExtension(Extension):
         version = _project_version()
         define_macros = [("TANGENCY_VERSION", f'"{version}"')]
         extra_link_args: list[str] = []
+        include_dirs: list[str] = []
+        if _use_lapack() and _use_eigen():
+            raise RuntimeError("Set only one of ELLPHI_USE_LAPACK or ELLPHI_USE_EIGEN.")
         if _use_lapack():
             define_macros.append(("ELLPHI_USE_LAPACK", "1"))
             extra_link_args = _lapack_link_args()
@@ -121,12 +141,21 @@ class _TangencyExtension(Extension):
                     "ELLPHI_USE_LAPACK is set but no LAPACK link flags were provided. "
                     "Set ELLPHI_LAPACK_LINK_ARGS or build on macOS."
                 )
+        if _use_eigen():
+            define_macros.append(("ELLPHI_USE_EIGEN", "1"))
+            include_dirs = _eigen_include_dirs()
+            if not include_dirs:
+                raise RuntimeError(
+                    "ELLPHI_USE_EIGEN is set but no Eigen include path was found. "
+                    "Set ELLPHI_EIGEN_INCLUDE to the Eigen headers."
+                )
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
             define_macros=define_macros,
             extra_link_args=extra_link_args,
+            include_dirs=include_dirs,
         )
 
 
