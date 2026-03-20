@@ -1,4 +1,4 @@
-"""Tests for the :mod:`ellphi` package initialisation."""
+"""Tests for the `ellphi` package initialisation."""
 
 import importlib
 import sys

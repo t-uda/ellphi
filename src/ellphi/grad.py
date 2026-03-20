@@ -47,13 +47,13 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
             ``backend``).
 
     Returns:
-        A :class:`TangencyGrad` with ``t``, ``dt_dp``, and ``dt_dq``.
+        A [`TangencyGrad`][ellphi.grad.TangencyGrad] with ``t``, ``dt_dp``, and ``dt_dq``.
 
     Raises:
         ZeroDivisionError: When the pencil derivative ``∂F/∂μ`` vanishes at
             the solution — which occurs for degenerate configurations such as
             identical or concentric nested ellipsoids.  These cases make both
-            the implicit-function step in :func:`solve_mu_gradients` and the
+            the implicit-function step in `solve_mu_gradients` and the
             ``1/(2t)`` factor in the gradient formula ill-defined.
             Note: ``tangency()`` itself returns a small non-zero ``t`` for
             such inputs (never exactly ``0.0``), so this error surfaces from
@@ -91,7 +91,7 @@ def pdist_tangency_grad(
 ) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
     """Pairwise tangency distances and a VJP (pullback) for all pairs.
 
-    Computes the same condensed distance array as :func:`~ellphi.pdist_tangency`
+    Computes the same condensed distance array as [`pdist_tangency`][ellphi.pdist_tangency]
     and additionally returns a VJP function that maps upstream gradient vectors
     back to per-ellipsoid coefficient gradients.
 

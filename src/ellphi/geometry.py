@@ -1,4 +1,4 @@
-"""Geometry helpers shared across the :mod:`ellphi` package.
+"""Geometry helpers shared across the `ellphi` package.
 
 This module historically provided 2D-only utilities for working with
 ellipses represented as quadratic forms.  For the n-dimensional extension
@@ -7,14 +7,14 @@ work with generic symmetric positive-definite matrices.
 
 Key API (all return ``numpy.float64`` arrays):
 
-* :func:`unit_vector`
-* :func:`axes_from_cov`
-* :func:`coef_from_axes`
-* :func:`coef_from_cov`
-* :func:`pack_conic`
-* :func:`unpack_conic`
-* :func:`unpack_single_conic`
-* :func:`infer_dim_from_coef_length`
+* [`unit_vector`][ellphi.geometry.unit_vector]
+* [`axes_from_cov`][ellphi.geometry.axes_from_cov]
+* [`coef_from_axes`][ellphi.geometry.coef_from_axes]
+* [`coef_from_cov`][ellphi.geometry.coef_from_cov]
+* [`pack_conic`][ellphi.geometry.pack_conic]
+* [`unpack_conic`][ellphi.geometry.unpack_conic]
+* [`unpack_single_conic`][ellphi.geometry.unpack_single_conic]
+* [`infer_dim_from_coef_length`][ellphi.geometry.infer_dim_from_coef_length]
 """
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ def unpack_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a flattened coefficient vector into a conic's components.
 
-    This function is the inverse of :func:`pack_conic`. It takes a flattened
+    This function is the inverse of [`pack_conic`][ellphi.geometry.pack_conic]. It takes a flattened
     coefficient vector and returns the quadratic, linear, and constant terms
     of the conic's equation.
 
@@ -242,7 +242,7 @@ def unpack_single_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a single flattened coefficient vector into a conic's components.
 
-    This function is a convenience wrapper around :func:`unpack_conic` for a
+    This function is a convenience wrapper around [`unpack_conic`][ellphi.geometry.unpack_conic] for a
     single conic. It accepts a coefficient array of shape `(m,)` or `(1, m)`
     and returns the conic's components.
 

@@ -73,3 +73,7 @@ nav:
     - ellphi.solver: reference/solver.md
     - ellphi.grad: reference/grad.md
     - ellphi.visualization: reference/visualization.md
+  - Design Notes:
+    - Algebraic Sigmoid + Newton: algebraic_sigmoid_newton.md
+    - Hybrid Solver Tuning: hybrid_tuning.md
+    - Eigen Backend Plan: eigen_backend_plan.md
