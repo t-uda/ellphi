@@ -13,7 +13,7 @@ from typing import Callable
 import numpy as np
 
 from .differentiable_solver import solve_mu_gradients
-from .solver import _extract_coef_array, tangency
+from .solver import tangency
 
 __all__ = ["TangencyGrad", "tangency_grad", "pdist_tangency_grad"]
 
@@ -107,7 +107,11 @@ def pdist_tangency_grad(
         - ``vjp`` is a callable ``(grad_dists,) -> grad_coefs`` that accumulates
           upstream gradients into an array of shape ``(N, m)``.
     """
-    coefs = _extract_coef_array(coefs)
+    coefs = np.asarray(coefs, dtype=float)
+    if coefs.ndim == 3 and coefs.shape[1] == 1:
+        coefs = coefs[:, 0, :]
+    if coefs.ndim != 2:
+        raise ValueError("Expected coefficient array with shape (N, m)")
     N = len(coefs)
     pairs = list(combinations(range(N), 2))
     dists = np.empty(len(pairs))
