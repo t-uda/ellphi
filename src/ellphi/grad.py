@@ -47,7 +47,8 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
             ``backend``).
 
     Returns:
-        A [`TangencyGrad`][ellphi.grad.TangencyGrad] with ``t``, ``dt_dp``, and ``dt_dq``.
+        A [`TangencyGrad`][ellphi.grad.TangencyGrad] with ``t``,
+        ``dt_dp``, and ``dt_dq``.
 
     Raises:
         ZeroDivisionError: When the pencil derivative ``∂F/∂μ`` vanishes at
@@ -91,7 +92,8 @@ def pdist_tangency_grad(
 ) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
     """Pairwise tangency distances and a VJP (pullback) for all pairs.
 
-    Computes the same condensed distance array as [`pdist_tangency`][ellphi.pdist_tangency]
+    Computes the same condensed distance array as
+    [`pdist_tangency`][ellphi.pdist_tangency]
     and additionally returns a VJP function that maps upstream gradient vectors
     back to per-ellipsoid coefficient gradients.
 

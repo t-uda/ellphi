@@ -200,7 +200,8 @@ def unpack_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a flattened coefficient vector into a conic's components.
 
-    This function is the inverse of [`pack_conic`][ellphi.geometry.pack_conic]. It takes a flattened
+    This function is the inverse of
+    [`pack_conic`][ellphi.geometry.pack_conic]. It takes a flattened
     coefficient vector and returns the quadratic, linear, and constant terms
     of the conic's equation.
 
@@ -242,7 +243,8 @@ def unpack_single_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a single flattened coefficient vector into a conic's components.
 
-    This function is a convenience wrapper around [`unpack_conic`][ellphi.geometry.unpack_conic] for a
+    This function is a convenience wrapper around
+    [`unpack_conic`][ellphi.geometry.unpack_conic] for a
     single conic. It accepts a coefficient array of shape `(m,)` or `(1, m)`
     and returns the conic's components.
 
