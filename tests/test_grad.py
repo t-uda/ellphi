@@ -120,6 +120,38 @@ def test_pdist_tangency_grad_vjp(rng):
     assert fd_directional == pytest.approx(vjp_directional, rel=1e-4)
 
 
+def test_tangency_grad_accepts_list_input(rng):
+    """tangency_grad accepts list inputs, matching tangency() behaviour."""
+    p, q = random_coef_pair(rng)
+    g_arr = tangency_grad(p, q)
+    g_list = tangency_grad(list(p), list(q))
+    assert g_list.t == pytest.approx(g_arr.t)
+    np.testing.assert_array_equal(g_list.dt_dp, g_arr.dt_dp)
+    np.testing.assert_array_equal(g_list.dt_dq, g_arr.dt_dq)
+
+
+def test_tangency_grad_accepts_row_vector_input(rng):
+    """tangency_grad accepts (1, m) row-vector inputs."""
+    p, q = random_coef_pair(rng)
+    g_arr = tangency_grad(p, q)
+    g_row = tangency_grad(p[None, :], q[None, :])
+    assert g_row.t == pytest.approx(g_arr.t)
+    np.testing.assert_array_equal(g_row.dt_dp, g_arr.dt_dp)
+    np.testing.assert_array_equal(g_row.dt_dq, g_arr.dt_dq)
+
+
+def test_pdist_tangency_grad_accepts_n1m_input(rng):
+    """pdist_tangency_grad accepts (N, 1, m) arrays, matching pdist_tangency()."""
+    n = 4
+    means = rng.uniform(-20.0, 20.0, size=(n, 2))
+    covs = np.stack([random_covariance(rng) for _ in range(n)])
+    coefs = coef_from_cov(means, covs)
+
+    dists_2d, _ = pdist_tangency_grad(coefs)
+    dists_3d, _ = pdist_tangency_grad(coefs[:, None, :])  # (N, 1, m)
+    np.testing.assert_array_equal(dists_2d, dists_3d)
+
+
 def test_tangency_grad_3d(rng):
     """tangency_grad works for 3-D ellipsoids."""
     p, q = random_coef_pair(rng, dim=3)

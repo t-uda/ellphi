@@ -13,7 +13,7 @@ from typing import Callable
 import numpy as np
 
 from .differentiable_solver import solve_mu_gradients
-from .solver import tangency
+from .solver import _extract_coef_array, tangency
 
 __all__ = ["TangencyGrad", "tangency_grad", "pdist_tangency_grad"]
 
@@ -59,6 +59,9 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
             such inputs (never exactly ``0.0``), so this error surfaces from
             ``solve_mu_gradients`` rather than from the ``1/(2t)`` term.
     """
+    p = np.asarray(p, dtype=float).reshape(-1)
+    q = np.asarray(q, dtype=float).reshape(-1)
+
     res = tangency(p, q, **solver_kwargs)
     mu, center, t = res.mu, res.point, res.t
 
@@ -104,7 +107,7 @@ def pdist_tangency_grad(
         - ``vjp`` is a callable ``(grad_dists,) -> grad_coefs`` that accumulates
           upstream gradients into an array of shape ``(N, m)``.
     """
-    coefs = np.asarray(coefs, dtype=float)
+    coefs = _extract_coef_array(coefs)
     N = len(coefs)
     pairs = list(combinations(range(N), 2))
     dists = np.empty(len(pairs))
