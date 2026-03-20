@@ -44,6 +44,8 @@ from .solver import (
 )
 
 
+from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad
+
 FloatArray = NDArray[np.float64]
 
 
@@ -68,6 +70,10 @@ __all__ = [
     "cpp_linalg_kind",
     "BuildInfo",
     "build_info",
+    # grad
+    "TangencyGrad",
+    "tangency_grad",
+    "pdist_tangency_grad",
     "__version__",
     "version_info",
 ]
