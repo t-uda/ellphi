@@ -52,6 +52,10 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
     res = tangency(p, q, **solver_kwargs)
     mu, center, t = res.mu, res.point, res.t
 
+    if t == 0.0:
+        m = len(p)
+        return TangencyGrad(t=0.0, dt_dp=np.zeros(m), dt_dq=np.zeros(m))
+
     _, d_mu_dp, d_mu_dq = solve_mu_gradients(p, q, mu=mu)
 
     # Monomial basis evaluated at center: [x_i*x_j (i<=j), 2*x_k, 1]

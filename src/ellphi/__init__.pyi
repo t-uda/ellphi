@@ -25,6 +25,11 @@ from .solver import (
     quad_eval as quad_eval,
     tangency as tangency,
 )
+from .grad import (
+    TangencyGrad as TangencyGrad,
+    tangency_grad as tangency_grad,
+    pdist_tangency_grad as pdist_tangency_grad,
+)
 from ._version import __version__ as __version__
 
 def version_info() -> str: ...
@@ -47,6 +52,9 @@ __all__ = [
     "cpp_linalg_kind",
     "BuildInfo",
     "build_info",
+    "TangencyGrad",
+    "tangency_grad",
+    "pdist_tangency_grad",
     "FloatArray",
     "__version__",
     "version_info",
