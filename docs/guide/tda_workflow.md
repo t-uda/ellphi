@@ -54,11 +54,43 @@ plot_diagrams(result["dgms"])
 
 ## Notes on distance semantics
 
-The tangency distance $t(E_i, E_j) \in [0, 1]$ measures how far two ellipses must be
-uniformly inflated before they first touch.  Values close to 0 mean near-tangency;
-values close to 1 indicate that the union of the two ellipses fills the entire pencil.
-This is analogous to a Čech filtration radius but adapted to the local geometry of the
-data.
+For generic (nondegenerate) inputs, the solver finds $\mu^* \in (0, 1)$ such that the
+center $x_c$ of the pencil conic $(1-\mu^*)p + \mu^* q$ satisfies $p(x_c) = q(x_c)$.
+The tangency distance is
+
+$$t(E_p, E_q) = \sqrt{p(x_c)} = \sqrt{q(x_c)}.$$
+
+Because $x_c$ is the center of the pencil element, $\nabla F_{\mu^*}(x_c) = 0$, which
+gives
+
+$$
+(1 - \mu^*)\,\nabla p(x_c) + \mu^*\,\nabla q(x_c) = 0.
+$$
+
+For $t > 0$, the normals to the level sets $\{p = t^2\}$ and $\{q = t^2\}$ are
+anti-parallel at $x_c$: these level sets are the original ellipsoids uniformly scaled
+by $t$ from their respective centers, and they are externally tangent at $x_c$.
+
+Equivalently, $t$ is the smallest scale at which the inflated sublevel sets meet:
+
+$$
+t = \inf\bigl\{s \ge 0 : E_p(s) \cap E_q(s) \neq \varnothing\bigr\},
+\qquad E_p(s) = \{x : p(x) \le s^2\},
+$$
+
+or $t^2 = \min_x \max\{p(x),\, q(x)\}$.  This characterisation yields a coarse
+trichotomy for the reference ellipsoids $E_p = \{p \le 1\}$,
+$E_q = \{q \le 1\}$:
+
+- $0 \le t < 1$: the unit ellipsoids have non-empty intersection (overlap,
+  containment, or internal tangency).
+- $t = 1$: $E_p$ and $E_q$ are externally tangent.
+- $t > 1$: $E_p$ and $E_q$ are disjoint; both must be scaled by $t$ to touch.
+
+Degenerate cases (identical or concentric ellipsoids) yield $t = 0$; the level sets
+then collapse to a point rather than forming two tangent ellipsoids.
+
+$t$ is non-negative with no upper bound.
 
 ## Choosing *k*
 
