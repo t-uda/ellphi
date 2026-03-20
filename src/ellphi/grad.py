@@ -48,6 +48,16 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
 
     Returns:
         A :class:`TangencyGrad` with ``t``, ``dt_dp``, and ``dt_dq``.
+
+    Raises:
+        ZeroDivisionError: When the pencil derivative ``∂F/∂μ`` vanishes at
+            the solution — which occurs for degenerate configurations such as
+            identical or concentric nested ellipsoids.  These cases make both
+            the implicit-function step in :func:`solve_mu_gradients` and the
+            ``1/(2t)`` factor in the gradient formula ill-defined.
+            Note: ``tangency()`` itself returns a small non-zero ``t`` for
+            such inputs (never exactly ``0.0``), so this error surfaces from
+            ``solve_mu_gradients`` rather than from the ``1/(2t)`` term.
     """
     res = tangency(p, q, **solver_kwargs)
     mu, center, t = res.mu, res.point, res.t
