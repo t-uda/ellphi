@@ -62,5 +62,14 @@ extra_javascript:
 
 nav:
   - Home: index.md
-  - Reference:
-    - ellphi: reference/ellphi.md
+  - Getting Started: guide/quickstart.md
+  - User Guide:
+    - TDA Workflow: guide/tda_workflow.md
+    - Differentiable Tangency: guide/differentiable.md
+  - API Reference:
+    - Overview: reference/index.md
+    - ellphi.geometry: reference/geometry.md
+    - ellphi.ellcloud: reference/ellcloud.md
+    - ellphi.solver: reference/solver.md
+    - ellphi.grad: reference/grad.md
+    - ellphi.visualization: reference/visualization.md

@@ -65,6 +65,14 @@ def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
         A tuple containing the major axis, minor axis, and angle of the major
             axis in radians. The major axis is always greater than or equal to the
             minor axis.
+
+    Examples:
+        >>> import numpy as np
+        >>> from ellphi.geometry import axes_from_cov
+        >>> cov = np.array([[4.0, 0.0], [0.0, 1.0]])
+        >>> r_major, r_minor, theta = axes_from_cov(cov)
+        >>> float(r_major), float(r_minor)
+        (2.0, 1.0)
     """
     if len(cov.shape) <= 2:
         cov = cov[None, :, :]
@@ -295,6 +303,15 @@ def coef_from_cov(
     Returns:
         A NumPy array of packed conic coefficients with shape `(n, m)`, where
             `m = (d + 1)(d + 2) / 2`.
+
+    Examples:
+        >>> import numpy as np
+        >>> from ellphi.geometry import coef_from_cov
+        >>> center = np.array([1.0, 0.0])
+        >>> cov = np.array([[2.0, 0.0], [0.0, 1.0]])
+        >>> coef = coef_from_cov(center, cov)
+        >>> coef.shape
+        (1, 6)
     """
     centers = numpy.asarray(X, dtype=float)
     cov = numpy.asarray(cov, dtype=float)

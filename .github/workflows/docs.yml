@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - docs/mkdocs-web-reference
   pull_request:
 
 permissions:

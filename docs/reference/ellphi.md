@@ -1,3 +1,0 @@
-# EllPHi API Reference
-
-::: ellphi
