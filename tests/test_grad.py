@@ -140,6 +140,17 @@ def test_tangency_grad_accepts_row_vector_input(rng):
     np.testing.assert_array_equal(g_row.dt_dq, g_arr.dt_dq)
 
 
+def test_pdist_tangency_grad_rejects_bad_shape(rng):
+    """pdist_tangency_grad raises ValueError for unsupported array layouts."""
+    n = 4
+    means = rng.uniform(-20.0, 20.0, size=(n, 2))
+    covs = np.stack([random_covariance(rng) for _ in range(n)])
+    coefs = coef_from_cov(means, covs)
+
+    with pytest.raises(ValueError, match="Expected coefficient array"):
+        pdist_tangency_grad(coefs[:, :, None])  # (N, m, 1) — wrong layout
+
+
 def test_pdist_tangency_grad_accepts_n1m_input(rng):
     """pdist_tangency_grad accepts (N, 1, m) arrays, matching pdist_tangency()."""
     n = 4
