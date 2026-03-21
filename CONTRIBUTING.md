@@ -53,7 +53,32 @@ Finalize the content right before release.
    - bump to the release version (e.g., `0.1.2`)
    - run all required local checks
    - merge into `main`
-   - tag the release and publish
+   - tag the release and push the tag
+
+## Publishing
+
+Releases are published automatically by the CI release workflow
+(`.github/workflows/release.yml`).
+
+| Tag | Destination |
+|-----|-------------|
+| `v0.1.2.dev1` | TestPyPI |
+| `v0.1.2` | PyPI |
+| `v0.1.2.post1` | PyPI |
+| `v0.1.2a1`, `v0.1.2rc1` | Blocked by environment rule — manual decision |
+
+```bash
+# Example: publish a dev build to TestPyPI
+git tag v0.1.2.dev1
+git push origin v0.1.2.dev1
+
+# Example: publish a release to PyPI
+git tag v0.1.2
+git push origin v0.1.2
+```
+
+The workflow uses PyPI Trusted Publishing (no API tokens needed).
+See the comments at the top of `release.yml` for one-time setup steps.
 
 ## Required Local Checks
 
