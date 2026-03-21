@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from ellphi import coef_from_cov_grad
 from ellphi.geometry import coef_from_cov

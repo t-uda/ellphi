@@ -1,4 +1,6 @@
-"""Differentiable tangency distances and geometry helpers for gradient-based optimisation.
+"""Differentiable tangency distances and geometry helpers.
+
+Gradient-based optimisation support for ellphi.
 
 This module exposes ``tangency_grad`` (single-pair gradient),
 ``pdist_tangency_grad`` (batch pairwise, with VJP pullback), and
@@ -171,7 +173,7 @@ def coef_from_cov_grad(
         - ``vjp``: callable ``(grad_coefs,) -> (grad_X, grad_cov)`` where
           ``grad_X`` has shape ``(n, d)`` and ``grad_cov`` has shape ``(n, d, d)``
     """
-    from .geometry import coef_from_cov, pack_conic
+    from .geometry import pack_conic
 
     centers = np.asarray(X, dtype=float)
     cov_arr = np.asarray(cov, dtype=float)
