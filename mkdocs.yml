@@ -45,6 +45,7 @@ plugins:
             show_root_heading: true
 
 markdown_extensions:
+  - attr_list
   - admonition
   - pymdownx.details
   - pymdownx.superfences

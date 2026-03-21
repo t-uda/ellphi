@@ -1,4 +1,4 @@
-![EllPHi](assets/logo.png){ width=220, style="display:block;margin:0 auto 1rem;" }
+![EllPHi](assets/logo.png){ width=220 style="display:block;margin:0 auto 1rem;" }
 
 # EllPHi
 
