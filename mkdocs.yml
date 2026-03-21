@@ -69,6 +69,7 @@ nav:
   - User Guide:
     - TDA Workflow: guide/tda_workflow.md
     - Differentiable Tangency: guide/differentiable.md
+    - Notebook Examples: guide/notebooks.md
   - API Reference:
     - Overview: reference/index.md
     - ellphi.geometry: reference/geometry.md
