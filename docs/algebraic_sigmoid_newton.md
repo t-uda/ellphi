@@ -2,15 +2,13 @@
 
 This document outlines the `algebraic-sigmoid+newton` strategy, a root-finding algorithm designed for functions on the interval $(0, 1)$. This method is particularly useful for objective functions, such as the difference of Mahalanobis distances, where the scale can vary dramatically at the boundaries, causing standard Newton methods to become unstable.
 
-To ensure that the optimization variable remains within the $(0, 1)$ domain, this strategy employs a variable transformation known as the **Algebraic Sigmoid function**. This reparameterization allows Newton's method to be applied in an unbounded space, enhancing stability.
+To ensure that the optimisation variable remains within the $(0, 1)$ domain, this strategy employs a variable transformation known as the **Algebraic Sigmoid function**. This reparameterisation allows Newton's method to be applied in an unbounded space, enhancing stability.
 
 ## 1. Mathematical Formulation
 
 ### 1.1. Variable Transformation
 
-The core of the strategy is a mapping from the unbounded real line $u 
- \in \mathbb{R}$ to the interval $x 
- \in (0, 1)$. This is achieved using the algebraic sigmoid function:
+The core of the strategy is a mapping from the unbounded real line $u \in \mathbb{R}$ to the interval $x \in (0, 1)$. This is achieved using the algebraic sigmoid function:
 
 $$
  x(u) = \frac{1}{2} \left( 1 + \frac{u}{\sqrt{1 + u^2}} \right) 
@@ -20,8 +18,7 @@ This function smoothly maps $(-\infty, \infty)$ to $(0, 1)$ and has a fixed poin
 
 ### 1.2. Newton's Method in the Transformed Space
 
-Let the original objective function be $f(x)$, defined on $x 
- \in (0, 1)$. We define a new function $F(u)$ in the transformed space:
+Let the original objective function be $f(x)$, defined on $x \in (0, 1)$. We define a new function $F(u)$ in the transformed space:
 
 $$ 
  F(u) = f(x(u)) 

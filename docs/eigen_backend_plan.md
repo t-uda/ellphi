@@ -35,9 +35,11 @@ If Eigen headers are not available, build without enabling it:
    - `poetry install`
    - If needed, delete `src/ellphi/_tangency_cpp_impl*.so` before reinstalling.
 4) Quick sanity check:
-   - `python - <<'PY'`
-   - `import ellphi; print(ellphi.has_cpp_backend())`
-   - `PY`
+   ```bash
+   python - <<'PY'
+   import ellphi; print(ellphi.has_cpp_backend())
+   PY
+   ```
 
 ## CI/release approach
 - Use the normal wheel build process; no manylinux customization is required
