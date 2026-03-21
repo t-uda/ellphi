@@ -1,3 +1,32 @@
+# Release workflow — publishes to PyPI or TestPyPI based on tag name.
+#
+# Routing:
+#   v*.dev*  → TestPyPI (publish-testpypi job)
+#   v*.*.*   → PyPI     (publish-pypi job)
+#
+# Prerequisites (one-time setup):
+#
+# 1. GitHub Environments (Settings → Environments):
+#    - "pypi"     — Deployment tags: v[0-9]*.[0-9]*.[0-9]*
+#                    and v[0-9]*.[0-9]*.[0-9]*.post[0-9]*
+#                    Optional: add Required reviewers for release approval.
+#    - "testpypi" — Deployment tags: v* (allow all)
+#
+# 2. PyPI Trusted Publishing (pypi.org → ellphi → Publishing):
+#    Owner: t-uda, Repository: ellphi,
+#    Workflow: release.yml, Environment: pypi
+#
+# 3. TestPyPI Trusted Publishing (test.pypi.org → ellphi → Publishing):
+#    Owner: t-uda, Repository: ellphi,
+#    Workflow: release.yml, Environment: testpypi
+#
+# Tag examples:
+#   v0.1.2       → PyPI
+#   v0.1.2.post1 → PyPI
+#   v0.1.2.dev1  → TestPyPI
+#   v0.1.2a1     → blocked by "pypi" environment tag rule → manual decision
+#   v0.1.2rc1    → blocked by "pypi" environment tag rule → manual decision
+
 name: Release
 
 on:
