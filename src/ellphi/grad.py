@@ -1,7 +1,8 @@
-"""Differentiable tangency distances for gradient-based optimisation.
+"""Differentiable tangency distances and geometry helpers for gradient-based optimisation.
 
-This module exposes ``tangency_grad`` (single-pair gradient) and
-``pdist_tangency_grad`` (batch pairwise, with VJP pullback).
+This module exposes ``tangency_grad`` (single-pair gradient),
+``pdist_tangency_grad`` (batch pairwise, with VJP pullback), and
+``coef_from_cov_grad`` (differentiable coefficient computation).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import numpy as np
 from .differentiable_solver import solve_mu_gradients
 from .solver import tangency
 
-__all__ = ["TangencyGrad", "tangency_grad", "pdist_tangency_grad"]
+__all__ = ["TangencyGrad", "tangency_grad", "pdist_tangency_grad", "coef_from_cov_grad"]
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -144,3 +145,103 @@ def pdist_tangency_grad(
         return g_coefs
 
     return dists, vjp
+
+
+def coef_from_cov_grad(
+    X: np.ndarray,
+    cov: np.ndarray,
+    /,
+    *,
+    scale: float = 1.0,
+) -> tuple[np.ndarray, Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]]]:
+    """Converts centers and covariances to packed conic coefficients, with VJP.
+
+    This is the differentiable version of ``coef_from_cov``. It returns the same
+    coefficient array plus a VJP (vector-Jacobian product) pullback function.
+
+    Args:
+        X: Centers array, shape ``(n, d)`` or ``(d,)``.
+        cov: Covariance matrices, shape ``(n, d, d)`` or ``(d, d)``.
+        scale: Optional scaling factor for covariance matrices.
+
+    Returns:
+        A tuple ``(coefs, vjp)`` where:
+
+        - ``coefs``: shape ``(n, m)``, same as ``coef_from_cov`` output
+        - ``vjp``: callable ``(grad_coefs,) -> (grad_X, grad_cov)`` where
+          ``grad_X`` has shape ``(n, d)`` and ``grad_cov`` has shape ``(n, d, d)``
+    """
+    from .geometry import coef_from_cov, pack_conic
+
+    centers = np.asarray(X, dtype=float)
+    cov_arr = np.asarray(cov, dtype=float)
+
+    if centers.ndim == 1:
+        centers = centers[np.newaxis, :]
+    if cov_arr.ndim == 2:
+        cov_arr = cov_arr[np.newaxis, :, :]
+
+    n, d = centers.shape
+    s2 = scale**2
+
+    # Forward pass
+    inv_cov = np.linalg.inv(cov_arr)  # (n, d, d)
+    A = inv_cov / s2  # (n, d, d)
+    b = -np.einsum("nij,nj->ni", A, centers)  # (n, d)
+    c = np.einsum("ni,nij,nj->n", centers, A, centers)  # (n,)
+
+    coefs = pack_conic(A, b, c)
+
+    # Precompute indices for unpacking
+    tri_i, tri_j = np.triu_indices(d)
+    n_quad = tri_i.size
+
+    def vjp(
+        grad_coefs: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        gc = np.asarray(grad_coefs, dtype=float)
+
+        # Unpack grad_coefs into grad_A_packed, grad_b, grad_c
+        grad_A_packed = gc[:, :n_quad]  # (n, n_quad)
+        grad_b = gc[:, n_quad : n_quad + d]  # (n, d)
+        grad_c = gc[:, n_quad + d]  # (n,)
+
+        # Reconstruct grad_A from upper-tri packed entries.
+        # pack_conic extracts A[tri_i, tri_j] (upper triangle only), so
+        # the gradient from packing only touches those entries.
+        grad_A = np.zeros((n, d, d), dtype=float)
+        grad_A[:, tri_i, tri_j] = grad_A_packed
+
+        # Accumulate contributions from b = -A @ center into grad_A.
+        # b_k = -sum_j A[k,j] * center[j], so dL/dA[k,j] += -grad_b[k]*center[j]
+        # This contribution is for the FULL matrix (not just upper triangle).
+        grad_A += -np.einsum("ni,nj->nij", grad_b, centers)
+
+        # Accumulate contributions from c = center^T A center into grad_A.
+        # c = sum_{i,j} center[i] A[i,j] center[j], so
+        # dL/dA[i,j] += grad_c * center[i] * center[j]
+        grad_A += grad_c[:, None, None] * np.einsum("ni,nj->nij", centers, centers)
+
+        # --- grad w.r.t. centers ---
+        # From b = -A @ center: grad_center += -A^T @ grad_b
+        grad_centers = -np.einsum("nji,nj->ni", A, grad_b)
+        # From c = center^T A center: grad_center += 2 * A @ center * grad_c
+        #   = -2 * b * grad_c
+        grad_centers += -2.0 * b * grad_c[:, None]
+
+        # --- grad w.r.t. cov (via A = inv(cov)/s^2) ---
+        # A = inv(cov) / s^2
+        # dA = -inv(cov) @ dCov @ inv(cov) / s^2
+        # <grad_A, dA> = tr(grad_A^T (-inv(cov) dCov inv(cov) / s^2))
+        #              = -1/s^2 * tr(inv(cov)^T grad_A^T inv(cov)^T dCov)
+        # Since inv(cov) is symmetric:
+        #   grad_cov = -inv(cov) @ grad_A^T @ inv(cov) / s^2
+        #            = -s^2 A @ grad_A^T @ s^2 A / s^2
+        #            = -s^2 * A @ grad_A^T @ A
+        # A @ grad_A^T @ A: note grad_A^T[i,j] = grad_A[j,i]
+        grad_A_T = np.swapaxes(grad_A, -2, -1)
+        grad_cov = -s2 * np.einsum("nij,njk,nkl->nil", A, grad_A_T, A)
+
+        return grad_centers, grad_cov
+
+    return coefs, vjp

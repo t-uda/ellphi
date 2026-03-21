@@ -44,7 +44,7 @@ from .solver import (
 )
 
 
-from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad
+from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_cov_grad
 
 FloatArray = NDArray[np.float64]
 
@@ -74,6 +74,7 @@ __all__ = [
     "TangencyGrad",
     "tangency_grad",
     "pdist_tangency_grad",
+    "coef_from_cov_grad",
     "__version__",
     "version_info",
 ]
