@@ -1,10 +1,10 @@
 # Differentiable Tangency
 
 The `ellphi.grad` module exposes gradient-enabled versions of the tangency solver.
-Gradients are computed analytically via the **envelope theorem**: because the tangent
-point $\mathbf{x}^*$ is optimal at the solution, its implicit derivative drops out and
-only the explicit dependence of the pencil on the coefficient vectors $p$ and $q$
-contributes.
+Gradients are computed analytically via the **envelope theorem**: because the tangency
+point $x_c$ is optimal at the solution, its implicit derivative with respect to the
+parameters drops out, and only the explicit dependence of the pencil on the coefficient
+vectors $p$ and $q$ contributes.
 
 ## Single-pair gradient
 
@@ -76,13 +76,12 @@ for step in range(50):
 
 ## Persistent-homology backprop
 
-When combined with HomCloud's VJP interface, `pdist_tangency_grad` enables
-differentiating through a persistence diagram — see `notebooks/topology_optimization.ipynb`
-for a worked example.
+When combined with modern TDA libraries, `pdist_tangency_grad` enables differentiating
+through a persistence diagram — see `notebooks/topology_optimization.ipynb` for a
+worked example.
 
 ## Degenerate inputs
 
-`tangency_grad` raises `ZeroDivisionError` for degenerate configurations (identical or
-concentric nested ellipsoids) where $\partial F/\partial \mu$ vanishes at the solution.
-Guard against this in optimisation loops by catching the exception or by adding a small
-perturbation to the coefficient vectors.
+`tangency_grad` may raise `ZeroDivisionError` for degenerate configurations (identical
+or concentric ellipsoids) where $\partial F/\partial \mu$ vanishes at the solution.
+Duplicate ellipsoids should be removed from the inputs beforehand.

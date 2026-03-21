@@ -7,7 +7,7 @@ This page shows how to go from a raw point cloud to a persistence diagram using 
 1. Sample a point cloud $X \subset \mathbb{R}^d$.
 2. Fit an ellipse cloud with `ellipse_cloud`.
 3. Compute the condensed pairwise tangency distance matrix with `pdist_tangency`.
-4. Feed the matrix to a persistence homology library (e.g. [HomCloud](https://homcloud.dev/) or [Ripser](https://github.com/scikit-tda/ripser.py)).
+4. Feed the matrix to a persistent-homology library (e.g. [HomCloud](https://homcloud.dev/) or [Ripser](https://github.com/scikit-tda/ripser.py)).
 
 ## Step-by-step example
 
@@ -54,22 +54,23 @@ plot_diagrams(result["dgms"])
 
 ## Notes on distance semantics
 
-For generic (nondegenerate) inputs, the solver finds $\mu^* \in (0, 1)$ such that the
-center $x_c$ of the pencil conic $(1-\mu^*)p + \mu^* q$ satisfies $p(x_c) = q(x_c)$.
-The tangency distance is
+Let $p$ and $q$ be generic (nondegenerate) input quadratic polynomials. More precisely,
+$p$ and $q$ are squared Mahalanobis distances whose level sets are ellipsoids.
+The solver finds $\mu \in (0, 1)$ such that the center $x_c$ of the pencil of conics
+$(1-\mu)p + \mu q$ satisfies $p(x_c) = q(x_c)$. The tangency distance is
 
 $$t(E_p, E_q) = \sqrt{p(x_c)} = \sqrt{q(x_c)}.$$
 
-Because $x_c$ is the center of the pencil element, $\nabla F_{\mu^*}(x_c) = 0$, which
-gives
+Because $x_c$ is the center of the pencil element, the gradient of the pencil element
+vanishes at $x = x_c$, which gives
 
 $$
-(1 - \mu^*)\,\nabla p(x_c) + \mu^*\,\nabla q(x_c) = 0.
+(1 - \mu)\,\nabla p(x_c) + \mu\,\nabla q(x_c) = 0.
 $$
 
 For $t > 0$, the normals to the level sets $\{p = t^2\}$ and $\{q = t^2\}$ are
-anti-parallel at $x_c$: these level sets are the original ellipsoids uniformly scaled
-by $t$ from their respective centers, and they are externally tangent at $x_c$.
+anti-parallel at $x_c$: these level sets are the reference ellipsoids dilated by a factor of $t$ about their
+respective centres, and they are externally tangent at $x_c$.
 
 Equivalently, $t$ is the smallest scale at which the inflated sublevel sets meet:
 
@@ -78,23 +79,31 @@ t = \inf\bigl\{s \ge 0 : E_p(s) \cap E_q(s) \neq \varnothing\bigr\},
 \qquad E_p(s) = \{x : p(x) \le s^2\},
 $$
 
-or $t^2 = \min_x \max\{p(x),\, q(x)\}$.  This characterisation yields a coarse
-trichotomy for the reference ellipsoids $E_p = \{p \le 1\}$,
-$E_q = \{q \le 1\}$:
+or $t^2 = \min_x \max\{p(x),\, q(x)\}$. This characterisation yields a coarse
+trichotomy for the reference ellipsoids $E_p = \{p \le 1\}$, $E_q = \{q \le 1\}$:
 
-- $0 \le t < 1$: the unit ellipsoids have non-empty intersection (overlap,
+- $0 \le t < 1$: the reference ellipsoids have non-empty intersection (overlap,
   containment, or internal tangency).
 - $t = 1$: $E_p$ and $E_q$ are externally tangent.
 - $t > 1$: $E_p$ and $E_q$ are disjoint; both must be scaled by $t$ to touch.
 
-Degenerate cases (identical or concentric ellipsoids) yield $t = 0$; the level sets
-then collapse to a point rather than forming two tangent ellipsoids.
+Degenerate cases (identical or concentric ellipsoids) yield $t = 0$; the zero level
+sets reduce to the respective ellipsoid centres rather than forming two tangent ellipsoids.
 
-$t$ is non-negative with no upper bound.
+Note that $t$ is non-negative and unbounded above.
 
-## Choosing *k*
+## Choosing $k$
 
-Larger *k* produces fatter, more overlapping ellipses and tends to smooth out local
+By default, `ellipse_cloud` computes an ellipsoid cloud by $k$-nearest neighbour
+local covariance construction.
+
+Larger $k$ produces fatter, more overlapping ellipsoids and tends to smooth out local
 noise.  A good starting range is $k \in [5, 15]$ for 2D data; for higher-dimensional
-data increase *k* proportionally.  Use `cloud.rescale(method="median")` to normalise
-the scale of the ellipses before computing distances.
+data increase $k$ proportionally.
+
+## Rescaling
+
+The covariance construction estimates local metrics at each data point, but this process
+may distort the scale compared to the global Euclidean metric derived from the input.
+Use `cloud.rescale(method="median")` to normalise the scale of the ellipses before
+computing tangency distances if you want to compare with the Euclidean setting.
