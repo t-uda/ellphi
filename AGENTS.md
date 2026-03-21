@@ -105,3 +105,15 @@ Before requesting review or handing work back to the user:
 *   **Coding Style:** All Python code should adhere to the [PEP 8 style guide](https://peps.python.org/pep-0008/).
 *   **Docstrings:** Docstrings must be written in **English**. They can include simple mathematical expressions where appropriate.
 *   **Comments:** Code comments should be short and simple. Do not add verbose trivial comments.
+
+## Documentation-only Tasks
+
+Docs-only changes (files under `docs/`, `mkdocs.yml`, `docs/javascripts/`)
+do **not** require the full Python CI checklist (black/flake8/mypy/pytest).
+Instead, run:
+
+```bash
+poetry run mkdocs build
+```
+
+and confirm it exits without errors before committing.

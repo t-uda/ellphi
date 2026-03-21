@@ -80,7 +80,7 @@ __all__ = [
 
 
 def version_info() -> str:
-    """Return the current :mod:`ellphi` version string."""
+    """Return the current `ellphi` version string."""
 
     return __version__
 

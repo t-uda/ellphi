@@ -11,6 +11,7 @@ from typing import (
     Callable,
     Iterator,
     Literal,
+    NamedTuple,
     Tuple,
     cast,
 )
@@ -152,7 +153,20 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
     return (1.0 - mu) * p + mu * q
 
 
-TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
+class TangencyResult(NamedTuple):
+    """Result of a tangency point calculation.
+
+    Attributes:
+        t: The tangency time (distance).
+        point: The tangent point as a NumPy array.
+        mu: The pencil parameter μ at which the two ellipses are tangent.
+    """
+
+    t: float
+    point: numpy.ndarray
+    mu: float
+
+
 NewtonResult = namedtuple("NewtonResult", ["root", "converged"])
 
 
@@ -479,10 +493,7 @@ def tangency(
         failsafe: If `True`, a failsafe fallback is enabled.
 
     Returns:
-        A `TangencyResult` named tuple with the following fields:
-        - `t`: The tangency time.
-        - `point`: The tangent point.
-        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
+        A `TangencyResult` containing the tangency time, point, and pencil parameter.
 
     Raises:
         RuntimeError: If the solver fails to converge to a valid solution

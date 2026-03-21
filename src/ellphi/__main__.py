@@ -1,4 +1,4 @@
-"""Command-line entry point for :mod:`ellphi`.
+"""Command-line entry point for `ellphi`.
 
 Allows executing ``python -m ellphi`` to access the minimal CLI that exposes
 version/build information.

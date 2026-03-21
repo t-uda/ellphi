@@ -2,7 +2,7 @@
 """Benchmark tangency backends/methods to tune the hybrid solver.
 
 The script generates a mix of well-conditioned and highly eccentric
-ellipsoids, calls :func:`ellphi.solver.tangency` with different
+ellipsoids, calls `ellphi.solver.tangency` with different
 backends/methods, and reports aggregated + per-dimension timing/accuracy
 statistics (markdown table by default).  The output guides the selection
 of iteration budgets that generalise beyond 2D while remaining faster

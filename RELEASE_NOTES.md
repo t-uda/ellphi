@@ -1,3 +1,30 @@
+## Unreleased
+
+### Documentation
+
+- Expanded MkDocs site: added Notebook Examples page to User Guide, listing
+  all six notebooks grouped by theme with links to the GitHub viewer and a
+  note on the planned migration to an interactive Marimo-based repository.
+- Added EllPHi logo to the navbar, favicon, and index page; root
+  `ellphi-logo.png` replaced with a transparency-processed version for
+  clean rendering in GitHub dark mode.
+- Unified mathematical vector notation throughout the docs: vectors now use
+  `\bm{·}` (bold-italic via `\boldsymbol`), matrices use plain capitals,
+  scalars use plain italic.  `\bm` is defined as a MathJax macro in
+  `docs/javascripts/mathjax.js`.
+- Fixed markdown and MathJax formatting in Design Notes: resolved multi-line
+  inline-math parsing failures in `algebraic_sigmoid_newton.md`, converted
+  Unicode math notation in `hybrid_tuning.md` to LaTeX, and replaced a
+  heredoc split across bullet points with a proper code block in
+  `eigen_backend_plan.md`.
+- Applied English proofreading corrections across User Guide pages
+  (terminology, punctuation, British spelling, precision of mathematical
+  prose).
+- Introduced `CLAUDE.md` for Claude Code-specific guidelines (subagent
+  permissions, orchestration style); added documentation conventions
+  (build workflow, notation, English style) to `CONTRIBUTING.md` and
+  `AGENTS.md`.
+
 ## 0.1.1 - 2025-12-14
 
 ### Added

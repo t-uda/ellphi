@@ -47,13 +47,14 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
             ``backend``).
 
     Returns:
-        A :class:`TangencyGrad` with ``t``, ``dt_dp``, and ``dt_dq``.
+        A [`TangencyGrad`][ellphi.grad.TangencyGrad] with ``t``,
+        ``dt_dp``, and ``dt_dq``.
 
     Raises:
         ZeroDivisionError: When the pencil derivative ``∂F/∂μ`` vanishes at
             the solution — which occurs for degenerate configurations such as
             identical or concentric nested ellipsoids.  These cases make both
-            the implicit-function step in :func:`solve_mu_gradients` and the
+            the implicit-function step in `solve_mu_gradients` and the
             ``1/(2t)`` factor in the gradient formula ill-defined.
             Note: ``tangency()`` itself returns a small non-zero ``t`` for
             such inputs (never exactly ``0.0``), so this error surfaces from
@@ -91,7 +92,8 @@ def pdist_tangency_grad(
 ) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
     """Pairwise tangency distances and a VJP (pullback) for all pairs.
 
-    Computes the same condensed distance array as :func:`~ellphi.pdist_tangency`
+    Computes the same condensed distance array as
+    [`pdist_tangency`][ellphi.pdist_tangency]
     and additionally returns a VJP function that maps upstream gradient vectors
     back to per-ellipsoid coefficient gradients.
 
@@ -103,9 +105,21 @@ def pdist_tangency_grad(
         A tuple ``(dists, vjp)`` where:
 
         - ``dists`` is a 1-D array of shape ``(N*(N-1)//2,)`` with pairwise
-          tangency distances in the same order as ``scipy.spatial.distance.pdist``.
+            tangency distances in the same order as ``scipy.spatial.distance.pdist``.
         - ``vjp`` is a callable ``(grad_dists,) -> grad_coefs`` that accumulates
-          upstream gradients into an array of shape ``(N, m)``.
+            upstream gradients into an array of shape ``(N, m)``.
+
+    Examples:
+        >>> import numpy as np
+        >>> from ellphi import ellipse_cloud
+        >>> from ellphi.grad import pdist_tangency_grad
+        >>> rng = np.random.default_rng(0)
+        >>> cloud = ellipse_cloud(rng.standard_normal((6, 2)), k=3)
+        >>> dists, vjp = pdist_tangency_grad(cloud.coef)
+        >>> dists.shape        # N*(N-1)//2 = 15
+        (15,)
+        >>> vjp(np.ones(15)).shape   # (N, m) = (6, 6)
+        (6, 6)
     """
     coefs = np.asarray(coefs, dtype=float)
     if coefs.ndim == 3 and coefs.shape[1] == 1:
