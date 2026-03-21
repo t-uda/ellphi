@@ -3,6 +3,9 @@
 # Gemini
 .gemini/
 GEMINI.md
+# Claude
+.claude/
+CLAUDE.md
 # Serena AI Helper
 .serena/
 
