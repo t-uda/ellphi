@@ -1,0 +1,80 @@
+name: Windows Wheels
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build wheel
+      run: poetry build -f wheel
+
+    - name: Verify wheel contains binary
+      shell: pwsh
+      run: |
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
+        Write-Host "Inspecting $($wheel.Name)"
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($wheel.FullName)
+        $entries = $zip.Entries | Where-Object { $_.Name -match '\.(pyd|dll)$' }
+        if ($entries.Count -eq 0) {
+          Write-Error "No .pyd or .dll found in wheel"
+          $zip.Dispose()
+          exit 1
+        }
+        $entries | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+        $zip.Dispose()
+
+    - name: Smoke test — install and import
+      shell: pwsh
+      run: |
+        python -m venv test-env
+        test-env\Scripts\Activate.ps1
+        pip install (Get-ChildItem dist\*.whl).FullName
+        python -c "import ellphi; print('version:', ellphi.__version__)"
+        python -c "from ellphi.solver import has_cpp_backend; assert has_cpp_backend(), 'C++ backend not available'"
+        python -c "from ellphi.solver import build_info; print(build_info())"
+
+    - name: Smoke test — run solver
+      shell: pwsh
+      run: |
+        test-env\Scripts\Activate.ps1
+        python -c @"
+        import numpy as np
+        from ellphi import tangency, coef_from_cov
+        c1 = coef_from_cov(np.eye(2), np.array([0.0, 0.0]))
+        c2 = coef_from_cov(np.eye(2), np.array([3.0, 0.0]))
+        result = tangency(c1, c2)
+        print('tangency t =', result.t)
+        assert result.t > 0, 'Expected positive tangency time'
+        print('Solver smoke test passed.')
+        "@
+
+    - name: Upload wheel artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheel-windows-py${{ matrix.python-version }}
+        path: dist/*.whl
+        retention-days: 30
