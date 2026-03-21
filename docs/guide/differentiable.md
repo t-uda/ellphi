@@ -2,15 +2,15 @@
 
 The `ellphi.grad` module exposes gradient-enabled versions of the tangency solver.
 Gradients are computed analytically via the **envelope theorem**: because the tangency
-point $x_c$ is optimal at the solution, its implicit derivative with respect to the
+point $\bm{x}_c$ is optimal at the solution, its implicit derivative with respect to the
 parameters drops out, and only the explicit dependence of the pencil on the coefficient
-vectors $p$ and $q$ contributes.
+vectors $\bm{p}$ and $\bm{q}$ contributes.
 
 ## Single-pair gradient
 
 `tangency_grad` returns a [`TangencyGrad`][ellphi.grad.TangencyGrad] dataclass with the
-tangency distance $t$ and the gradients $\partial t/\partial p$ and
-$\partial t/\partial q$:
+tangency distance $t$ and the gradients $\partial t/\partial \bm{p}$ and
+$\partial t/\partial \bm{q}$:
 
 ```python
 import numpy as np

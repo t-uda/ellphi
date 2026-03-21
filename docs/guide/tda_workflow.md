@@ -56,27 +56,27 @@ plot_diagrams(result["dgms"])
 
 Let $p$ and $q$ be generic (nondegenerate) input quadratic polynomials. More precisely,
 $p$ and $q$ are squared Mahalanobis distances whose level sets are ellipsoids.
-The solver finds $\mu \in (0, 1)$ such that the center $x_c$ of the pencil of conics
-$(1-\mu)p + \mu q$ satisfies $p(x_c) = q(x_c)$. The tangency distance is
+The solver finds $\mu \in (0, 1)$ such that the center $\bm{x}_c$ of the pencil of conics
+$(1-\mu)p + \mu q$ satisfies $p(\bm{x}_c) = q(\bm{x}_c)$. The tangency distance is
 
-$$t(E_p, E_q) = \sqrt{p(x_c)} = \sqrt{q(x_c)}.$$
+$$t(E_p, E_q) = \sqrt{p(\bm{x}_c)} = \sqrt{q(\bm{x}_c)}.$$
 
-Because $x_c$ is the center of the pencil element, the gradient of the pencil element
-vanishes at $x = x_c$, which gives
+Because $\bm{x}_c$ is the center of the pencil element, the gradient of the pencil element
+vanishes at $x = \bm{x}_c$, which gives
 
 $$
-(1 - \mu)\,\nabla p(x_c) + \mu\,\nabla q(x_c) = 0.
+(1 - \mu)\,\nabla p(\bm{x}_c) + \mu\,\nabla q(\bm{x}_c) = 0.
 $$
 
 For $t > 0$, the normals to the level sets $\{p = t^2\}$ and $\{q = t^2\}$ are
-anti-parallel at $x_c$: these level sets are the reference ellipsoids dilated by a factor of $t$ about their
-respective centres, and they are externally tangent at $x_c$.
+anti-parallel at $\bm{x}_c$: these level sets are the reference ellipsoids dilated by a factor of $t$ about their
+respective centres, and they are externally tangent at $\bm{x}_c$.
 
 Equivalently, $t$ is the smallest scale at which the inflated sublevel sets meet:
 
 $$
 t = \inf\bigl\{s \ge 0 : E_p(s) \cap E_q(s) \neq \varnothing\bigr\},
-\qquad E_p(s) = \{x : p(x) \le s^2\},
+\qquad E_p(s) = \{\bm{x} : p(\bm{x}) \le s^2\},
 $$
 
 or $t^2 = \min_x \max\{p(x),\, q(x)\}$. This characterisation yields a coarse
