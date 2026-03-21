@@ -117,29 +117,3 @@ poetry run mkdocs build
 ```
 
 and confirm it exits without errors before committing.
-
-## Claude Code Subagent Permissions
-
-When orchestrating work through Claude Code subagents, the following
-permissions must be present in `.claude/settings.local.json`:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Edit",
-      "Write",
-      "Bash(git:*)",
-      "Bash(cp:*)",
-      "Bash(python3:*)"
-    ]
-  }
-}
-```
-
-Notes:
-- Permission changes take effect after a session restart.
-- Binary file processing (e.g. image transparency) should be handled by
-  the main agent, not delegated to subagents.
-- Simple one-off shell commands that fall outside the patterns above
-  can be run by the main agent directly.
