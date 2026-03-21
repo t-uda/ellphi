@@ -8,8 +8,8 @@ The tangency distance `t` depends on coefficient vectors `p` and `q` through:
 2. The tangent point `x*(mu*)`, the pencil ellipsoid center at `mu*`.
 
 By the envelope theorem, at the optimum `mu*`, the derivative of the
-objective w.r.t. `mu` is zero. So `dt/dp` depends only on the **explicit**
-dependence of the pencil on `p`, not on the chain through `mu*(p)`:
+tangent point `x*(mu*)` w.r.t. `p` drops out of the gradient formula.
+The `d_mu/dp` terms remain (computed via implicit differentiation):
 
 ```
 dt/dp_i = (1/(2t)) * [(1 - mu*) * base_i + scalar * d_mu/dp_i]
