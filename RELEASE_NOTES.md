@@ -1,5 +1,11 @@
 ## Unreleased
 
+### CI
+
+- Added Windows wheel build workflow (`win_amd64`, Python 3.10–3.12).
+- Added release workflow for PyPI publishing via Trusted Publishing.
+- Added Python 3.12 to the CI test matrix.
+
 ### Documentation
 
 - Expanded MkDocs site: added Notebook Examples page to User Guide, listing
