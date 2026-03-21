@@ -82,3 +82,46 @@ Verify via:
 ```bash
 python -m ellphi --build-info
 ```
+
+## Documentation
+
+### Building and previewing
+
+```bash
+# One-off build
+poetry run mkdocs build
+
+# Live-reload server (http://127.0.0.1:8000)
+poetry run mkdocs serve
+```
+
+Run `poetry run mkdocs build` before committing any docs change and confirm
+the build completes without errors.
+
+### English style
+
+All documentation is written in **British English**
+(`optimisation`, `normalise`, `characterisation`, `centred`, etc.).
+
+### Mathematical notation
+
+| Element | Convention | Example |
+|---|---|---|
+| Inline math | `\(...\)` | `\(t \ge 0\)` |
+| Display math | `\[...\]` or `$$...$$` (block only) | — |
+| Vectors | `\bm{·}` (bold italic via `\boldsymbol`) | `\(\bm{x}_c\)` |
+| Matrices | Plain capital letter | `\(A\)`, `\(\Sigma\)` |
+| Scalars | Plain italic | `\(t\)`, `\(\mu\)` |
+
+`\bm` is defined as a MathJax macro in `docs/javascripts/mathjax.js`.
+Inline math must not span multiple source lines.
+
+### Assets
+
+Logo assets live in `docs/assets/`:
+
+- `logo.png` — full logo (icon + wordmark), transparent background
+- `logo-icon.png` — icon only, used for navbar and favicon
+
+The root `ellphi-logo.png` is kept in sync with `docs/assets/logo.png`
+(used by the README).
