@@ -4,6 +4,8 @@ repo_url: https://github.com/t-uda/ellphi
 
 theme:
   name: material
+  logo: assets/logo-icon.png
+  favicon: assets/logo-icon.png
   features:
     - navigation.tabs
     - navigation.instant

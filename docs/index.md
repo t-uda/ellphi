@@ -1,3 +1,5 @@
+![EllPHi](assets/logo.png){ width=220, style="display:block;margin:0 auto 1rem;" }
+
 # EllPHi
 
 **EllPHi** is a fast ellipse (and ellipsoid) tangency solver for Python, designed for applications in Topological Data Analysis (TDA) and Computational Geometry.
