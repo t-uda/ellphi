@@ -84,7 +84,31 @@ jobs:
         name: dist-windows-py${{ matrix.python-version }}
         path: dist/*.whl
 
-  publish:
+  publish-testpypi:
+    if: contains(github.ref_name, 'dev')
+    needs: [build-sdist, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: List distribution files
+      run: ls -la dist/
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        packages-dir: dist/
+
+  publish-pypi:
+    if: ${{ !contains(github.ref_name, 'dev') }}
     needs: [build-sdist, build-linux, build-windows]
     runs-on: ubuntu-latest
     environment: pypi
