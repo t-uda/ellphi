@@ -107,6 +107,24 @@ def _existing_library_version(path: Path) -> str | None:
     return value.decode("utf-8", errors="replace")
 
 
+def _existing_library_linalg_kind(path: Path) -> str | None:
+    try:
+        lib = ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+    try:
+        func = lib.tangency_linalg_kind
+    except AttributeError:
+        return None
+
+    func.restype = ctypes.c_char_p
+    value = func()
+    if not value:
+        return None
+    return value.decode("utf-8", errors="replace")
+
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -196,10 +214,13 @@ def build() -> Path:
         raise FileNotFoundError(f"C++ source not found: {source}")
 
     existing_version = _existing_library_version(output)
+    expected_kind = "eigen" if _use_eigen() else "internal"
+    existing_kind = _existing_library_linalg_kind(output)
     if (
         output.exists()
         and output.stat().st_mtime >= source.stat().st_mtime
         and existing_version == project_version
+        and existing_kind == expected_kind
     ):
         return output
 
