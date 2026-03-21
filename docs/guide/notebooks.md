@@ -29,7 +29,7 @@ directly in the browser or cloned and run locally.
 
 | Notebook | Description |
 |---|---|
-| [Topology Optimisation with Gradients](https://github.com/t-uda/ellphi/blob/main/notebooks/topology_optimization.ipynb) | Gradient-based optimisation of ellipsoid configurations using `ellphi.grad` and the VJP interface. |
+| [Topology Optimisation with Gradients](https://github.com/t-uda/ellphi/blob/main/notebooks/topology_optimization.ipynb) | Gradient-based optimisation of ellipsoid configurations using `ellphi.grad` and the VJP interface. *(Link active after next release.)* |
 
 ## Benchmarks
 

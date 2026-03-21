@@ -84,4 +84,7 @@ worked example.
 
 `tangency_grad` may raise `ZeroDivisionError` for degenerate configurations (identical
 or concentric ellipsoids) where $\partial F/\partial \mu$ vanishes at the solution.
-Duplicate ellipsoids should be removed from the inputs beforehand.
+Removing duplicate ellipsoids from the inputs reduces one source of degeneracy, but
+distinct concentric or nested ellipsoids can trigger the same error.  In optimisation
+loops, either catch the exception and skip the offending pair, or perturb the inputs
+slightly to escape the degenerate configuration.
