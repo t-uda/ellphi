@@ -64,8 +64,8 @@ jobs:
         python -c @"
         import numpy as np
         from ellphi import tangency, coef_from_cov
-        c1 = coef_from_cov(np.eye(2), np.array([0.0, 0.0]))
-        c2 = coef_from_cov(np.eye(2), np.array([3.0, 0.0]))
+        c1 = coef_from_cov(np.array([[0.0, 0.0]]), np.eye(2).reshape(1, 2, 2))
+        c2 = coef_from_cov(np.array([[3.0, 0.0]]), np.eye(2).reshape(1, 2, 2))
         result = tangency(c1, c2)
         print('tangency t =', result.t)
         assert result.t > 0, 'Expected positive tangency time'
