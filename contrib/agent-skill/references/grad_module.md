@@ -23,6 +23,19 @@ The `d_mu/dp` terms come from implicit differentiation of the optimality
 condition `F(mu, p, q) = 0` (handled internally by `solve_mu_gradients`
 in `ellphi.differentiable_solver`).
 
+## coef_from_cov_grad: differentiable geometry
+
+`coef_from_cov_grad(X, cov, *, scale)` is the differentiable version of
+`coef_from_cov`. It returns `(coefs, vjp)` where the VJP maps
+`grad_coefs (N, m)` back to `(grad_centers (N, d), grad_cov (N, d, d))`.
+
+Internally it uses the matrix inverse derivative identity:
+`d(Σ⁻¹) = -Σ⁻¹ dΣ Σ⁻¹` to propagate gradients through `A = Σ⁻¹/s²`.
+
+Combined with `pdist_tangency_grad`, this enables end-to-end gradient
+computation from geometric parameters (centers, covariances) through to
+a topological loss, without finite differences.
+
 ## Key design points
 
 - `tangency_grad` / `pdist_tangency_grad` are the public API (in `ellphi.grad`).
@@ -30,6 +43,8 @@ in `ellphi.differentiable_solver`).
   `1/(2t)` factor and monomial basis evaluation.
 - `pdist_tangency_grad` returns a VJP (vector-Jacobian product) pullback that
   accumulates pair contributions into per-ellipsoid gradients.
+- `coef_from_cov_grad` completes the chain by differentiating through
+  the (centers, covs) → coefs mapping. Works for arbitrary dimension d.
 - Degenerate configurations (identical/concentric ellipsoids) raise
   `ZeroDivisionError` because the implicit function theorem breaks down.
 

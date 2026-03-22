@@ -46,7 +46,24 @@ dists = ellphi.pdist_tangency(cloud)    # condensed distance matrix (like scipy 
 from ellphi.grad import pdist_tangency_grad
 
 dists, vjp = pdist_tangency_grad(cloud.coef)  # cloud.coef: (N, m)
-grad_coefs = vjp(upstream_grad)                # upstream: (N*(N-1)//2,) -> (N, m)
+grad_coefs = vjp(upstream_grad)               # upstream: (N*(N-1)//2,) -> (N, m)
+```
+
+### End-to-end: centers + covariances → loss
+
+```python
+from ellphi.grad import coef_from_cov_grad, pdist_tangency_grad
+
+# Forward + VJP for coef_from_cov
+coefs, vjp_coef = coef_from_cov_grad(centers, covs)
+
+# Forward + VJP for tangency distances
+dists, vjp_dist = pdist_tangency_grad(coefs)
+
+# Backward: chain the two VJPs
+loss = dists.sum()
+grad_coefs = vjp_dist(np.ones_like(dists))    # (N, m)
+grad_centers, grad_covs = vjp_coef(grad_coefs) # (N,d), (N,d,d)
 ```
 
 ## Solver methods

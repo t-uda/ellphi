@@ -29,6 +29,7 @@ from .grad import (
     TangencyGrad as TangencyGrad,
     tangency_grad as tangency_grad,
     pdist_tangency_grad as pdist_tangency_grad,
+    coef_from_cov_grad as coef_from_cov_grad,
 )
 from ._version import __version__ as __version__
 
@@ -55,6 +56,7 @@ __all__ = [
     "TangencyGrad",
     "tangency_grad",
     "pdist_tangency_grad",
+    "coef_from_cov_grad",
     "FloatArray",
     "__version__",
     "version_info",
