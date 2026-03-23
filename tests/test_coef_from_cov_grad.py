@@ -192,6 +192,7 @@ def test_grad_shapes(rng):
 # Input validation
 # ---------------------------------------------------------------------------
 
+
 def test_batch_size_mismatch():
     """Mismatched centre/covariance batch sizes raise ValueError."""
     with pytest.raises(ValueError, match="Mismatch"):
