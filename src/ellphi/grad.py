@@ -184,9 +184,7 @@ def coef_from_cov_grad(
         cov_arr = cov_arr[np.newaxis, :, :]
 
     if centers.shape[0] != cov_arr.shape[0]:
-        raise ValueError(
-            "Mismatch between number of centres and covariance matrices"
-        )
+        raise ValueError("Mismatch between number of centres and covariance matrices")
     if cov_arr.shape[-1] != cov_arr.shape[-2]:
         raise ValueError("Covariance matrices must be square")
 
