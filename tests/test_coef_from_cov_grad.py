@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from ellphi import coef_from_cov_grad
 from ellphi.geometry import coef_from_cov
@@ -190,9 +191,6 @@ def test_grad_shapes(rng):
 # ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
-
-import pytest
-
 
 def test_batch_size_mismatch():
     """Mismatched centre/covariance batch sizes raise ValueError."""
