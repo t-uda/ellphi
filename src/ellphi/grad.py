@@ -206,8 +206,8 @@ def coef_from_cov_grad(
             grad_coefs: np.ndarray,
         ) -> tuple[np.ndarray, np.ndarray]:
             return (
-                np.zeros_like(centers),
-                np.zeros_like(cov_arr),
+                np.full_like(centers, np.nan),
+                np.full_like(cov_arr, np.nan),
             )
 
         return coefs, vjp_nan

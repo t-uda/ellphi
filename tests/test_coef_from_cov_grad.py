@@ -221,5 +221,5 @@ def test_singular_cov_returns_nan():
     np.testing.assert_array_equal(np.isnan(coefs), np.isnan(ref))
 
     grad_X, grad_cov = vjp(np.ones_like(coefs))
-    np.testing.assert_array_equal(grad_X, 0.0)
-    np.testing.assert_array_equal(grad_cov, 0.0)
+    assert np.all(np.isnan(grad_X))
+    assert np.all(np.isnan(grad_cov))
