@@ -183,11 +183,35 @@ def coef_from_cov_grad(
     if cov_arr.ndim == 2:
         cov_arr = cov_arr[np.newaxis, :, :]
 
+    if centers.shape[0] != cov_arr.shape[0]:
+        raise ValueError("Mismatch between number of centres and covariance matrices")
+    if cov_arr.shape[-1] != cov_arr.shape[-2]:
+        raise ValueError("Covariance matrices must be square")
+
     n, d = centers.shape
+
+    if cov_arr.shape[-1] != d:
+        raise ValueError("Centre dimensionality and covariance size must agree")
     s2 = scale**2
 
-    # Forward pass
-    inv_cov = np.linalg.inv(cov_arr)  # (n, d, d)
+    # Forward pass – handle singular covariances the same way coef_from_cov
+    # does: return NaN coefficients so callers can detect degeneracy.
+    try:
+        inv_cov = np.linalg.inv(cov_arr)  # (n, d, d)
+    except np.linalg.LinAlgError:
+        m = (d + 1) * (d + 2) // 2
+        coefs = np.full((n, m), np.nan, dtype=float)
+
+        def vjp_nan(
+            grad_coefs: np.ndarray,
+        ) -> tuple[np.ndarray, np.ndarray]:
+            return (
+                np.full_like(centers, np.nan),
+                np.full_like(cov_arr, np.nan),
+            )
+
+        return coefs, vjp_nan
+
     A = inv_cov / s2  # (n, d, d)
     b = -np.einsum("nij,nj->ni", A, centers)  # (n, d)
     c = np.einsum("ni,nij,nj->n", centers, A, centers)  # (n,)
