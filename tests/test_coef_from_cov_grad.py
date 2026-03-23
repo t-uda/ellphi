@@ -185,3 +185,42 @@ def test_grad_shapes(rng):
     grad_X, grad_cov = vjp(g)
     assert grad_X.shape == (n, d)
     assert grad_cov.shape == (n, d, d)
+
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+def test_batch_size_mismatch():
+    """Mismatched centre/covariance batch sizes raise ValueError."""
+    with pytest.raises(ValueError, match="Mismatch"):
+        coef_from_cov_grad(np.zeros((3, 2)), np.eye(2)[np.newaxis])
+
+
+def test_non_square_cov():
+    """Non-square covariance raises ValueError."""
+    with pytest.raises(ValueError, match="square"):
+        coef_from_cov_grad(np.zeros((2, 2)), np.zeros((2, 3, 2)))
+
+
+def test_dimension_mismatch():
+    """Centre/covariance dimension mismatch raises ValueError."""
+    with pytest.raises(ValueError, match="dimensionality"):
+        coef_from_cov_grad(np.zeros((2, 2)), np.eye(3)[np.newaxis].repeat(2, axis=0))
+
+
+def test_singular_cov_returns_nan():
+    """Singular covariance returns NaN coefficients, matching coef_from_cov."""
+    centers = np.zeros((1, 2))
+    cov_sing = np.zeros((1, 2, 2))
+
+    coefs, vjp = coef_from_cov_grad(centers, cov_sing)
+    ref = coef_from_cov(centers, cov_sing)
+    np.testing.assert_array_equal(np.isnan(coefs), np.isnan(ref))
+
+    grad_X, grad_cov = vjp(np.ones_like(coefs))
+    np.testing.assert_array_equal(grad_X, 0.0)
+    np.testing.assert_array_equal(grad_cov, 0.0)
