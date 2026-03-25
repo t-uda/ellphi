@@ -202,6 +202,8 @@ class EllipseCloud:
         Returns:
             A square matrix of tangency distances with shape `(n, n)`.
         """
+        if self.n == 0:
+            return numpy.empty((0, 0), dtype=float)
         return squareform(
             self.pdist_tangency(
                 parallel=parallel,
@@ -274,8 +276,8 @@ class EllipseCloud:
             An `EllipseCloud` object created from the provided centers and
             covariances.
         """
-        centers = numpy.asarray(X, dtype=float)
-        covariances = numpy.asarray(cov, dtype=float)
+        centers = numpy.array(X, dtype=float, copy=True)
+        covariances = numpy.array(cov, dtype=float, copy=True)
 
         if centers.ndim == 1:
             centers = centers[numpy.newaxis, :]

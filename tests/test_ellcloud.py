@@ -245,6 +245,35 @@ def test_distance_matrix_matches_squareform(rng):
     np.testing.assert_allclose(matrix, expected)
 
 
+def test_distance_matrix_empty_cloud_returns_empty_square():
+    cloud = EllipseCloud(
+        coef=np.empty((0, 6), dtype=float),
+        mean=np.empty((0, 2), dtype=float),
+        cov=np.empty((0, 2, 2), dtype=float),
+        k=0,
+        nbd=np.empty((0, 0), dtype=int),
+    )
+
+    matrix = cloud.distance_matrix()
+
+    assert matrix.shape == (0, 0)
+
+
+def test_from_cov_rescaling_does_not_mutate_inputs(rng):
+    original = random_cloud(rng, n_ellipses=5)
+    means = original.mean.copy()
+    covs = original.cov.copy()
+    means_before = means.copy()
+    covs_before = covs.copy()
+
+    cloud = EllipseCloud.from_cov(means, covs, rescaling="median")
+
+    np.testing.assert_allclose(means, means_before)
+    np.testing.assert_allclose(covs, covs_before)
+    assert not np.shares_memory(cloud.mean, means)
+    assert not np.shares_memory(cloud.cov, covs)
+
+
 def test_str_method():
     X = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0]])
     ellcloud = EllipseCloud.from_local_cov(X, k=3)
