@@ -157,7 +157,7 @@ jobs:
         cd test_run
         pytest ../tests
 
-  build-docs:
+  demo-install:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -178,8 +178,4 @@ jobs:
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (demo extras)
-      run: poetry install --with demo # Install core and demo dependencies
-
-    # Add steps for building documentation here, e.g., mkdocs build or sphinx build
-    # - name: Build documentation
-    #   run: poetry run mkdocs build
+      run: poetry install --with demo # Ensure the demo dependency set resolves
