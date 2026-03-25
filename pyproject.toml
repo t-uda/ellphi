@@ -1,6 +1,6 @@
 [project]
 name = "ellphi"
-version = "0.1.2.dev1"
+version = "0.1.2"
 description = "Fast ellipse tangency solver"
 authors = [
   { name = "Tomoki Uda", email = "tomoki.uda@gmail.com" }
