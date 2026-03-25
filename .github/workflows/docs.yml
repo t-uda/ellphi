@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - docs/mkdocs-web-reference
+      - ellphi-0.1.2
   pull_request:
 
 permissions:
