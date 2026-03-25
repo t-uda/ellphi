@@ -32,6 +32,9 @@ class EllipseCloud:
     def pdist_tangency(
         self, *, parallel: bool = True, n_jobs: int | None = -1, backend: str = "auto"
     ) -> FloatArray: ...
+    def distance_matrix(
+        self, *, parallel: bool = True, n_jobs: int | None = -1, backend: str = "auto"
+    ) -> FloatArray: ...
     @classmethod
     def from_point_cloud(
         cls,
@@ -40,6 +43,14 @@ class EllipseCloud:
         method: str = "local_cov",
         rescaling: str = "none",
         **kwgs: Any,
+    ) -> EllipseCloud: ...
+    @classmethod
+    def from_cov(
+        cls,
+        X: FloatArray,
+        cov: FloatArray,
+        *,
+        rescaling: str = "none",
     ) -> EllipseCloud: ...
     @classmethod
     def from_local_cov(cls, X: FloatArray, *, k: int = 5) -> EllipseCloud: ...

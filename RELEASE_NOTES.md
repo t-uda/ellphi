@@ -1,5 +1,16 @@
 ## Unreleased
 
+### Added
+
+- Added `EllipseCloud.from_cov(...)` as the official constructor for
+  precomputed centres/covariances, and `EllipseCloud.distance_matrix()` as a
+  square-matrix convenience wrapper around `pdist_tangency`.
+
+### Changed
+
+- `ellphi.visualization.ellipse_patch(...)` now preserves explicit
+  `facecolor` / `fc` arguments while keeping hollow ellipses as the default.
+
 ### CI
 
 - Added Windows wheel build workflow (`win_amd64`, Python 3.10–3.12).

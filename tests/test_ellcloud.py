@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import squareform
 
 from ellphi.ellcloud import EllipseCloud
 from ellphi.geometry import coef_from_axes, coef_from_cov
@@ -178,11 +179,70 @@ def test_plot_creates_axes_and_patches():
     plt.close(ax.figure)
 
 
+def test_from_cov_accepts_single_2d_sample():
+    center = np.array([1.0, 2.0])
+    cov = np.array([[2.0, 0.1], [0.1, 1.5]])
+
+    cloud = EllipseCloud.from_cov(center, cov)
+
+    assert cloud.k == 0
+    assert cloud.n == 1
+    assert cloud.nbd.shape == (1, 0)
+    np.testing.assert_allclose(cloud.mean, center[np.newaxis, :])
+    np.testing.assert_allclose(cloud.cov, cov[np.newaxis, :, :])
+    np.testing.assert_allclose(cloud.coef, coef_from_cov(center, cov))
+
+
+def test_from_cov_matches_manual_constructor_3d(rng):
+    expected = random_cloud(rng, n_ellipses=4, dim=3)
+
+    cloud = EllipseCloud.from_cov(expected.mean, expected.cov)
+
+    assert cloud.k == 0
+    assert cloud.nbd.shape == (expected.n, 0)
+    np.testing.assert_allclose(cloud.mean, expected.mean)
+    np.testing.assert_allclose(cloud.cov, expected.cov)
+    np.testing.assert_allclose(cloud.coef, expected.coef)
+
+
+@pytest.mark.parametrize("method", ["median", "average"])
+def test_from_cov_rescaling_matches_manual_rescale(rng, method):
+    original = random_cloud(rng, n_ellipses=5)
+    manual = EllipseCloud(
+        coef=original.coef.copy(),
+        mean=original.mean.copy(),
+        cov=original.cov.copy(),
+        k=0,
+        nbd=np.empty((original.n, 0), dtype=int),
+    )
+    manual.rescale(method=method)
+
+    cloud = EllipseCloud.from_cov(
+        original.mean.copy(),
+        original.cov.copy(),
+        rescaling=method,
+    )
+
+    np.testing.assert_allclose(cloud.mean, manual.mean)
+    np.testing.assert_allclose(cloud.cov, manual.cov)
+    np.testing.assert_allclose(cloud.coef, manual.coef)
+
+
 def test_pdist_tangency_wrapper_matches_solver(rng):
     cloud = random_cloud(rng, n_ellipses=4)
     wrapper = cloud.pdist_tangency(backend="python", parallel=False)
     direct = pdist_tangency(cloud, backend="python", parallel=False)
     np.testing.assert_allclose(wrapper, direct)
+
+
+def test_distance_matrix_matches_squareform(rng):
+    cloud = random_cloud(rng, n_ellipses=4)
+
+    matrix = cloud.distance_matrix(backend="python", parallel=False)
+    expected = squareform(cloud.pdist_tangency(backend="python", parallel=False))
+
+    assert matrix.shape == (cloud.n, cloud.n)
+    np.testing.assert_allclose(matrix, expected)
 
 
 def test_str_method():

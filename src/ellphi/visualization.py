@@ -39,12 +39,13 @@ def ellipse_patch(X, r_major=1, r_minor=1, theta=0, *, cov=None, scale=1, **kwgs
     """
     if cov is not None:
         r_major, r_minor, theta = axes_from_cov(cov)
+    if "facecolor" not in kwgs and "fc" not in kwgs:
+        kwgs["facecolor"] = "none"
     ellipse = plt.matplotlib.patches.Ellipse(
         X,
         width=2 * r_major * scale,
         height=2 * r_minor * scale,
         angle=numpy.degrees(theta),
-        facecolor="none",
         **kwgs,
     )
     return ellipse
