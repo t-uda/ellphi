@@ -39,7 +39,8 @@ def _numerical_jacobian_cov(centers, covs, scale, h=1e-6):
 
     Perturbs each entry of the symmetric covariance matrix while maintaining
     symmetry. For the symmetric parameterization, we perturb both (j,k) and
-    (k,j) together and assign the derivative to both entries.
+    (k,j) together and split the off-diagonal derivative evenly across the
+    returned matrix entries.
     """
     n, d = centers.shape
     coefs0 = coef_from_cov(centers, covs, scale=scale)
@@ -50,15 +51,20 @@ def _numerical_jacobian_cov(centers, covs, scale, h=1e-6):
             for k in range(j, d):
                 cov_plus = covs.copy()
                 cov_plus[i, j, k] += h
-                cov_plus[i, k, j] += h  # keep symmetric (no-op when j==k)
+                if j != k:
+                    cov_plus[i, k, j] += h
                 cov_minus = covs.copy()
                 cov_minus[i, j, k] -= h
-                cov_minus[i, k, j] -= h
+                if j != k:
+                    cov_minus[i, k, j] -= h
                 c_plus = coef_from_cov(centers, cov_plus, scale=scale)
                 c_minus = coef_from_cov(centers, cov_minus, scale=scale)
                 deriv = (c_plus - c_minus) / (2 * h)
-                jac[:, :, i, j, k] = deriv
-                jac[:, :, i, k, j] = deriv
+                if j == k:
+                    jac[:, :, i, j, k] = deriv
+                else:
+                    jac[:, :, i, j, k] = 0.5 * deriv
+                    jac[:, :, i, k, j] = 0.5 * deriv
     return jac
 
 
@@ -84,13 +90,10 @@ def _check_vjp_against_fd(centers, covs, scale, rng):
     np.testing.assert_allclose(grad_X, expected_grad_X, rtol=1e-5, atol=1e-8)
 
     # --- Check grad_cov via FD ---
-    # The FD perturbs both (j,k) and (k,j) together (symmetric perturbation),
-    # so the FD derivative is grad_cov[j,k] + grad_cov[k,j]. We symmetrize
-    # our VJP output before comparing.
+    np.testing.assert_allclose(grad_cov, np.swapaxes(grad_cov, -2, -1), atol=1e-12)
     jac_cov = _numerical_jacobian_cov(centers, covs, scale)
     expected_grad_cov = np.einsum("ab,abijk->ijk", g_coefs, jac_cov)
-    grad_cov_sym = grad_cov + np.swapaxes(grad_cov, -2, -1)
-    np.testing.assert_allclose(grad_cov_sym, expected_grad_cov, rtol=1e-5, atol=1e-8)
+    np.testing.assert_allclose(grad_cov, expected_grad_cov, rtol=1e-5, atol=1e-8)
 
 
 # ---------------------------------------------------------------------------

@@ -27,8 +27,19 @@
 #endif
 #endif
 
-extern "C" const char* tangency_backend_version() { return TANGENCY_VERSION; }
-extern "C" const char* tangency_linalg_kind() { return TANGENCY_LINALG_KIND; }
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define ELLPHI_EXPORT __declspec(dllexport)
+#else
+#define ELLPHI_EXPORT
+#endif
+
+ELLPHI_EXPORT extern "C" const char* tangency_backend_version() {
+    return TANGENCY_VERSION;
+}
+
+ELLPHI_EXPORT extern "C" const char* tangency_linalg_kind() {
+    return TANGENCY_LINALG_KIND;
+}
 
 namespace {
 
@@ -1099,12 +1110,6 @@ void copy_error(char* buffer, std::size_t size, const std::string& message) {
 }
 
 }  // namespace
-
-#if defined(_WIN32) || defined(__CYGWIN__)
-#define ELLPHI_EXPORT __declspec(dllexport)
-#else
-#define ELLPHI_EXPORT
-#endif
 
 ELLPHI_EXPORT extern "C" int tangency_solve(
     const double* pcoef,
