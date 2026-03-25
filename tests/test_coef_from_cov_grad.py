@@ -90,9 +90,7 @@ def _check_vjp_against_fd(centers, covs, scale, rng):
     np.testing.assert_allclose(grad_X, expected_grad_X, rtol=1e-5, atol=1e-8)
 
     # --- Check grad_cov via FD ---
-    np.testing.assert_allclose(
-        grad_cov, np.swapaxes(grad_cov, -2, -1), atol=1e-12
-    )
+    np.testing.assert_allclose(grad_cov, np.swapaxes(grad_cov, -2, -1), atol=1e-12)
     jac_cov = _numerical_jacobian_cov(centers, covs, scale)
     expected_grad_cov = np.einsum("ab,abijk->ijk", g_coefs, jac_cov)
     np.testing.assert_allclose(grad_cov, expected_grad_cov, rtol=1e-5, atol=1e-8)
