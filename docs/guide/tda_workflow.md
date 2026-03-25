@@ -43,11 +43,10 @@ pd.histogram(1).plot()          # H₁ barcode
 ### Persistence diagram with Ripser
 
 ```python
-from scipy.spatial.distance import squareform
 from ripser import ripser
 from persim import plot_diagrams
 
-D = squareform(dists)
+D = cloud.distance_matrix()
 result = ripser(D, metric="precomputed", maxdim=1)
 plot_diagrams(result["dgms"])
 ```

@@ -9,4 +9,11 @@ from ellphi import ellipse_cloud
 cloud = ellipse_cloud(X, k=5)
 ```
 
+When centres and covariance matrices are already available, prefer the direct
+constructor:
+
+```python
+cloud = EllipseCloud.from_cov(centers, covs)
+```
+
 ::: ellphi.ellcloud

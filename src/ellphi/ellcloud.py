@@ -179,6 +179,39 @@ class EllipseCloud:
             backend=backend,
         )
 
+    def distance_matrix(
+        self,
+        *,
+        parallel: bool = True,
+        n_jobs: int | None = -1,
+        backend: str = "auto",
+    ) -> numpy.ndarray:
+        """Computes the square pairwise tangency distance matrix.
+
+        This is a convenience wrapper around `pdist_tangency` that returns the
+        full square matrix using the same layout as
+        `scipy.spatial.distance.squareform`.
+
+        Args:
+            parallel: If `True`, the computation is performed in parallel.
+            n_jobs: The number of jobs to run in parallel. See
+                `ellphi.solver.pdist_tangency` for more details.
+            backend: The backend to use for the computation. Can be one of
+                "auto", "python", or "cpp".
+
+        Returns:
+            A square matrix of tangency distances with shape `(n, n)`.
+        """
+        if self.n == 0:
+            return numpy.empty((0, 0), dtype=float)
+        return squareform(
+            self.pdist_tangency(
+                parallel=parallel,
+                n_jobs=n_jobs,
+                backend=backend,
+            )
+        )
+
     @classmethod
     def from_point_cloud(
         cls: type[EllipseCloud],
@@ -213,6 +246,47 @@ class EllipseCloud:
             raise NotImplementedError(
                 f"Unknown method '{method}':\n" + "The supported method is 'local_cov'."
             )
+        if rescaling != "none":
+            ellcloud.rescale(method=rescaling)
+        return ellcloud
+
+    @classmethod
+    def from_cov(
+        cls: type[EllipseCloud],
+        X: numpy.ndarray,
+        cov: numpy.ndarray,
+        *,
+        rescaling: str = "none",
+    ) -> EllipseCloud:
+        """Creates an `EllipseCloud` from centers and covariance matrices.
+
+        This class method is the recommended entry point when ellipsoid
+        covariances are already known and no k-nearest-neighbour structure is
+        involved.
+
+        Args:
+            X: An array of centers with shape `(n, d)` or a single center with
+                shape `(d,)`.
+            cov: An array of covariance matrices with shape `(n, d, d)` or a
+                single covariance matrix with shape `(d, d)`.
+            rescaling: The method to use for rescaling the ellipses. Can be
+                one of "none", "median", or "average".
+
+        Returns:
+            An `EllipseCloud` object created from the provided centers and
+            covariances.
+        """
+        centers = numpy.array(X, dtype=float, copy=True)
+        covariances = numpy.array(cov, dtype=float, copy=True)
+
+        if centers.ndim == 1:
+            centers = centers[numpy.newaxis, :]
+        if covariances.ndim == 2:
+            covariances = covariances[numpy.newaxis, :, :]
+
+        coefs = coef_from_cov(centers, covariances)
+        nbd = numpy.empty((centers.shape[0], 0), dtype=int)
+        ellcloud = cls(coefs, centers, covariances, k=0, nbd=nbd)
         if rescaling != "none":
             ellcloud.rescale(method=rescaling)
         return ellcloud

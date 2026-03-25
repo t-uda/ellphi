@@ -41,8 +41,7 @@ print(dists.shape)               # (N*(N-1)//2,)
 Convert to a square matrix when needed:
 
 ```python
-from scipy.spatial.distance import squareform
-D = squareform(dists)
+D = cloud.distance_matrix()
 ```
 
 ## Visualise
