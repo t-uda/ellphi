@@ -2,45 +2,47 @@
 
 ### Added
 
-- Added `EllipseCloud.from_cov(...)` as the official constructor for
+- Added the new `ellphi.grad` API for differentiable workflows:
+  `tangency_grad(...)` for single-pair gradients,
+  `pdist_tangency_grad(...)` for condensed pairwise distances plus a VJP
+  pullback, and `coef_from_cov_grad(...)` for differentiable conversion from
+  centres/covariances to packed conic coefficients.
+- Added C++ backend build metadata helpers:
+  `ellphi.build_info()`, `ellphi.cpp_linalg_kind()`, and
+  `ellphi --build-info` / `python -m ellphi --build-info`.
+- Added `EllipseCloud.from_cov(...)` for constructing clouds directly from
   precomputed centres/covariances, and `EllipseCloud.distance_matrix()` as a
   square-matrix convenience wrapper around `pdist_tangency`.
 
 ### Changed
 
+- Source builds can now opt into an Eigen-based C++ linear-algebra backend via
+  `ELLPHI_USE_EIGEN=1` (with `ELLPHI_EIGEN_INCLUDE` when needed). Build
+  metadata now records the linear-algebra implementation and embedded backend
+  version.
+
+### Fixed
+
 - `ellphi.visualization.ellipse_patch(...)` now preserves explicit
   `facecolor` / `fc` arguments while keeping hollow ellipses as the default.
-
-### CI
-
-- Added Windows wheel build workflow (`win_amd64`, Python 3.10–3.12).
-- Added release workflow for PyPI publishing via Trusted Publishing.
-- Added Python 3.12 to the CI test matrix.
+- `coef_from_cov_grad(...)` now validates batch and dimensionality mismatches
+  consistently and returns `NaN` outputs for singular covariances in line with
+  `coef_from_cov(...)`.
+- The C++ backend build cache is now invalidated when switching between the
+  internal and Eigen linear-algebra modes, preventing stale extension reuse.
 
 ### Documentation
 
-- Expanded MkDocs site: added Notebook Examples page to User Guide, listing
-  all six notebooks grouped by theme with links to the GitHub viewer and a
-  note on the planned migration to an interactive Marimo-based repository.
-- Added EllPHi logo to the navbar, favicon, and index page; root
-  `ellphi-logo.png` replaced with a transparency-processed version for
-  clean rendering in GitHub dark mode.
-- Unified mathematical vector notation throughout the docs: vectors now use
-  `\bm{·}` (bold-italic via `\boldsymbol`), matrices use plain capitals,
-  scalars use plain italic.  `\bm` is defined as a MathJax macro in
-  `docs/javascripts/mathjax.js`.
-- Fixed markdown and MathJax formatting in Design Notes: resolved multi-line
-  inline-math parsing failures in `algebraic_sigmoid_newton.md`, converted
-  Unicode math notation in `hybrid_tuning.md` to LaTeX, and replaced a
-  heredoc split across bullet points with a proper code block in
-  `eigen_backend_plan.md`.
-- Applied English proofreading corrections across User Guide pages
-  (terminology, punctuation, British spelling, precision of mathematical
-  prose).
-- Introduced `CLAUDE.md` for Claude Code-specific guidelines (subagent
-  permissions, orchestration style); added documentation conventions
-  (build workflow, notation, English style) to `CONTRIBUTING.md` and
-  `AGENTS.md`.
+- Added a MkDocs documentation site with Getting Started, TDA workflow,
+  differentiable tangency guide, API reference pages, and a notebook index
+  that now includes a topology-optimisation example.
+
+### Packaging
+
+- Added Windows wheel build support (`win_amd64`, Python 3.10-3.12).
+- Added release automation for TestPyPI/PyPI publishing via Trusted
+  Publishing.
+- Added Python 3.12 to the CI test matrix.
 
 ## 0.1.1 - 2025-12-14
 
