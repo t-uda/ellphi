@@ -61,6 +61,10 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     env:
       ELLPHI_USE_EIGEN: "1"
       ELLPHI_EIGEN_INCLUDE: "/usr/include/eigen3"
@@ -70,7 +74,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.12"
+        python-version: ${{ matrix.python-version }}
 
     - name: Install Eigen headers
       run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
@@ -84,7 +88,7 @@ jobs:
     - name: Upload wheel
       uses: actions/upload-artifact@v4
       with:
-        name: dist-linux
+        name: dist-linux-py${{ matrix.python-version }}
         path: dist/*.whl
 
   build-windows:

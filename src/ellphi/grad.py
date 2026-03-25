@@ -248,6 +248,11 @@ def coef_from_cov_grad(
         # dL/dA[i,j] += grad_c * center[i] * center[j]
         grad_A += grad_c[:, None, None] * np.einsum("ni,nj->nij", centers, centers)
 
+        # A is parameterized by symmetric covariances, so project the
+        # unconstrained matrix gradient back onto the symmetric subspace before
+        # exposing grad_cov or differentiating through inv(cov).
+        grad_A = 0.5 * (grad_A + np.swapaxes(grad_A, -2, -1))
+
         # --- grad w.r.t. centers ---
         # From b = -A @ center: grad_center += -A^T @ grad_b
         grad_centers = -np.einsum("nji,nj->ni", A, grad_b)
@@ -260,13 +265,11 @@ def coef_from_cov_grad(
         # dA = -inv(cov) @ dCov @ inv(cov) / s^2
         # <grad_A, dA> = tr(grad_A^T (-inv(cov) dCov inv(cov) / s^2))
         #              = -1/s^2 * tr(inv(cov)^T grad_A^T inv(cov)^T dCov)
-        # Since inv(cov) is symmetric:
-        #   grad_cov = -inv(cov) @ grad_A^T @ inv(cov) / s^2
-        #            = -s^2 A @ grad_A^T @ s^2 A / s^2
-        #            = -s^2 * A @ grad_A^T @ A
-        # A @ grad_A^T @ A: note grad_A^T[i,j] = grad_A[j,i]
-        grad_A_T = np.swapaxes(grad_A, -2, -1)
-        grad_cov = -s2 * np.einsum("nij,njk,nkl->nil", A, grad_A_T, A)
+        # Since inv(cov) and grad_A are symmetric:
+        #   grad_cov = -inv(cov) @ grad_A @ inv(cov) / s^2
+        #            = -s^2 A @ grad_A @ s^2 A / s^2
+        #            = -s^2 * A @ grad_A @ A
+        grad_cov = -s2 * np.einsum("nij,njk,nkl->nil", A, grad_A, A)
 
         return grad_centers, grad_cov
 
