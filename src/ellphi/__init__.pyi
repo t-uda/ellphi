@@ -15,12 +15,21 @@ from .geometry import (
     unit_vector as unit_vector,
 )
 from .solver import (
+    BuildInfo as BuildInfo,
     TangencyResult as TangencyResult,
+    cpp_linalg_kind as cpp_linalg_kind,
+    build_info as build_info,
     has_cpp_backend as has_cpp_backend,
     pdist_tangency as pdist_tangency,
     pencil as pencil,
     quad_eval as quad_eval,
     tangency as tangency,
+)
+from .grad import (
+    TangencyGrad as TangencyGrad,
+    tangency_grad as tangency_grad,
+    pdist_tangency_grad as pdist_tangency_grad,
+    coef_from_cov_grad as coef_from_cov_grad,
 )
 from ._version import __version__ as __version__
 
@@ -41,6 +50,13 @@ __all__ = [
     "pdist_tangency",
     "TangencyResult",
     "has_cpp_backend",
+    "cpp_linalg_kind",
+    "BuildInfo",
+    "build_info",
+    "TangencyGrad",
+    "tangency_grad",
+    "pdist_tangency_grad",
+    "coef_from_cov_grad",
     "FloatArray",
     "__version__",
     "version_info",

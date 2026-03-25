@@ -18,6 +18,13 @@ poetry install
 
 This command installs all Python dependencies and also compiles the C++ backend for the tangency solver. If the C++ code (`src/ellphi/_tangency_cpp_impl.cpp`) is modified, the backend will be automatically rebuilt the next time you run `poetry install`.
 
+Optional Eigen build (C++ linear algebra):
+- Install Eigen headers (Ubuntu: `apt-get install libeigen3-dev`, macOS: `brew install eigen`).
+- Rebuild with `ELLPHI_USE_EIGEN=1` and `ELLPHI_EIGEN_INCLUDE` set to the Eigen include path.
+  - Linux default: `/usr/include/eigen3`
+  - macOS default: `/opt/homebrew/include/eigen3` (Apple Silicon) or `/usr/local/include/eigen3` (Intel)
+- Verify with `python -m ellphi --build-info` and check `cpp_linalg_kind`.
+
 ### A Note on Managing Dependencies
 
 If you need to add, remove, or update dependencies in `pyproject.toml`, you must also update the `poetry.lock` file to reflect these changes. After modifying `pyproject.toml`, run the following command:
@@ -98,3 +105,15 @@ Before requesting review or handing work back to the user:
 *   **Coding Style:** All Python code should adhere to the [PEP 8 style guide](https://peps.python.org/pep-0008/).
 *   **Docstrings:** Docstrings must be written in **English**. They can include simple mathematical expressions where appropriate.
 *   **Comments:** Code comments should be short and simple. Do not add verbose trivial comments.
+
+## Documentation-only Tasks
+
+Docs-only changes (files under `docs/`, `mkdocs.yml`, `docs/javascripts/`)
+do **not** require the full Python CI checklist (black/flake8/mypy/pytest).
+Instead, run:
+
+```bash
+poetry run mkdocs build
+```
+
+and confirm it exits without errors before committing.

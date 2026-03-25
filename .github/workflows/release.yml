@@ -1,0 +1,163 @@
+# Release workflow — publishes to PyPI or TestPyPI based on tag name.
+#
+# Routing:
+#   v*.dev*  → TestPyPI (publish-testpypi job)
+#   v*.*.*   → PyPI     (publish-pypi job)
+#
+# Prerequisites (one-time setup):
+#
+# 1. GitHub Environments (Settings → Environments):
+#    - "pypi"     — Deployment tags: v[0-9]*.[0-9]*.[0-9]*
+#                    and v[0-9]*.[0-9]*.[0-9]*.post[0-9]*
+#                    Optional: add Required reviewers for release approval.
+#    - "testpypi" — Deployment tags: v* (allow all)
+#
+# 2. PyPI Trusted Publishing (pypi.org → ellphi → Publishing):
+#    Owner: t-uda, Repository: ellphi,
+#    Workflow: release.yml, Environment: pypi
+#
+# 3. TestPyPI Trusted Publishing (test.pypi.org → ellphi → Publishing):
+#    Owner: t-uda, Repository: ellphi,
+#    Workflow: release.yml, Environment: testpypi
+#
+# Tag examples:
+#   v0.1.2       → PyPI
+#   v0.1.2.post1 → PyPI
+#   v0.1.2.dev1  → TestPyPI
+#   v0.1.2a1     → blocked by "pypi" environment tag rule → manual decision
+#   v0.1.2rc1    → blocked by "pypi" environment tag rule → manual decision
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build sdist
+      run: poetry build -f sdist
+
+    - name: Upload sdist
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-sdist
+        path: dist/*.tar.gz
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    env:
+      ELLPHI_USE_EIGEN: "1"
+      ELLPHI_EIGEN_INCLUDE: "/usr/include/eigen3"
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Eigen headers
+      run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build wheel
+      run: poetry build -f wheel
+
+    - name: Upload wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-linux-py${{ matrix.python-version }}
+        path: dist/*.whl
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      run: pip install --upgrade poetry
+
+    - name: Build wheel
+      run: poetry build -f wheel
+
+    - name: Upload wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-windows-py${{ matrix.python-version }}
+        path: dist/*.whl
+
+  publish-testpypi:
+    if: contains(github.ref_name, 'dev')
+    needs: [build-sdist, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: List distribution files
+      run: ls -la dist/
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        packages-dir: dist/
+
+  publish-pypi:
+    if: ${{ !contains(github.ref_name, 'dev') }}
+    needs: [build-sdist, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: List distribution files
+      run: ls -la dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist/

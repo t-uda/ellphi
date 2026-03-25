@@ -1,6 +1,7 @@
 """Tests for the ellphi visualization module."""
 
 import numpy as np
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Ellipse
 from ellphi.visualization import ellipse_patch
 
@@ -38,3 +39,18 @@ def test_ellipse_patch_direct_params():
     assert np.isclose(patch.width, 2 * r_major)
     assert np.isclose(patch.height, 2 * r_minor)
     assert np.isclose(patch.angle, np.degrees(theta))
+    assert np.allclose(patch.get_facecolor(), to_rgba("none"))
+
+
+def test_ellipse_patch_respects_explicit_facecolor():
+    """Explicit facecolor/fill arguments should not be overridden."""
+    patch = ellipse_patch(
+        [0.0, 0.0],
+        r_major=1.5,
+        r_minor=0.5,
+        theta=0.0,
+        facecolor="steelblue",
+        alpha=0.4,
+    )
+
+    assert np.allclose(patch.get_facecolor(), to_rgba("steelblue", alpha=0.4))

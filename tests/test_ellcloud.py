@@ -1,8 +1,13 @@
 import numpy as np
 import pytest
+import matplotlib.pyplot as plt
+from scipy.spatial.distance import squareform
 
 from ellphi.ellcloud import EllipseCloud
-from ellphi.geometry import coef_from_cov
+from ellphi.geometry import coef_from_axes, coef_from_cov
+from ellphi.solver import pdist_tangency
+
+from .factories import random_cloud
 
 
 def test_local_cov_uses_actual_neighbourhood_size():
@@ -94,6 +99,179 @@ def test_post_init_value_errors():
         EllipseCloud(coef, mean, np.zeros((2, 3, 3)), 2, nbd)
     with pytest.raises(ValueError):
         EllipseCloud(coef, mean, cov, 2, np.zeros((3, 2)))
+
+
+def test_post_init_validates_mean_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((3, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    with pytest.raises(ValueError, match="Mean array has shape"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_post_init_validates_cov_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.zeros((2, 3, 3))
+    nbd = np.zeros((2, 0), dtype=int)
+    with pytest.raises(ValueError, match="Covariance array has shape"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_post_init_validates_neighbourhood_shape():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((3, 1), dtype=int)
+    with pytest.raises(ValueError, match="Neighbourhood index array"):
+        EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+
+
+def test_iter_returns_coefficients():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.zeros((2, 2))
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    cloud = EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+    first = next(iter(cloud))
+    np.testing.assert_allclose(first, coef[0])
+
+
+def test_plot_creates_axes_and_patches():
+    coef = np.stack(
+        [
+            coef_from_axes([0.0, 0.0], 1.0, 1.0, 0.0),
+            coef_from_axes([1.0, 0.5], 1.5, 1.2, 0.3),
+        ],
+        axis=0,
+    )
+    mean = np.array([[0.0, 0.0], [1.0, 0.5]])
+    cov = np.stack([np.eye(2), np.eye(2)], axis=0)
+    nbd = np.zeros((2, 0), dtype=int)
+    cloud = EllipseCloud(coef, mean, cov, k=0, nbd=nbd)
+    ax = cloud.plot()
+    assert len(ax.patches) == 2
+    plt.close(ax.figure)
+
+
+def test_from_cov_accepts_single_2d_sample():
+    center = np.array([1.0, 2.0])
+    cov = np.array([[2.0, 0.1], [0.1, 1.5]])
+
+    cloud = EllipseCloud.from_cov(center, cov)
+
+    assert cloud.k == 0
+    assert cloud.n == 1
+    assert cloud.nbd.shape == (1, 0)
+    np.testing.assert_allclose(cloud.mean, center[np.newaxis, :])
+    np.testing.assert_allclose(cloud.cov, cov[np.newaxis, :, :])
+    np.testing.assert_allclose(cloud.coef, coef_from_cov(center, cov))
+
+
+def test_from_cov_matches_manual_constructor_3d(rng):
+    expected = random_cloud(rng, n_ellipses=4, dim=3)
+
+    cloud = EllipseCloud.from_cov(expected.mean, expected.cov)
+
+    assert cloud.k == 0
+    assert cloud.nbd.shape == (expected.n, 0)
+    np.testing.assert_allclose(cloud.mean, expected.mean)
+    np.testing.assert_allclose(cloud.cov, expected.cov)
+    np.testing.assert_allclose(cloud.coef, expected.coef)
+
+
+@pytest.mark.parametrize("method", ["median", "average"])
+def test_from_cov_rescaling_matches_manual_rescale(rng, method):
+    original = random_cloud(rng, n_ellipses=5)
+    manual = EllipseCloud(
+        coef=original.coef.copy(),
+        mean=original.mean.copy(),
+        cov=original.cov.copy(),
+        k=0,
+        nbd=np.empty((original.n, 0), dtype=int),
+    )
+    manual.rescale(method=method)
+
+    cloud = EllipseCloud.from_cov(
+        original.mean.copy(),
+        original.cov.copy(),
+        rescaling=method,
+    )
+
+    np.testing.assert_allclose(cloud.mean, manual.mean)
+    np.testing.assert_allclose(cloud.cov, manual.cov)
+    np.testing.assert_allclose(cloud.coef, manual.coef)
+
+
+def test_pdist_tangency_wrapper_matches_solver(rng):
+    cloud = random_cloud(rng, n_ellipses=4)
+    wrapper = cloud.pdist_tangency(backend="python", parallel=False)
+    direct = pdist_tangency(cloud, backend="python", parallel=False)
+    np.testing.assert_allclose(wrapper, direct)
+
+
+def test_distance_matrix_matches_squareform(rng):
+    cloud = random_cloud(rng, n_ellipses=4)
+
+    matrix = cloud.distance_matrix(backend="python", parallel=False)
+    expected = squareform(cloud.pdist_tangency(backend="python", parallel=False))
+
+    assert matrix.shape == (cloud.n, cloud.n)
+    np.testing.assert_allclose(matrix, expected)
+
+
+def test_distance_matrix_empty_cloud_returns_empty_square():
+    cloud = EllipseCloud(
+        coef=np.empty((0, 6), dtype=float),
+        mean=np.empty((0, 2), dtype=float),
+        cov=np.empty((0, 2, 2), dtype=float),
+        k=0,
+        nbd=np.empty((0, 0), dtype=int),
+    )
+
+    matrix = cloud.distance_matrix()
+
+    assert matrix.shape == (0, 0)
+
+
+def test_from_cov_rescaling_does_not_mutate_inputs(rng):
+    original = random_cloud(rng, n_ellipses=5)
+    means = original.mean.copy()
+    covs = original.cov.copy()
+    means_before = means.copy()
+    covs_before = covs.copy()
+
+    cloud = EllipseCloud.from_cov(means, covs, rescaling="median")
+
+    np.testing.assert_allclose(means, means_before)
+    np.testing.assert_allclose(covs, covs_before)
+    assert not np.shares_memory(cloud.mean, means)
+    assert not np.shares_memory(cloud.cov, covs)
 
 
 def test_str_method():

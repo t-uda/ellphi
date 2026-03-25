@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import re
+import shlex
 import sys
 import sysconfig
 from pathlib import Path
@@ -17,6 +19,23 @@ except ModuleNotFoundError as exc:  # pragma: no cover - helpful guidance for us
     raise RuntimeError("setuptools is required to build the C++ backend. ") from exc
 
 _LIB_NAME = "_tangency_cpp_impl"
+
+
+def _use_eigen() -> bool:
+    value = os.getenv("ELLPHI_USE_EIGEN", "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _eigen_include_dirs() -> list[str]:
+    raw = os.getenv("ELLPHI_EIGEN_INCLUDE", "")
+    if raw:
+        return shlex.split(raw)
+    candidates = [
+        "/usr/include/eigen3",
+        "/usr/local/include/eigen3",
+        "/opt/homebrew/include/eigen3",
+    ]
+    return [path for path in candidates if Path(path).exists()]
 
 
 def _library_suffix() -> str:
@@ -88,6 +107,24 @@ def _existing_library_version(path: Path) -> str | None:
     return value.decode("utf-8", errors="replace")
 
 
+def _existing_library_linalg_kind(path: Path) -> str | None:
+    try:
+        lib = ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+    try:
+        func = lib.tangency_linalg_kind
+    except AttributeError:
+        return None
+
+    func.restype = ctypes.c_char_p
+    value = func()
+    if not value:
+        return None
+    return value.decode("utf-8", errors="replace")
+
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -95,11 +132,24 @@ def _ensure_parent(path: Path) -> None:
 class _TangencyExtension(Extension):
     def __init__(self) -> None:
         version = _project_version()
+        define_macros = [("TANGENCY_VERSION", f'"{version}"')]
+        extra_link_args: list[str] = []
+        include_dirs: list[str] = []
+        if _use_eigen():
+            define_macros.append(("ELLPHI_USE_EIGEN", "1"))
+            include_dirs = _eigen_include_dirs()
+            if not include_dirs:
+                raise RuntimeError(
+                    "ELLPHI_USE_EIGEN is set but no Eigen include path was found. "
+                    "Set ELLPHI_EIGEN_INCLUDE to the Eigen headers."
+                )
         super().__init__(
             name=_LIB_NAME,
             sources=[str(_source_path())],
             language="c++",
-            define_macros=[("TANGENCY_VERSION", f'"{version}"')],
+            define_macros=define_macros,
+            extra_link_args=extra_link_args,
+            include_dirs=include_dirs,
         )
 
 
@@ -121,6 +171,10 @@ class _BuildTangency(build_ext):
         ctype = compiler.compiler_type
         compile_opts = list(self.c_opts.get(ctype, []))
         link_opts = list(self.l_opts.get(ctype, []))
+        if getattr(ext, "extra_compile_args", None):
+            compile_opts.extend(ext.extra_compile_args)
+        if getattr(ext, "extra_link_args", None):
+            link_opts.extend(ext.extra_link_args)
 
         objects = compiler.compile(
             ext.sources,  # type: ignore[arg-type]
@@ -160,10 +214,13 @@ def build() -> Path:
         raise FileNotFoundError(f"C++ source not found: {source}")
 
     existing_version = _existing_library_version(output)
+    expected_kind = "eigen" if _use_eigen() else "internal"
+    existing_kind = _existing_library_linalg_kind(output)
     if (
         output.exists()
         and output.stat().st_mtime >= source.stat().st_mtime
         and existing_version == project_version
+        and existing_kind == expected_kind
     ):
         return output
 

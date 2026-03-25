@@ -17,23 +17,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
+    env:
+      ELLPHI_USE_EIGEN: "1"
+      ELLPHI_EIGEN_INCLUDE: "/usr/include/eigen3"
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: "pip"
+
+    - name: Install Eigen headers
+      run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
     # -- Poetry ------------------------------------------------------
     - name: Install Poetry
       run: pip install --upgrade poetry
 
     - name: Cache Poetry env
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pypoetry
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
@@ -60,20 +66,26 @@ jobs:
   # 3.11 限定で mypy
   typecheck:
     runs-on: ubuntu-latest
+    env:
+      ELLPHI_USE_EIGEN: "1"
+      ELLPHI_EIGEN_INCLUDE: "/usr/include/eigen3"
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: "pip"
+
+    - name: Install Eigen headers
+      run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
     - name: Install Poetry
       run: pip install --upgrade poetry
 
     - name: Cache Poetry env
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pypoetry
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
@@ -89,14 +101,20 @@ jobs:
 
   package-test:
     runs-on: ubuntu-latest
+    env:
+      ELLPHI_USE_EIGEN: "1"
+      ELLPHI_EIGEN_INCLUDE: "/usr/include/eigen3"
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: "pip"
+
+    - name: Install Eigen headers
+      run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
     - name: Install Poetry
       run: pip install --upgrade poetry
@@ -139,13 +157,13 @@ jobs:
         cd test_run
         pytest ../tests
 
-  build-docs:
+  demo-install:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: "pip"
@@ -154,14 +172,10 @@ jobs:
       run: pip install --upgrade poetry
 
     - name: Cache Poetry env
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pypoetry
         key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
 
     - name: Install project (demo extras)
-      run: poetry install --with demo # Install core and demo dependencies
-
-    # Add steps for building documentation here, e.g., mkdocs build or sphinx build
-    # - name: Build documentation
-    #   run: poetry run mkdocs build
+      run: poetry install --with demo # Ensure the demo dependency set resolves

@@ -29,15 +29,23 @@ def ellipse_patch(X, r_major=1, r_minor=1, theta=0, *, cov=None, scale=1, **kwgs
 
     Returns:
         A `matplotlib.patches.Ellipse` object.
+
+    Examples:
+        >>> import matplotlib.pyplot as plt
+        >>> from ellphi.visualization import ellipse_patch
+        >>> patch = ellipse_patch([0, 0], r_major=2.0, r_minor=1.0, theta=0.0)
+        >>> type(patch).__name__
+        'Ellipse'
     """
     if cov is not None:
         r_major, r_minor, theta = axes_from_cov(cov)
+    if "facecolor" not in kwgs and "fc" not in kwgs:
+        kwgs["facecolor"] = "none"
     ellipse = plt.matplotlib.patches.Ellipse(
         X,
         width=2 * r_major * scale,
         height=2 * r_minor * scale,
         angle=numpy.degrees(theta),
-        facecolor="none",
         **kwgs,
     )
     return ellipse

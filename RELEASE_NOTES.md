@@ -1,3 +1,49 @@
+## 0.1.2 - 2026-03-25
+
+### Added
+
+- Added the new `ellphi.grad` API for differentiable workflows:
+  `tangency_grad(...)` for single-pair gradients,
+  `pdist_tangency_grad(...)` for condensed pairwise distances plus a VJP
+  pullback, and `coef_from_cov_grad(...)` for differentiable conversion from
+  centres/covariances to packed conic coefficients.
+- Added C++ backend build metadata helpers:
+  `ellphi.build_info()`, `ellphi.cpp_linalg_kind()`, and
+  `ellphi --build-info` / `python -m ellphi --build-info`.
+- Added `EllipseCloud.from_cov(...)` for constructing clouds directly from
+  precomputed centres/covariances, and `EllipseCloud.distance_matrix()` as a
+  square-matrix convenience wrapper around `pdist_tangency`.
+
+### Changed
+
+- Source builds can now opt into an Eigen-based C++ linear-algebra backend via
+  `ELLPHI_USE_EIGEN=1` (with `ELLPHI_EIGEN_INCLUDE` when needed). Build
+  metadata now records the linear-algebra implementation and embedded backend
+  version.
+
+### Fixed
+
+- `ellphi.visualization.ellipse_patch(...)` now preserves explicit
+  `facecolor` / `fc` arguments while keeping hollow ellipses as the default.
+- `coef_from_cov_grad(...)` now validates batch and dimensionality mismatches
+  consistently and returns `NaN` outputs for singular covariances in line with
+  `coef_from_cov(...)`.
+- The C++ backend build cache is now invalidated when switching between the
+  internal and Eigen linear-algebra modes, preventing stale extension reuse.
+
+### Documentation
+
+- Added a MkDocs documentation site with Getting Started, TDA workflow,
+  differentiable tangency guide, API reference pages, and a notebook index
+  that now includes a topology-optimisation example.
+
+### Packaging
+
+- Added Windows wheel build support (`win_amd64`, Python 3.10-3.12).
+- Added release automation for TestPyPI/PyPI publishing via Trusted
+  Publishing.
+- Added Python 3.12 to the CI test matrix.
+
 ## 0.1.1 - 2025-12-14
 
 ### Added

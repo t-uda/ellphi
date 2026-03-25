@@ -28,6 +28,25 @@ To install with demo dependencies for notebooks and examples:
 pip install ellphi[demo]
 ```
 
+## Optional Eigen build (from source)
+
+If you build from source (for example, with `poetry install`), you can enable
+the C++ linear algebra implementation based on Eigen.
+
+Install Eigen headers:
+
+- Ubuntu: `apt-get install libeigen3-dev`
+- macOS (Homebrew): `brew install eigen`
+
+Then build with:
+
+```bash
+ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 poetry install
+```
+
+On macOS, use `/opt/homebrew/include/eigen3` (Apple Silicon) or
+`/usr/local/include/eigen3` (Intel).
+
 ## Supported Python Versions
 
 Python 3.10 or later.
@@ -98,9 +117,19 @@ From the shell:
 python -m ellphi --version
 ```
 
+Build info (including the C++ linear algebra choice):
+
+```bash
+python -m ellphi --build-info
+```
+
 ## Contributing
 
 Interested in contributing? We welcome pull requests!
+
+Please read `CONTRIBUTING.md` for the branching/versioning flow and
+`AGENTS.md` (plus `.github/workflows/python-app.yml`) for the required local
+checks before opening a PR.
 
 To get started with development, clone the repository and set up your environment:
 

@@ -11,6 +11,7 @@ from typing import (
     Callable,
     Iterator,
     Literal,
+    NamedTuple,
     Tuple,
     cast,
 )
@@ -110,7 +111,7 @@ def _gaussian_elimination(matrix: numpy.ndarray, rhs: numpy.ndarray) -> numpy.nd
     x = numpy.zeros(dim, dtype=float)
     for i in range(dim - 1, -1, -1):
         diag = A[i, i]
-        if diag == 0.0:
+        if diag == 0.0:  # pragma: no cover - guarded by pivot checks
             raise numpy.linalg.LinAlgError("Matrix is singular")
         residual = b[i] - A[i, i + 1 :] @ x[i + 1 :]
         x[i] = residual / diag
@@ -152,7 +153,20 @@ def pencil(p: numpy.ndarray, q: numpy.ndarray, mu: float) -> numpy.ndarray:
     return (1.0 - mu) * p + mu * q
 
 
-TangencyResult = namedtuple("TangencyResult", ["t", "point", "mu"])
+class TangencyResult(NamedTuple):
+    """Result of a tangency point calculation.
+
+    Attributes:
+        t: The tangency time (distance).
+        point: The tangent point as a NumPy array.
+        mu: The pencil parameter μ at which the two ellipses are tangent.
+    """
+
+    t: float
+    point: numpy.ndarray
+    mu: float
+
+
 NewtonResult = namedtuple("NewtonResult", ["root", "converged"])
 
 
@@ -349,7 +363,7 @@ def solve_mu(
         return wrapper
 
     def solve_single_stage(method_name: SingleStageMethodName, **kwargs: Any) -> float:
-        if method_name == "newton":
+        if method_name == "newton":  # pragma: no cover - currently unused
             kwargs.setdefault("fprime", curry_df)
         result = root_scalar(curry_f, method=method_name, **kwargs)
         return float(result.root)
@@ -479,10 +493,7 @@ def tangency(
         failsafe: If `True`, a failsafe fallback is enabled.
 
     Returns:
-        A `TangencyResult` named tuple with the following fields:
-        - `t`: The tangency time.
-        - `point`: The tangent point.
-        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
+        A `TangencyResult` containing the tangency time, point, and pencil parameter.
 
     Raises:
         RuntimeError: If the solver fails to converge to a valid solution

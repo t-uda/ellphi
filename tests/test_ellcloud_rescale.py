@@ -1,4 +1,4 @@
-"""Regression tests for :mod:`ellphi.ellcloud`."""
+"""Regression tests for `ellphi.ellcloud`."""
 
 from __future__ import annotations
 

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 """Tangency solver dispatching between Python and C++ backends."""
 
+from dataclasses import dataclass
 from typing import Iterable, Tuple, cast, get_args
 
 import numpy
 
 from . import _solver_python as _py
 from . import _tangency_cpp as _cpp
+from ._version import __version__
 from .geometry import infer_dim_from_coef_length
 
 __all__ = [
@@ -20,6 +22,9 @@ __all__ = [
     "tangency_python",
     "pdist_tangency_python",
     "has_cpp_backend",
+    "cpp_linalg_kind",
+    "BuildInfo",
+    "build_info",
     "MethodName",
 ]
 
@@ -40,7 +45,26 @@ _METHOD_NAMES: tuple[str, ...] = tuple(get_args(MethodName))
 
 
 BackendLiteral = tuple[str, ...]
-_BACKEND_NAMES: BackendLiteral = ("auto", "python", "cpp")
+_BACKEND_CHOICES: BackendLiteral = ("auto", "python", "cpp")
+
+
+@dataclass(frozen=True)
+class BuildInfo:
+    """Summary of solver backends and C++ build details.
+
+    Notes:
+        - ``backend_choices`` are the accepted values for the ``backend`` argument
+          in solver functions ("auto", "python", "cpp").
+        - ``cpp_linalg_kind`` reports the linear algebra implementation used by the
+          C++ implementation ("eigen" or "internal").
+    """
+
+    version: str
+    backend_choices: tuple[str, ...]
+    backend_default: str
+    cpp_backend_available: bool
+    cpp_linalg_kind: str | None
+    cpp_backend_version: str | None
 
 
 def has_cpp_backend() -> bool:
@@ -50,6 +74,28 @@ def has_cpp_backend() -> bool:
         `True` if the C++ backend is available, `False` otherwise.
     """
     return _cpp.is_available()
+
+
+def cpp_linalg_kind() -> str | None:
+    """Return the C++ linear algebra build kind.
+
+    Returns:
+        The linear algebra kind ("eigen" or "internal") if the C++ backend is
+        available, otherwise `None`.
+    """
+    return _cpp.linalg_kind()
+
+
+def build_info() -> BuildInfo:
+    """Return build information for solver selection and C++ backend details."""
+    return BuildInfo(
+        version=__version__,
+        backend_choices=_BACKEND_CHOICES,
+        backend_default="auto",
+        cpp_backend_available=has_cpp_backend(),
+        cpp_linalg_kind=cpp_linalg_kind(),
+        cpp_backend_version=_cpp.backend_version(),
+    )
 
 
 def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
@@ -64,9 +110,10 @@ def _extract_coef_array(ellcloud: Iterable[numpy.ndarray]) -> numpy.ndarray:
 
 
 def _should_use_cpp(backend: str) -> bool:
-    if backend not in _BACKEND_NAMES:
+    if backend not in _BACKEND_CHOICES:
         raise ValueError(
-            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
+            "Unknown backend "
+            f"'{backend}'. Expected one of {', '.join(_BACKEND_CHOICES)}"
         )
     if backend == "cpp":
         if not has_cpp_backend():
@@ -129,10 +176,7 @@ def tangency(
             falls back to the high-precision Brent's method.
 
     Returns:
-        A `TangencyResult` named tuple with the following fields:
-        - `t`: The tangency time.
-        - `point`: The tangent point.
-        - `mu`: The pencil parameter `μ` at which the two ellipses are tangent.
+        A `TangencyResult` containing the tangency time, point, and pencil parameter.
     """
     method_literal = _normalize_method(method)
     pcoef_arr = numpy.asarray(pcoef, dtype=float).reshape(-1)
@@ -164,9 +208,10 @@ def tangency(
             default_newton if hybrid_newton_maxiter is None else hybrid_newton_maxiter
         )
 
-    if backend not in _BACKEND_NAMES:
+    if backend not in _BACKEND_CHOICES:
         raise ValueError(
-            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
+            "Unknown backend "
+            f"'{backend}'. Expected one of {', '.join(_BACKEND_CHOICES)}"
         )
     use_cpp = backend in {"cpp", "auto"} and _should_use_cpp(backend)
 
@@ -214,9 +259,10 @@ def pdist_tangency(
     Returns:
         A condensed distance matrix of tangency distances.
     """
-    if backend not in _BACKEND_NAMES:
+    if backend not in _BACKEND_CHOICES:
         raise ValueError(
-            f"Unknown backend '{backend}'. Expected one of {', '.join(_BACKEND_NAMES)}"
+            "Unknown backend "
+            f"'{backend}'. Expected one of {', '.join(_BACKEND_CHOICES)}"
         )
 
     if backend in {"cpp", "auto"}:

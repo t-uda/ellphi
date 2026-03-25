@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
+import ellphi.differentiable_solver as diff_solver
 from ellphi.differentiable_solver import (
     solve_mu_gradients,
     solve_mu_numerical_diff,
@@ -96,3 +98,18 @@ def test_analytic_gradients_high_dimension(rng):
 
     mu_direct = solve_mu(p, q)
     assert mu == pytest.approx(mu_direct)
+
+
+def test_solve_mu_gradients_rejects_zero_derivative(monkeypatch, rng):
+    p, q = random_coef_pair(rng)
+
+    def fake_pencil(*_args, **_kwargs):
+        return SimpleNamespace(center=np.zeros(2))
+
+    monkeypatch.setattr(diff_solver, "build_tangent_pencil", fake_pencil)
+    monkeypatch.setattr(diff_solver, "target_prime_from_pencil", lambda *_args: 0.0)
+
+    with pytest.raises(
+        ZeroDivisionError, match="Derivative with respect to mu is numerically zero"
+    ):
+        diff_solver.solve_mu_gradients(p, q, mu=0.5)

@@ -1,4 +1,4 @@
-"""Geometry helpers shared across the :mod:`ellphi` package.
+"""Geometry helpers shared across the `ellphi` package.
 
 This module historically provided 2D-only utilities for working with
 ellipses represented as quadratic forms.  For the n-dimensional extension
@@ -7,14 +7,14 @@ work with generic symmetric positive-definite matrices.
 
 Key API (all return ``numpy.float64`` arrays):
 
-* :func:`unit_vector`
-* :func:`axes_from_cov`
-* :func:`coef_from_axes`
-* :func:`coef_from_cov`
-* :func:`pack_conic`
-* :func:`unpack_conic`
-* :func:`unpack_single_conic`
-* :func:`infer_dim_from_coef_length`
+* [`unit_vector`][ellphi.geometry.unit_vector]
+* [`axes_from_cov`][ellphi.geometry.axes_from_cov]
+* [`coef_from_axes`][ellphi.geometry.coef_from_axes]
+* [`coef_from_cov`][ellphi.geometry.coef_from_cov]
+* [`pack_conic`][ellphi.geometry.pack_conic]
+* [`unpack_conic`][ellphi.geometry.unpack_conic]
+* [`unpack_single_conic`][ellphi.geometry.unpack_single_conic]
+* [`infer_dim_from_coef_length`][ellphi.geometry.infer_dim_from_coef_length]
 """
 
 from __future__ import annotations
@@ -63,8 +63,16 @@ def axes_from_cov(cov: numpy.ndarray, /, *, scale: float = 1.0):
 
     Returns:
         A tuple containing the major axis, minor axis, and angle of the major
-        axis in radians. The major axis is always greater than or equal to the
-        minor axis.
+            axis in radians. The major axis is always greater than or equal to the
+            minor axis.
+
+    Examples:
+        >>> import numpy as np
+        >>> from ellphi.geometry import axes_from_cov
+        >>> cov = np.array([[4.0, 0.0], [0.0, 1.0]])
+        >>> r_major, r_minor, theta = axes_from_cov(cov)
+        >>> float(r_major), float(r_minor)
+        (2.0, 1.0)
     """
     if len(cov.shape) <= 2:
         cov = cov[None, :, :]
@@ -125,7 +133,7 @@ def infer_dim_from_coef_length(length: int) -> int:
             "quadratic form"
         )
     n = (sqrt_disc - 3) // 2
-    if n < 2 or ((n + 1) * (n + 2)) // 2 != length:
+    if n < 2 or ((n + 1) * (n + 2)) // 2 != length:  # pragma: no cover
         raise ValueError(
             f"Coefficient length {length} does not correspond to a valid " "dimension"
         )
@@ -158,7 +166,7 @@ def pack_conic(
 
     Returns:
         A NumPy array of shape `(..., m)` where `m = (n + 1)(n + 2) / 2`,
-        representing the packed conic coefficients.
+            representing the packed conic coefficients.
     """
     matrices = numpy.asarray(matrices, dtype=float)
     linear = numpy.asarray(linear, dtype=float)
@@ -192,7 +200,8 @@ def unpack_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a flattened coefficient vector into a conic's components.
 
-    This function is the inverse of :func:`pack_conic`. It takes a flattened
+    This function is the inverse of
+    [`pack_conic`][ellphi.geometry.pack_conic]. It takes a flattened
     coefficient vector and returns the quadratic, linear, and constant terms
     of the conic's equation.
 
@@ -201,7 +210,7 @@ def unpack_conic(
 
     Returns:
         A tuple containing the quadratic matrix `A`, the linear coefficients
-        `b`, and the constant term `c`.
+            `b`, and the constant term `c`.
     """
     coef = numpy.asarray(coef, dtype=float)
     squeeze = False
@@ -234,7 +243,8 @@ def unpack_single_conic(
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Unpacks a single flattened coefficient vector into a conic's components.
 
-    This function is a convenience wrapper around :func:`unpack_conic` for a
+    This function is a convenience wrapper around
+    [`unpack_conic`][ellphi.geometry.unpack_conic] for a
     single conic. It accepts a coefficient array of shape `(m,)` or `(1, m)`
     and returns the conic's components.
 
@@ -243,7 +253,7 @@ def unpack_single_conic(
 
     Returns:
         A tuple containing the quadratic matrix `A`, the linear coefficients
-        `b`, and the constant term `c`.
+            `b`, and the constant term `c`.
     """
     matrices, linear, constant = unpack_conic(coef)
     if matrices.ndim == 3:
@@ -294,7 +304,16 @@ def coef_from_cov(
 
     Returns:
         A NumPy array of packed conic coefficients with shape `(n, m)`, where
-        `m = (d + 1)(d + 2) / 2`.
+            `m = (d + 1)(d + 2) / 2`.
+
+    Examples:
+        >>> import numpy as np
+        >>> from ellphi.geometry import coef_from_cov
+        >>> center = np.array([1.0, 0.0])
+        >>> cov = np.array([[2.0, 0.0], [0.0, 1.0]])
+        >>> coef = coef_from_cov(center, cov)
+        >>> coef.shape
+        (1, 6)
     """
     centers = numpy.asarray(X, dtype=float)
     cov = numpy.asarray(cov, dtype=float)

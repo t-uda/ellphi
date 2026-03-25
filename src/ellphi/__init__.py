@@ -38,8 +38,13 @@ from .solver import (
     pdist_tangency,
     TangencyResult,
     has_cpp_backend,
+    cpp_linalg_kind,
+    BuildInfo,
+    build_info,
 )
 
+
+from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_cov_grad
 
 FloatArray = NDArray[np.float64]
 
@@ -62,19 +67,27 @@ __all__ = [
     "pdist_tangency",
     "TangencyResult",
     "has_cpp_backend",
+    "cpp_linalg_kind",
+    "BuildInfo",
+    "build_info",
+    # grad
+    "TangencyGrad",
+    "tangency_grad",
+    "pdist_tangency_grad",
+    "coef_from_cov_grad",
     "__version__",
     "version_info",
 ]
 
 
 def version_info() -> str:
-    """Return the current :mod:`ellphi` version string."""
+    """Return the current `ellphi` version string."""
 
     return __version__
 
 
 def _main() -> None:
-    """A minimal CLI for printing the current version."""
+    """A minimal CLI for printing the current version and build info."""
 
     import argparse
 
@@ -84,10 +97,17 @@ def _main() -> None:
         action="store_true",
         help="Print the installed ellphi version and exit",
     )
+    parser.add_argument(
+        "--build-info",
+        action="store_true",
+        help="Print the ellphi build info and exit",
+    )
 
     args = parser.parse_args()
 
     if args.version:
         print(version_info())
-    else:
+    if args.build_info:
+        print(build_info())
+    if not args.version and not args.build_info:
         parser.print_help()
