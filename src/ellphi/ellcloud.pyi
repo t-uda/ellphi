@@ -68,6 +68,10 @@ class EllipseCloud:
     def rescale(
         self, *, method: str = ..., return_diagnostics: Literal[True]
     ) -> RescaleDiagnostics: ...
+    @overload
+    def rescale(
+        self, *, method: str = ..., return_diagnostics: bool
+    ) -> float | RescaleDiagnostics: ...
 
 def ellipse_cloud(
     X: FloatArray,
