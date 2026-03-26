@@ -6,6 +6,7 @@ FloatArray = NDArray[np.float64]
 from .ellcloud import (
     EllipseCloud as EllipseCloud,
     LocalCov as LocalCov,
+    RescaleDiagnostics as RescaleDiagnostics,
     ellipse_cloud as ellipse_cloud,
 )
 from .geometry import (
@@ -44,6 +45,7 @@ __all__ = [
     "ellipse_cloud",
     "EllipseCloud",
     "LocalCov",
+    "RescaleDiagnostics",
     "quad_eval",
     "pencil",
     "tangency",
