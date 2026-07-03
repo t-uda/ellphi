@@ -42,16 +42,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
+        enable-cache: true
         python-version: "3.12"
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
-
     - name: Build sdist
-      run: poetry build -f sdist
+      run: uv build --sdist
 
     - name: Upload sdist
       uses: actions/upload-artifact@v4
@@ -71,19 +69,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
     - name: Install Eigen headers
       run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
 
     - name: Build wheel
-      run: poetry build -f wheel
+      run: uv build --wheel
 
     - name: Upload wheel
       uses: actions/upload-artifact@v4
@@ -100,16 +96,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
+        enable-cache: true
         python-version: ${{ matrix.python-version }}
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
-
     - name: Build wheel
-      run: poetry build -f wheel
+      run: uv build --wheel
 
     - name: Upload wheel
       uses: actions/upload-artifact@v4

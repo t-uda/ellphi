@@ -2,7 +2,7 @@
 """Synchronize project version in packaging metadata and the runtime module.
 
 Usage:
-    poetry run python scripts/update_version.py 1.2.3
+    uv run python scripts/update_version.py 1.2.3
 
 The script validates the provided version against PEP 440, normalizes it to the
 canonical form, and writes the value to both `pyproject.toml` and

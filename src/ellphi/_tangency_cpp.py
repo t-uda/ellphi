@@ -66,8 +66,8 @@ def _validate_library_version(lib: ctypes.CDLL) -> None:
             "C++ backend version mismatch: "
             f"library reports '{actual}' but ellphi expects '{expected}'. "
             "Rebuild the extension yourself (e.g., run 'python "
-            "build_tangency_cpp.py' or 'poetry install'); it is not rebuilt "
-            "automatically during import."
+            "build_tangency_cpp.py' or 'uv sync --reinstall-package "
+            "ellphi'); it is not rebuilt automatically during import."
         )
 
 

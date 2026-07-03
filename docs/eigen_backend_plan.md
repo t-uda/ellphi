@@ -21,7 +21,7 @@ Notes:
 ## Build without Eigen
 If Eigen headers are not available, build without enabling it:
 1) Do not set `ELLPHI_USE_EIGEN`.
-2) Run `poetry install` to build the C++ extension with the internal solver.
+2) Run `uv sync` to build the C++ extension with the internal solver.
 3) If `ELLPHI_USE_EIGEN=1` is set without headers, the build fails with a
    clear error asking for `ELLPHI_EIGEN_INCLUDE`.
 
@@ -32,7 +32,7 @@ If Eigen headers are not available, build without enabling it:
 2) If Eigen is not in a standard include location, set:
    - `ELLPHI_EIGEN_INCLUDE="/path/to/eigen3"`
 3) Rebuild the extension:
-   - `poetry install`
+   - `uv sync --reinstall-package ellphi`
    - If needed, delete `src/ellphi/_tangency_cpp_impl*.so` before reinstalling.
 4) Quick sanity check:
    ```bash
@@ -52,8 +52,8 @@ If Eigen headers are not available, build without enabling it:
 Notes:
 - Host: Ubuntu aarch64 (local dev machine)
 - Eigen: 3.4.0 (`libeigen3-dev`)
-- Build: deleted `_tangency_cpp_impl.so` then rebuilt for each mode via `poetry install`
-- Run: `OMP_NUM_THREADS=1 poetry run python scripts/benchmark_dim_scale.py`
+- Build: deleted `_tangency_cpp_impl.so` then rebuilt for each mode via `uv sync --reinstall-package ellphi`
+- Run: `OMP_NUM_THREADS=1 uv run python scripts/benchmark_dim_scale.py`
 - joblib emitted a permissions warning and ran in serial mode
 
 CPP results (avg_time_ms):
