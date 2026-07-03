@@ -118,6 +118,50 @@ def test_stale_library_without_grad_symbol(monkeypatch):
     assert _cpp.has_pdist_tangency_grad() is False
 
 
+def test_stale_library_direct_call_raises(monkeypatch):
+    """Calling the internal binding on a stale library raises RuntimeError."""
+    monkeypatch.setattr(_cpp, "_LIB", types.SimpleNamespace())
+    with pytest.raises(RuntimeError, match="pdist_tangency_grad' export"):
+        _cpp.pdist_tangency_grad(np.zeros((2, 6)))
+
+
+def test_vjp_accepts_valid_1d_cotangent(rng):
+    """A 1-D cotangent of length n_pairs is accepted."""
+    coefs = _random_coefs(rng, 4)
+    dists, vjp = pdist_tangency_grad(coefs)
+    g_coefs = vjp(np.ones(len(dists)))
+    assert g_coefs.shape == coefs.shape
+
+
+def test_vjp_accepts_scalar_cotangent(rng):
+    """A scalar cotangent broadcasts to all pairs."""
+    coefs = _random_coefs(rng, 4)
+    dists, vjp = pdist_tangency_grad(coefs)
+    expected = vjp(2.0 * np.ones(len(dists)))
+    np.testing.assert_allclose(vjp(2.0), expected)
+    np.testing.assert_allclose(vjp(np.asarray(2.0)), expected)
+
+
+def test_vjp_rejects_wrong_length_cotangent(rng):
+    """Cotangents of the wrong length raise a clear ValueError."""
+    coefs = _random_coefs(rng, 4)
+    dists, vjp = pdist_tangency_grad(coefs)
+    with pytest.raises(ValueError, match="broadcastable to shape"):
+        vjp(np.ones(len(dists) - 1))
+    with pytest.raises(ValueError, match="broadcastable to shape"):
+        vjp(np.ones(len(dists) + 1))
+
+
+def test_vjp_rejects_2d_cotangent(rng):
+    """2-D cotangents raise a clear ValueError."""
+    coefs = _random_coefs(rng, 4)
+    dists, vjp = pdist_tangency_grad(coefs)
+    with pytest.raises(ValueError, match="broadcastable to shape"):
+        vjp(np.ones((len(dists), coefs.shape[1])))
+    with pytest.raises(ValueError, match="broadcastable to shape"):
+        vjp(np.ones((len(dists), 1)))
+
+
 @requires_cpp_grad
 def test_cpp_grad_identical_ellipsoids_raise():
     """Identical ellipsoids are degenerate and raise ZeroDivisionError."""

@@ -332,8 +332,22 @@ def pdist_tangency_grad(
         distance matrix of tangency distances and `dt_dp` / `dt_dq` hold, for
         each pair, the gradient of the pair distance with respect to the
         first / second ellipse coefficients (shape `(n_pairs, n)`).
+
+    Raises:
+        RuntimeError: If the C++ backend is unavailable, or if the loaded
+            library is stale and lacks the ``pdist_tangency_grad`` export.
     """
     lib = _ensure_available()
+    if not has_pdist_tangency_grad():
+        raise RuntimeError(
+            "C++ backend is missing the 'pdist_tangency_grad' export; the "
+            "loaded library is stale. "
+            "Rebuild the extension yourself: in a development checkout "
+            "run 'uv sync --reinstall-package ellphi' or "
+            "'python scripts/build_tangency_cpp.py'; with pip, run "
+            "'pip install --force-reinstall .' from the source tree. "
+            "It is not rebuilt automatically during import."
+        )
 
     func = lib.pdist_tangency_grad
     func.restype = ctypes.c_int

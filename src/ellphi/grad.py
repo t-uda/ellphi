@@ -14,6 +14,7 @@ from itertools import combinations
 from typing import Callable
 
 import numpy as np
+import numpy.typing as npt
 
 from . import _tangency_cpp as _cpp
 from .differentiable_solver import solve_mu_gradients
@@ -116,7 +117,7 @@ def _pdist_tangency_grad_python(
 
 def pdist_tangency_grad(
     coefs: np.ndarray,
-) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
+) -> tuple[np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]:
     """Pairwise tangency distances and a VJP (pullback) for all pairs.
 
     Computes the same condensed distance array as
@@ -140,6 +141,9 @@ def pdist_tangency_grad(
             tangency distances in the same order as ``scipy.spatial.distance.pdist``.
         - ``vjp`` is a callable ``(grad_dists,) -> grad_coefs`` that accumulates
             upstream gradients into an array of shape ``(N, m)``.
+            ``grad_dists`` must be broadcastable to shape ``(N*(N-1)//2,)``
+            (one cotangent per pair; a scalar is broadcast to all pairs),
+            otherwise a ``ValueError`` is raised.
 
     Examples:
         >>> import numpy as np
@@ -165,10 +169,19 @@ def pdist_tangency_grad(
     else:
         dists, dt_dp, dt_dq = _pdist_tangency_grad_python(coefs)
 
+    n_pairs = N * (N - 1) // 2
     idx_i, idx_j = np.triu_indices(N, k=1)
 
-    def vjp(grad_dists: np.ndarray) -> np.ndarray:
+    def vjp(grad_dists: npt.ArrayLike) -> np.ndarray:
         gd = np.asarray(grad_dists, dtype=float)
+        try:
+            gd = np.broadcast_to(gd, (n_pairs,))
+        except ValueError:
+            raise ValueError(
+                "grad_dists must be broadcastable to shape "
+                f"({n_pairs},) (one cotangent per ellipsoid pair); "
+                f"got shape {gd.shape}"
+            ) from None
         g_coefs = np.zeros_like(coefs)
         np.add.at(g_coefs, idx_i, gd[:, None] * dt_dp)
         np.add.at(g_coefs, idx_j, gd[:, None] * dt_dq)
