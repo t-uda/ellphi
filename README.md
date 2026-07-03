@@ -22,8 +22,11 @@ Install from PyPI:
 pip install ellphi
 ```
 
-Demo notebooks and their dependencies live in the separate
-[ellphi-demo](https://github.com/t-uda/ellphi-demo) repository.
+Maintained demo notebooks and their dependencies live in the separate
+[ellphi-demo](https://github.com/t-uda/ellphi-demo) repository. The
+`notebooks/` directory in this repository still contains example notebooks,
+but their extra dependencies (Jupyter, plotly, homcloud, ...) are no longer
+declared by this package; install them separately to run the notebooks.
 
 ## Optional Eigen build (from source)
 

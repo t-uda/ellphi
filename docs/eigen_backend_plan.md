@@ -32,7 +32,8 @@ If Eigen headers are not available, build without enabling it:
 2) If Eigen is not in a standard include location, set:
    - `ELLPHI_EIGEN_INCLUDE="/path/to/eigen3"`
 3) Rebuild the extension:
-   - `uv sync --reinstall-package ellphi`
+   - `ELLPHI_USE_EIGEN=1 uv sync --reinstall-package ellphi`
+     (prepend `ELLPHI_EIGEN_INCLUDE=/path/to/eigen3` if set in step 2)
    - If needed, delete `src/ellphi/_tangency_cpp_impl*.so` before reinstalling.
 4) Quick sanity check:
    ```bash

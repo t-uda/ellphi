@@ -65,9 +65,11 @@ def _validate_library_version(lib: ctypes.CDLL) -> None:
         raise RuntimeError(
             "C++ backend version mismatch: "
             f"library reports '{actual}' but ellphi expects '{expected}'. "
-            "Rebuild the extension yourself (e.g., run 'python "
-            "build_tangency_cpp.py' or 'uv sync --reinstall-package "
-            "ellphi'); it is not rebuilt automatically during import."
+            "Rebuild the extension yourself: in a development checkout "
+            "run 'uv sync --reinstall-package ellphi' or "
+            "'python scripts/build_tangency_cpp.py'; with pip, run "
+            "'pip install --force-reinstall .' from the source tree. "
+            "It is not rebuilt automatically during import."
         )
 
 

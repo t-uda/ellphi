@@ -12,7 +12,7 @@ METHODS="brentq brenth algsig+newton newton"
 
 # 1) Normal Low-Dim (2D, 3D) - The "Happy Path"
 # Expect hybrid_8x3 to shine here.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 2 3 \
   --extreme-fraction 0.0 \
   --methods $METHODS \
@@ -26,7 +26,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 2) Extreme Low-Dim (2D, 3D) - Stress Test
 # Compare hybrid_8x3 failure rate vs hybrid_28x3/brent.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 2 3 \
   --extreme-fraction 1.0 \
   --hybrid-combos "$HYBRID_COMBOS" \
@@ -38,7 +38,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 3) Normal High-Dim (10D, 20D) - Scaling Check
 # Check if hybrid_8x3 scales to high dims in benign geometry.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 0.0 \
   --hybrid-combos "$HYBRID_COMBOS" \
@@ -50,7 +50,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 4) Extreme High-Dim (10D, 20D) - The "Worst Case"
 # Expect hybrid_8x3 to fail. Evaluate hybrid_28x3 vs brent.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 1.0 \
   --hybrid-combos "$HYBRID_COMBOS" \
@@ -62,7 +62,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 5) Multi-Dim (20D to 50D) - Seeking the "Strategy Shift"
 # Check if hybrid still works for much higher dimention.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SMALL_SAMPLES --dims `seq 20 3 50` \
   --extreme-fraction 0.0 \
   --methods $METHODS \
@@ -75,7 +75,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 2) Extreme Low-Dim (2D, 3D) - Stress Test
 # Compare hybrid_8x3 failure rate vs hybrid_28x3/brent.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 2 3 \
   --extreme-fraction 1.0 \
   --methods $METHODS \
@@ -89,7 +89,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 3) Normal High-Dim (10D, 20D) - Scaling Check
 # Check if hybrid_8x3 scales to high dims in benign geometry.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 0.0 \
   --methods $METHODS \
@@ -103,7 +103,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 4) Extreme High-Dim (10D, 20D) - The "Worst Case"
 # Expect hybrid_8x3 to fail. Evaluate hybrid_28x3 vs brent.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SAMPLES --dims 10 20 \
   --extreme-fraction 1.0 \
   --methods $METHODS \
@@ -116,7 +116,7 @@ poetry run python scripts/hybrid_tuning.py \
 
 # 5) Multi-Dim (20D to 50D) - Seeking the "Strategy Shift"
 # Check if hybrid still works for much higher dimention.
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim $SMALL_SAMPLES --dims `seq 20 3 50` \
   --extreme-fraction 0.0 \
   --methods $METHODS \

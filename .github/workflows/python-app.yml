@@ -139,7 +139,7 @@ jobs:
 
         # Run tests against the installed package
         # We assume tests are in 'tests/' and we want to avoid importing from local 'src/'
-        # So we move to a different directory or explicitely tell pytest where to look
+        # So we move to a different directory or explicitly tell pytest where to look
         mkdir -p test_run
         cd test_run
         pytest ../tests
