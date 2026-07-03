@@ -30,7 +30,7 @@ We only bump versions at two moments:
 Use the version sync script so that metadata and runtime version stay aligned:
 
 ```bash
-poetry run python scripts/update_version.py 0.1.2.dev0
+uv run python scripts/update_version.py 0.1.2.dev0
 ```
 
 ## Release Notes
@@ -57,9 +57,9 @@ Right before the release, replace it with a dated heading such as:
    from the release branch.
 5. On that version-bump branch:
    - finalize `RELEASE_NOTES.md`
-   - run `poetry run python scripts/update_version.py 0.1.2`
+   - run `uv run python scripts/update_version.py 0.1.2`
    - run all required local checks
-   - run `poetry run mkdocs build`
+   - run `uv run mkdocs build`
 6. Open a PR from the version-bump branch back into the release branch and
    merge it after CI passes.
 7. Open a PR from the release branch into `main` and merge it.
@@ -103,7 +103,7 @@ See the comments at the top of `release.yml` for one-time setup steps.
 Mirror CI locally. Run the exact commands listed in `AGENTS.md` and
 `.github/workflows/python-app.yml`, in the same order when relevant. For docs
 and release-note changes, also mirror `.github/workflows/docs.yml` by running
-`poetry run mkdocs build`. Do not skip steps. If something cannot run, stop
+`uv run mkdocs build` (after `uv sync --group docs`). Do not skip steps. If something cannot run, stop
 and document the blocker.
 
 ## Optional Eigen Build (C++ linear algebra)
@@ -116,7 +116,7 @@ If you want to test the Eigen build locally:
 2. Rebuild the extension with:
 
 ```bash
-ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 poetry install
+ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 uv sync --reinstall-package ellphi
 ```
 
 On macOS, use `/opt/homebrew/include/eigen3` (Apple Silicon) or
@@ -125,7 +125,7 @@ On macOS, use `/opt/homebrew/include/eigen3` (Apple Silicon) or
 Verify via:
 
 ```bash
-python -m ellphi --build-info
+uv run python -m ellphi --build-info
 ```
 
 ## Docs CI and Deployment
@@ -134,21 +134,24 @@ python -m ellphi --build-info
   to `ellphi-*`, and via `workflow_dispatch`.
 - It deploys to `gh-pages` only on pushes to `main`.
 - `.github/workflows/python-app.yml` contains a `demo-install` job that checks
-  the demo dependency set; it is not the docs deployment workflow.
+  a plain install from the sdist; it is not the docs deployment workflow.
 
 ## Documentation
 
 ### Building and previewing
 
 ```bash
+# Install the docs dependency group once
+uv sync --group docs
+
 # One-off build
-poetry run mkdocs build
+uv run mkdocs build
 
 # Live-reload server (http://127.0.0.1:8000)
-poetry run mkdocs serve
+uv run mkdocs serve
 ```
 
-Run `poetry run mkdocs build` before committing any docs change and confirm
+Run `uv run mkdocs build` before committing any docs change and confirm
 the build completes without errors.
 
 ### English style

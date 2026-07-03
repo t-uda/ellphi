@@ -20,7 +20,7 @@ set.  All
 numbers below come from running:
 
 ```bash
-poetry run python scripts/hybrid_tuning.py \
+uv run python scripts/hybrid_tuning.py \
   --samples-per-dim 30 --dims 2 3 4 5 --extreme-fraction 0.45 \
   --output docs/hybrid_tuning_summary.json
 ```

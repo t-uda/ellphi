@@ -10,30 +10,30 @@ This file provides instructions for AI agents working on this repository. Read i
 
 ### 1. One-Time Setup
 
-Before you start working, set up your environment by running the following command.
+Before you start working, set up your environment by running the following command. Dependencies are managed with [uv](https://docs.astral.sh/uv/).
 
 ```bash
-poetry install
+uv sync
 ```
 
-This command installs all Python dependencies and also compiles the C++ backend for the tangency solver. If the C++ code (`src/ellphi/_tangency_cpp_impl.cpp`) is modified, the backend will be automatically rebuilt the next time you run `poetry install`.
+This command installs all Python dependencies (including the `dev` dependency group) and also compiles the C++ backend for the tangency solver. If the C++ code (`src/ellphi/_tangency_cpp_impl.cpp`) is modified, the backend will be automatically rebuilt the next time you run `uv sync`.
 
 Optional Eigen build (C++ linear algebra):
 - Install Eigen headers (Ubuntu: `apt-get install libeigen3-dev`, macOS: `brew install eigen`).
-- Rebuild with `ELLPHI_USE_EIGEN=1` and `ELLPHI_EIGEN_INCLUDE` set to the Eigen include path.
+- Rebuild with `ELLPHI_USE_EIGEN=1` and `ELLPHI_EIGEN_INCLUDE` set to the Eigen include path, forcing a reinstall of the project: `ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 uv sync --reinstall-package ellphi`
   - Linux default: `/usr/include/eigen3`
   - macOS default: `/opt/homebrew/include/eigen3` (Apple Silicon) or `/usr/local/include/eigen3` (Intel)
-- Verify with `python -m ellphi --build-info` and check `cpp_linalg_kind`.
+- Verify with `uv run python -m ellphi --build-info` and check `cpp_linalg_kind`.
 
 ### A Note on Managing Dependencies
 
-If you need to add, remove, or update dependencies in `pyproject.toml`, you must also update the `poetry.lock` file to reflect these changes. After modifying `pyproject.toml`, run the following command:
+If you need to add, remove, or update dependencies in `pyproject.toml`, you must also update the `uv.lock` file to reflect these changes. After modifying `pyproject.toml`, run the following command:
 
 ```bash
-poetry lock
+uv lock
 ```
 
-This ensures that the project's dependencies remain consistent and reproducible. After running the command, remember to commit both the `pyproject.toml` and `poetry.lock` files.
+This ensures that the project's dependencies remain consistent and reproducible. After running the command, remember to commit both the `pyproject.toml` and `uv.lock` files. CI verifies lockfile freshness with `uv lock --check`, so a stale `uv.lock` will fail the build.
 
 ### 2. Run Test and Lint
 
@@ -41,18 +41,21 @@ In this repository, all CI tests must pass before PRs are merged. Therefore, bef
 
 ```bash
 # Format and verify formatting
-poetry run black src tests scripts
-poetry run black --check src tests scripts
+uv run black src tests scripts
+uv run black --check src tests scripts
 
 # Lint and static analysis
-poetry run flake8 src tests scripts
-poetry run mypy src tests
+uv run flake8 src tests scripts
+uv run mypy src tests
 
 # Type Stub Validation
-MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+MYPYPATH=src uv run stubtest ellphi --allowlist stubtest-allowlist.txt
 
 # Tests
-poetry run pytest
+uv run pytest
+
+# Lockfile freshness (if pyproject.toml changed)
+uv lock --check
 ```
 
 If CI introduces new tools, immediately add them to this checklist.
@@ -64,7 +67,7 @@ If CI introduces new tools, immediately add them to this checklist.
 **Command:**
 
 ```bash
-MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+MYPYPATH=src uv run stubtest ellphi --allowlist stubtest-allowlist.txt
 ```
 
 **Purpose:**
@@ -84,9 +87,8 @@ When `stubtest` reports a failure, it means there is a mismatch between the impl
 This section documents the reasons for each entry in the `stubtest-allowlist.txt` file.
 
 *   `ellphi._solver_python.MethodName`
-*   `ellphi.solver.MethodName`
 
-**Reason:** These entries are necessary because the `MethodName` type alias is defined as a `typing.Literal` in the implementation, but it is simplified to `str` in the corresponding stub files (`.pyi`). This simplification is intentional to avoid duplicating the literal values in the stub, which would make it harder to maintain.
+**Reason:** This entry is necessary because the `MethodName` type alias is defined as a `typing.Literal` in the implementation, but it is simplified to `str` in the corresponding stub file (`.pyi`). This simplification is intentional to avoid duplicating the literal values in the stub, which would make it harder to maintain. (An equivalent entry for the `ellphi.solver` re-export was needed with older mypy versions but is reported as unused since mypy 1.20.)
 
 #### Managing the Allowlist
 
@@ -113,7 +115,8 @@ do **not** require the full Python CI checklist (black/flake8/mypy/pytest).
 Instead, run:
 
 ```bash
-poetry run mkdocs build
+uv sync --group docs
+uv run mkdocs build
 ```
 
 and confirm it exits without errors before committing.

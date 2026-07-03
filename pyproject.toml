@@ -42,19 +42,37 @@ ellphi = "ellphi.__init__:_main"
 Homepage = "https://github.com/t-uda/ellphi"
 Repository = "https://github.com/t-uda/ellphi"
 
-[project.optional-dependencies]
-# `pip install ellphi[demo]` / `poetry install --with demo`
-demo = [
-  "jupyterlab>=4.1",
-  "ipykernel>=6.28",
-  "nbformat>=5.10",
-  "plotly>=5.22",
-  "pandas>=2.2.0",
-  "homcloud>=4.8.0",
-  "tqdm>=4.67.1",
-  "seaborn>=0.13",
+# Development dependencies (PEP 735, managed by uv).
+# `uv sync` installs the `dev` group by default; use `--group docs` for docs.
+[dependency-groups]
+dev = [
+  "setuptools>=78.1.1",
+  "flake8>=7.3.0,<8",
+  "black[jupyter]>=25.1.0,<26",
+  "mypy>=1.8,<2",
+  "scipy-stubs>=1.16.0.2,<2; python_version >= '3.11'",
+  "pytest>=8.4.1,<9",
+  "packaging>=25.0,<26",
+  "pytest-cov>=7.0.0,<8",
+]
+docs = [
+  "mkdocs>=1.6.0,<2",
+  "mkdocs-material>=9.5.0,<10",
+  "mkdocstrings[python]==0.25.0",
+  "mkdocs-autorefs==1.3.1",
 ]
 
+[tool.uv]
+# numpy 2.5 exposes NDArray as a PEP 695 type alias, which stubtest cannot
+# verify on Python >= 3.12 (`ellphi.FloatArray is inconsistent, runtime is
+# not a type`). Constrain the development lockfile until stubtest/numpy
+# catch up; the published package keeps `numpy>=1.26`.
+constraint-dependencies = ["numpy<2.5"]
+
+# The `[tool.poetry]` sections below are kept because the build backend is
+# poetry-core: `[tool.poetry.build].script` compiles the C++ tangency backend
+# during any PEP 517 build (pip, uv, ...). Dependency management itself is
+# handled by uv (see `[dependency-groups]` and uv.lock).
 [tool.poetry]
 packages = [{ include = "ellphi", from = "src" }]
 package-mode = true
@@ -72,38 +90,6 @@ include = [
 [tool.poetry.build]
 script = "scripts/build_tangency_cpp.py"
 
-[tool.poetry.group.dev.dependencies]
-setuptools = ">=65"
-flake8 = "^7.3.0"
-black = { version = "^25.1.0", extras = ["jupyter"] }
-mypy = "^1.8"
-scipy-stubs = { version = "^1.16.0.2", python = ">=3.11" }
-pytest = "^8.4.1"
-packaging = "^25.0"
-pytest-cov = "^7.0.0"
-
-[tool.poetry.group.demo]
-optional = true
-
-[tool.poetry.group.demo.dependencies]
-jupyterlab = ">=4.1"
-ipykernel = ">=6.28"
-nbformat = ">=5.10"
-plotly = ">=5.22"
-pandas = "^2.2.0"
-homcloud = "^4.8.0"
-tqdm = "^4.67.1"
-seaborn = "^0.13"
-
-[tool.poetry.group.docs]
-optional = true
-
-[tool.poetry.group.docs.dependencies]
-mkdocs = "^1.6.0"
-mkdocs-material = "^9.5.0"
-mkdocstrings = {extras = ["python"], version = "0.25.0"}
-mkdocs-autorefs = "1.3.1"
-
 [tool.mypy]
 mypy_path = "src"
 
@@ -111,5 +97,5 @@ mypy_path = "src"
 allowlist = "stubtest-allowlist.txt"
 
 [build-system]
-requires = ["poetry-core>=1.9.0", "setuptools>=65"]
+requires = ["poetry-core>=2.0", "setuptools>=78.1.1"]
 build-backend = "poetry.core.masonry.api"

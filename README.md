@@ -22,15 +22,15 @@ Install from PyPI:
 pip install ellphi
 ```
 
-To install with demo dependencies for notebooks and examples:
-
-```bash
-pip install ellphi[demo]
-```
+Maintained demo notebooks and their dependencies live in the separate
+[ellphi-demo](https://github.com/t-uda/ellphi-demo) repository. The
+`notebooks/` directory in this repository still contains example notebooks,
+but their extra dependencies (Jupyter, plotly, homcloud, ...) are no longer
+declared by this package; install them separately to run the notebooks.
 
 ## Optional Eigen build (from source)
 
-If you build from source (for example, with `poetry install`), you can enable
+If you build from source (for example, with `uv sync`), you can enable
 the C++ linear algebra implementation based on Eigen.
 
 Install Eigen headers:
@@ -41,7 +41,7 @@ Install Eigen headers:
 Then build with:
 
 ```bash
-ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 poetry install
+ELLPHI_USE_EIGEN=1 ELLPHI_EIGEN_INCLUDE=/usr/include/eigen3 uv sync --reinstall-package ellphi
 ```
 
 On macOS, use `/opt/homebrew/include/eigen3` (Apple Silicon) or
@@ -137,9 +137,9 @@ To get started with development, clone the repository and set up your environmen
 git clone https://github.com/t-uda/ellphi.git
 cd ellphi
 
-# Install dependencies, including development tools
-poetry install --with dev
+# Install dependencies, including development tools (requires uv)
+uv sync
 
 # Run the tests to make sure everything is set up correctly
-poetry run pytest
+uv run pytest
 ```

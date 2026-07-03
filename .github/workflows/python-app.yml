@@ -25,41 +25,36 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: "pip"
-
     - name: Install Eigen headers
       run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
-    # -- Poetry ------------------------------------------------------
-    - name: Install Poetry
-      run: pip install --upgrade poetry
-
-    - name: Cache Poetry env
-      uses: actions/cache@v4
+    # -- uv ----------------------------------------------------------
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
-        path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
 
-    - name: Install project (dev extras)
-      run: poetry install --with dev # Install core and development dependencies
+    - name: Check lockfile freshness
+      run: uv lock --check
+
+    - name: Install project (dev group)
+      run: uv sync --locked
 
     # -- Lint / Format ----------------------------------------------
     - name: flake8
-      run: poetry run flake8 src tests scripts
+      run: uv run flake8 src tests scripts
 
     - name: black check
-      run: poetry run black --check src tests scripts
+      run: uv run black --check src tests scripts
 
     # -- Tests ------------------------------------------------------
     - name: pytest with coverage
-      run: poetry run pytest --cov=src/ellphi --cov-report=xml
+      run: uv run pytest --cov=src/ellphi --cov-report=xml
 
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4.0.1
+      uses: codecov/codecov-action@v5
+      continue-on-error: true
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -72,32 +67,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-        cache: "pip"
-
     - name: Install Eigen headers
       run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
-
-    - name: Cache Poetry env
-      uses: actions/cache@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
-        path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+        enable-cache: true
+        python-version: "3.11"
 
-    - name: Install project (dev extras)
-      run: poetry install --with dev # Install core and development dependencies
+    - name: Install project (dev group)
+      run: uv sync --locked
 
     - name: mypy
-      run: poetry run mypy src
+      run: uv run mypy src
 
     - name: stubtest
-      run: MYPYPATH=src poetry run stubtest ellphi --allowlist stubtest-allowlist.txt
+      run: MYPYPATH=src uv run stubtest ellphi --allowlist stubtest-allowlist.txt
 
   package-test:
     runs-on: ubuntu-latest
@@ -111,16 +97,17 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-        cache: "pip"
 
     - name: Install Eigen headers
       run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
 
     - name: Build package
-      run: poetry build
+      run: uv build
 
     - name: Check sdist content
       run: |
@@ -142,21 +129,24 @@ jobs:
         # Create a fresh venv to test installation
         python -m venv test-env
         source test-env/bin/activate
-        
+
         # Install the built wheel
         pip install dist/*.whl
-        
+
         # Install test dependencies (pytest)
         # Note: runtime dependencies (numpy, etc.) are installed by pip automatically from the wheel metadata
         pip install pytest
-        
+
         # Run tests against the installed package
         # We assume tests are in 'tests/' and we want to avoid importing from local 'src/'
-        # So we move to a different directory or explicitely tell pytest where to look
+        # So we move to a different directory or explicitly tell pytest where to look
         mkdir -p test_run
         cd test_run
         pytest ../tests
 
+  # Demo dependencies now live in the separate ellphi-demo repository.
+  # This job (name kept for branch protection) now verifies that a plain
+  # `pip install` from the sdist compiles the C++ backend from source.
   demo-install:
     runs-on: ubuntu-latest
     steps:
@@ -166,16 +156,21 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-        cache: "pip"
 
-    - name: Install Poetry
-      run: pip install --upgrade poetry
-
-    - name: Cache Poetry env
-      uses: actions/cache@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
-        path: ~/.cache/pypoetry
-        key: ${{ runner.os }}-poetry-${{ hashFiles('pyproject.toml') }}-v2
+        enable-cache: true
 
-    - name: Install project (demo extras)
-      run: poetry install --with demo # Ensure the demo dependency set resolves
+    - name: Build sdist
+      run: uv build --sdist
+
+    - name: Install from sdist and smoke test
+      run: |
+        python -m venv test-env
+        source test-env/bin/activate
+        pip install dist/*.tar.gz
+        mkdir -p test_run
+        cd test_run
+        python -m ellphi --build-info
+        python -c "from ellphi.solver import has_cpp_backend; assert has_cpp_backend(), 'C++ backend not available'"
