@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the paper below."
+type: software
+title: "EllPHi"
+abstract: "Fast ellipse tangency solver for anisotropic persistent homology."
+authors:
+  - family-names: "Uda"
+    given-names: "Tomoki"
+license: MIT
+repository-code: "https://github.com/t-uda/ellphi"
+url: "https://github.com/t-uda/ellphi"
+version: "0.1.2"
+keywords:
+  - "topological data analysis"
+  - "computational geometry"
+  - "ellipse"
+  - "tangency"
+preferred-citation:
+  type: article
+  title: "Fast and accurate computation of ellipse tangency time for anisotropic persistent homology"
+  authors:
+    - family-names: "Uda"
+      given-names: "Tomoki"
+  journal: "JSIAM Letters"
+  volume: 18
+  year: 2026
+  start: 13
+  end: 16
+  doi: "10.14495/jsiaml.18.13"
+  url: "https://doi.org/10.14495/jsiaml.18.13"
