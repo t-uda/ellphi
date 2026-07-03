@@ -28,7 +28,7 @@ from .geometry import (
     coef_from_axes,
     coef_from_cov,
 )
-from .ellcloud import ellipse_cloud, EllipseCloud, LocalCov
+from .ellcloud import ellipse_cloud, EllipseCloud, LocalCov, RescaleDiagnostics
 
 # solver
 from .solver import (
@@ -60,6 +60,7 @@ __all__ = [
     "ellipse_cloud",
     "EllipseCloud",
     "LocalCov",
+    "RescaleDiagnostics",
     # solver
     "quad_eval",
     "pencil",

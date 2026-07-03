@@ -1,13 +1,19 @@
 from __future__ import annotations
 from __future__ import annotations
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Literal, Sequence, overload
 from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from ellphi import FloatArray
 
-__all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
+__all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov", "RescaleDiagnostics"]
+
+@dataclass(frozen=True)
+class RescaleDiagnostics:
+    scale: float
+    pre_summary: FloatArray
+    post_summary: FloatArray
 
 @dataclass
 class EllipseCloud:
@@ -54,7 +60,18 @@ class EllipseCloud:
     ) -> EllipseCloud: ...
     @classmethod
     def from_local_cov(cls, X: FloatArray, *, k: int = 5) -> EllipseCloud: ...
-    def rescale(self, *, method: str = "median") -> float: ...
+    @overload
+    def rescale(
+        self, *, method: str = ..., return_diagnostics: Literal[False] = ...
+    ) -> float: ...
+    @overload
+    def rescale(
+        self, *, method: str = ..., return_diagnostics: Literal[True]
+    ) -> RescaleDiagnostics: ...
+    @overload
+    def rescale(
+        self, *, method: str = ..., return_diagnostics: bool
+    ) -> float | RescaleDiagnostics: ...
 
 def ellipse_cloud(
     X: FloatArray,

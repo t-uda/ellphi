@@ -19,7 +19,22 @@ from scipy.spatial.distance import squareform, pdist
 from .geometry import axes_from_cov, coef_from_cov, infer_dim_from_coef_length
 from .solver import pdist_tangency
 
-__all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov"]
+__all__ = ["ellipse_cloud", "EllipseCloud", "LocalCov", "RescaleDiagnostics"]
+
+
+@dataclass(frozen=True)
+class RescaleDiagnostics:
+    """Diagnostics returned by :meth:`EllipseCloud.rescale`.
+
+    Attributes:
+        scale: The scaling factor applied to the cloud.
+        pre_summary: Per-axis aggregate semi-axis lengths before rescaling.
+        post_summary: Per-axis aggregate semi-axis lengths after rescaling.
+    """
+
+    scale: float
+    pre_summary: numpy.ndarray
+    post_summary: numpy.ndarray
 
 
 @dataclass
@@ -312,7 +327,7 @@ class EllipseCloud:
         """
         return LocalCov(k=k)(X)
 
-    def rescale(self, *, method="median") -> float:
+    def rescale(self, *, method="median", return_diagnostics=False):
         """Applies rescaling to all the ellipses in the cloud.
 
         This method rescales all the ellipses in the cloud based on the
@@ -320,9 +335,13 @@ class EllipseCloud:
 
         Args:
             method: The rescaling method to use. Can be "median" or "average".
+            return_diagnostics: If ``True``, return a
+                :class:`RescaleDiagnostics` object instead of just the scale
+                factor.  Default is ``False`` for backward compatibility.
 
         Returns:
-            The scaling factor used to rescale the ellipses.
+            The scaling factor (float) when *return_diagnostics* is ``False``,
+            or a :class:`RescaleDiagnostics` object when it is ``True``.
         """
         if self.n_dim != 2:
             raise NotImplementedError(
@@ -342,6 +361,12 @@ class EllipseCloud:
         ell_scale = ell_scales[1] ** 2 / ell_scales[0]
         self.cov /= ell_scale**2
         self.coef *= ell_scale**2
+        if return_diagnostics:
+            return RescaleDiagnostics(
+                scale=float(ell_scale),
+                pre_summary=ell_scales,
+                post_summary=ell_scales / ell_scale,
+            )
         return float(ell_scale)
 
 
