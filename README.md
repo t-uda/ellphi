@@ -125,12 +125,21 @@ python -m ellphi --build-info
 
 ## Citation
 
+Citation metadata for both the paper and the software is kept in
+[`CITATION.cff`](CITATION.cff).
+
+### Citing the paper
+
 If you use EllPHi in your research, please cite the JSIAM Letters paper:
 
 > Tomoki Uda, *Fast and accurate computation of ellipse tangency time for
 > anisotropic persistent homology*, JSIAM Letters **18** (2026), 13–16.
 > DOI: [10.14495/jsiaml.18.13](https://doi.org/10.14495/jsiaml.18.13)
 > ([J-STAGE](https://www.jstage.jst.go.jp/article/jsiaml/18/0/18_13/_article/-char/en))
+
+This is also what GitHub's "Cite this repository" widget (in the sidebar of
+the repository page) generates, via the `preferred-citation` entry in
+`CITATION.cff`.
 
 BibTeX:
 
@@ -147,10 +156,20 @@ BibTeX:
 }
 ```
 
-To cite the software itself, use the metadata in
-[`CITATION.cff`](https://github.com/t-uda/ellphi/blob/main/CITATION.cff) —
-GitHub's "Cite this repository" widget (in the sidebar of the repository
-page) generates APA and BibTeX entries from it.
+### Citing the software
+
+To cite the software itself:
+
+```bibtex
+@software{Uda2026EllPHi,
+  author  = {Uda, Tomoki},
+  title   = {EllPHi},
+  version = {0.1.2},
+  year    = {2026},
+  url     = {https://github.com/t-uda/ellphi},
+  license = {MIT},
+}
+```
 
 ## Contributing
 

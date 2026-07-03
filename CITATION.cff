@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite both the software and the paper below."
 type: software
-title: "ellphi"
+title: "EllPHi"
 abstract: "Fast ellipse tangency solver for anisotropic persistent homology."
 authors:
   - family-names: "Uda"
