@@ -14,7 +14,9 @@ from itertools import combinations
 from typing import Callable
 
 import numpy as np
+import numpy.typing as npt
 
+from . import _tangency_cpp as _cpp
 from .differentiable_solver import solve_mu_gradients
 from .solver import tangency
 
@@ -90,15 +92,43 @@ def tangency_grad(p: np.ndarray, q: np.ndarray, **solver_kwargs) -> TangencyGrad
     )
 
 
+def _pdist_tangency_grad_python(
+    coefs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pure-Python reference: one ``tangency_grad`` call per pair.
+
+    Returns the condensed distances plus the per-pair gradient blocks
+    ``dt_dp`` / ``dt_dq`` of shape ``(n_pairs, m)``.
+    """
+    N, m = coefs.shape
+    n_pairs = N * (N - 1) // 2
+    dists = np.empty(n_pairs)
+    dt_dp = np.empty((n_pairs, m))
+    dt_dq = np.empty((n_pairs, m))
+
+    for k, (i, j) in enumerate(combinations(range(N), 2)):
+        g = tangency_grad(coefs[i], coefs[j])
+        dists[k] = g.t
+        dt_dp[k] = g.dt_dp
+        dt_dq[k] = g.dt_dq
+
+    return dists, dt_dp, dt_dq
+
+
 def pdist_tangency_grad(
     coefs: np.ndarray,
-) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
+) -> tuple[np.ndarray, Callable[[npt.ArrayLike], np.ndarray]]:
     """Pairwise tangency distances and a VJP (pullback) for all pairs.
 
     Computes the same condensed distance array as
     [`pdist_tangency`][ellphi.pdist_tangency]
     and additionally returns a VJP function that maps upstream gradient vectors
     back to per-ellipsoid coefficient gradients.
+
+    The batched distance/gradient computation runs on the C++ backend when it
+    is available (mirroring ``pdist_tangency``) and falls back to the
+    pure-Python reference implementation otherwise.  The VJP accumulation
+    itself always runs in NumPy.
 
     Args:
         coefs: Array of shape ``(N, m)`` containing ``N`` ellipsoid coefficient
@@ -111,6 +141,9 @@ def pdist_tangency_grad(
             tangency distances in the same order as ``scipy.spatial.distance.pdist``.
         - ``vjp`` is a callable ``(grad_dists,) -> grad_coefs`` that accumulates
             upstream gradients into an array of shape ``(N, m)``.
+            ``grad_dists`` must be broadcastable to shape ``(N*(N-1)//2,)``
+            (one cotangent per pair; a scalar is broadcast to all pairs),
+            otherwise a ``ValueError`` is raised.
 
     Examples:
         >>> import numpy as np
@@ -130,20 +163,28 @@ def pdist_tangency_grad(
     if coefs.ndim != 2:
         raise ValueError("Expected coefficient array with shape (N, m)")
     N = len(coefs)
-    pairs = list(combinations(range(N), 2))
-    dists = np.empty(len(pairs))
-    store: list[tuple[int, int, np.ndarray, np.ndarray]] = []
 
-    for k, (i, j) in enumerate(pairs):
-        g = tangency_grad(coefs[i], coefs[j])
-        dists[k] = g.t
-        store.append((i, j, g.dt_dp, g.dt_dq))
+    if _cpp.has_pdist_tangency_grad():
+        dists, dt_dp, dt_dq = _cpp.pdist_tangency_grad(coefs)
+    else:
+        dists, dt_dp, dt_dq = _pdist_tangency_grad_python(coefs)
 
-    def vjp(grad_dists: np.ndarray) -> np.ndarray:
+    n_pairs = N * (N - 1) // 2
+    idx_i, idx_j = np.triu_indices(N, k=1)
+
+    def vjp(grad_dists: npt.ArrayLike) -> np.ndarray:
+        gd = np.asarray(grad_dists, dtype=float)
+        try:
+            gd = np.broadcast_to(gd, (n_pairs,))
+        except ValueError:
+            raise ValueError(
+                "grad_dists must be broadcastable to shape "
+                f"({n_pairs},) (one cotangent per ellipsoid pair); "
+                f"got shape {gd.shape}"
+            ) from None
         g_coefs = np.zeros_like(coefs)
-        for k, (i, j, dt_dp, dt_dq) in enumerate(store):
-            g_coefs[i] += grad_dists[k] * dt_dp
-            g_coefs[j] += grad_dists[k] * dt_dq
+        np.add.at(g_coefs, idx_i, gd[:, None] * dt_dp)
+        np.add.at(g_coefs, idx_j, gd[:, None] * dt_dq)
         return g_coefs
 
     return dists, vjp

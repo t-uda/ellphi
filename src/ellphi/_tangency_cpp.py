@@ -152,6 +152,10 @@ def _raise_backend_error(message: str) -> None:
         raise ValueError(message)
     if "Degenerate conic" in message:
         raise ZeroDivisionError(message)
+    if "Derivative with respect to mu is numerically zero" in message:
+        raise ZeroDivisionError(message)
+    if "Tangency distance is zero" in message:
+        raise ZeroDivisionError(message)
     raise RuntimeError(message or "Unknown C++ backend error")
 
 
@@ -301,3 +305,88 @@ def pdist_tangency(coef: numpy.ndarray) -> numpy.ndarray:
         _raise_backend_error(message)
 
     return output
+
+
+def has_pdist_tangency_grad() -> bool:
+    """Checks if the C++ backend exports the batched gradient kernel.
+
+    Returns:
+        `True` if the C++ backend is loaded and exports the
+        ``pdist_tangency_grad`` symbol, `False` otherwise (e.g. for a stale
+        library built from an older source tree).
+    """
+    return _LIB is not None and hasattr(_LIB, "pdist_tangency_grad")
+
+
+def pdist_tangency_grad(
+    coef: numpy.ndarray,
+) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """Computes pairwise tangency distances and per-pair gradient blocks.
+
+    Args:
+        coef: A NumPy array of shape `(m, n)` containing the coefficient
+            vectors for `m` ellipses.
+
+    Returns:
+        A tuple `(dists, dt_dp, dt_dq)` where `dists` is the condensed
+        distance matrix of tangency distances and `dt_dp` / `dt_dq` hold, for
+        each pair, the gradient of the pair distance with respect to the
+        first / second ellipse coefficients (shape `(n_pairs, n)`).
+
+    Raises:
+        RuntimeError: If the C++ backend is unavailable, or if the loaded
+            library is stale and lacks the ``pdist_tangency_grad`` export.
+    """
+    lib = _ensure_available()
+    if not has_pdist_tangency_grad():
+        raise RuntimeError(
+            "C++ backend is missing the 'pdist_tangency_grad' export; the "
+            "loaded library is stale. "
+            "Rebuild the extension yourself: in a development checkout "
+            "run 'uv sync --reinstall-package ellphi' or "
+            "'python scripts/build_tangency_cpp.py'; with pip, run "
+            "'pip install --force-reinstall .' from the source tree. "
+            "It is not rebuilt automatically during import."
+        )
+
+    func = lib.pdist_tangency_grad
+    func.restype = ctypes.c_int
+    func.argtypes = [
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+
+    coef_arr = numpy.ascontiguousarray(coef, dtype=float)
+    if coef_arr.ndim != 2:
+        raise ValueError("Coefficient array must have shape (m, n)")
+    coef_length = coef_arr.shape[1]
+    infer_dim_from_coef_length(coef_length)
+    m = coef_arr.shape[0]
+    n = m * (m - 1) // 2
+    dists = numpy.empty(n, dtype=float)
+    dt_dp = numpy.empty((n, coef_length), dtype=float)
+    dt_dq = numpy.empty((n, coef_length), dtype=float)
+    error_buffer = ctypes.create_string_buffer(_ERROR_BUFFER)
+
+    status = func(
+        coef_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        ctypes.c_size_t(m),
+        ctypes.c_size_t(coef_length),
+        dists.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        dt_dp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        dt_dq.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        ctypes.cast(error_buffer, ctypes.c_void_p),
+        ctypes.c_size_t(_ERROR_BUFFER),
+    )
+
+    if status != 0:
+        message = error_buffer.value.decode("utf-8", errors="ignore")
+        _raise_backend_error(message)
+
+    return dists, dt_dp, dt_dq

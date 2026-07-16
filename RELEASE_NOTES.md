@@ -1,3 +1,14 @@
+## Unreleased
+
+### Changed
+
+- `ellphi.grad.pdist_tangency_grad(...)` now dispatches the batched
+  distance/gradient computation to the C++ backend when it is available
+  (same auto-selection as `pdist_tangency`), giving orders-of-magnitude
+  speedups for gradient-based workflows. The pure-Python implementation
+  remains as the fallback and the public API is unchanged. Thanks to
+  koki3070 and collaborators (TDA-ML) for the prototype and benchmarks.
+
 ## 0.1.2 - 2026-03-25
 
 ### Added

@@ -1100,6 +1100,186 @@ double solve_mu(
     raise("Unknown method");
 }
 
+struct GradWorkspace {
+    std::vector<double> pencil_coef;
+    DecodedConic conic;
+    std::vector<double> chol;
+    std::vector<double> rhs;
+    std::vector<double> center;
+    std::vector<double> diff_coef;
+    DecodedConic diff_dec;
+    std::vector<double> residual;
+    std::vector<double> solved;
+    std::vector<double> base;
+    std::vector<double> chain;
+    std::vector<double> basis_rhs;
+};
+
+// Tangency distance and its gradients dt/dp, dt/dq for one pair.
+//
+// Mirrors the Python reference (ellphi.grad.tangency_grad backed by
+// ellphi.differentiable_solver.solve_mu_gradients): the envelope theorem
+// removes the chain through the tangent point, and d_mu/dp, d_mu/dq come
+// from implicit differentiation of the optimality condition F(mu, p, q) = 0.
+void tangency_grad_pair(
+    const std::vector<double>& p,
+    const std::vector<double>& q,
+    int dim,
+    GradWorkspace& ws,
+    double* out_dist,
+    double* out_dt_dp,
+    double* out_dt_dq
+) {
+    auto hybrid_iters = default_hybrid_iterations(dim);
+    double mu = solve_mu(
+        p,
+        q,
+        "brentq+newton",
+        {0.0, 1.0},
+        false,
+        0.0,
+        hybrid_iters.first,
+        hybrid_iters.second,
+        true // failsafe enabled by default for pdist
+    );
+
+    pencil_into(p, q, mu, ws.pencil_coef);
+    decode_conic_into(ws.pencil_coef, ws.conic);
+
+    // The gradient requires the Cholesky factor of the pencil quadratic
+    // form; failure signals a degenerate configuration and surfaces as
+    // ZeroDivisionError, matching the Python reference.
+    cholesky_factor_into(ws.conic.quad, dim, ws.chol);
+
+    if (ws.rhs.size() != static_cast<std::size_t>(dim)) {
+        ws.rhs.resize(dim);
+    }
+    for (int i = 0; i < dim; ++i) {
+        ws.rhs[static_cast<std::size_t>(i)] =
+            -ws.conic.linear[static_cast<std::size_t>(i)];
+    }
+    solve_with_cholesky_into(ws.chol, ws.rhs, dim, ws.center);
+
+    double value = quad_eval(ws.conic, ws.center);
+    if (value < 0.0) {
+        value = 0.0;
+    }
+    double t = std::sqrt(value);
+    if (t == 0.0) {
+        raise("Tangency distance is zero (gradient undefined)");
+    }
+
+    const std::size_t coef_length = p.size();
+    if (ws.diff_coef.size() != coef_length) {
+        ws.diff_coef.resize(coef_length);
+    }
+    for (std::size_t i = 0; i < coef_length; ++i) {
+        ws.diff_coef[i] = p[i] - q[i];
+    }
+    decode_conic_into(ws.diff_coef, ws.diff_dec);
+
+    // residual = -(diff_quad @ center + diff_linear)
+    matvec_into(ws.diff_dec.quad, ws.center, dim, ws.residual);
+    for (int i = 0; i < dim; ++i) {
+        ws.residual[static_cast<std::size_t>(i)] = -(
+            ws.residual[static_cast<std::size_t>(i)] +
+            ws.diff_dec.linear[static_cast<std::size_t>(i)]
+        );
+    }
+
+    // dF/dmu = 2 residual . K^{-1} residual (implicit differentiation)
+    solve_with_cholesky_into(ws.chol, ws.residual, dim, ws.solved);
+    double dF_dmu = 0.0;
+    for (int i = 0; i < dim; ++i) {
+        dF_dmu += ws.residual[static_cast<std::size_t>(i)] *
+            ws.solved[static_cast<std::size_t>(i)];
+    }
+    dF_dmu *= 2.0;
+    // Same threshold as numpy.isclose(dF_dmu, 0.0) in the Python reference.
+    if (std::abs(dF_dmu) <= 1e-8) {
+        raise("Derivative with respect to mu is numerically zero");
+    }
+
+    // Monomial basis at the center: [x_i*x_j (i<=j), 2*x_k, 1]
+    if (ws.base.size() != coef_length) {
+        ws.base.resize(coef_length);
+    }
+    std::size_t idx = 0;
+    for (int i = 0; i < dim; ++i) {
+        for (int j = i; j < dim; ++j) {
+            ws.base[idx++] = (i == j)
+                ? ws.center[static_cast<std::size_t>(i)] *
+                    ws.center[static_cast<std::size_t>(i)]
+                : 2.0 * ws.center[static_cast<std::size_t>(i)] *
+                    ws.center[static_cast<std::size_t>(j)];
+        }
+    }
+    for (int i = 0; i < dim; ++i) {
+        ws.base[idx++] = 2.0 * ws.center[static_cast<std::size_t>(i)];
+    }
+    ws.base[idx] = 1.0;
+
+    // chain[k] = (dx*/dr_k) . phi_x with phi_x = -2 residual and Jacobian
+    // row -K^{-1} rhs_k, hence chain[k] = 2 (K^{-1} rhs_k) . residual.
+    if (ws.chain.size() != coef_length) {
+        ws.chain.resize(coef_length);
+    }
+    if (ws.basis_rhs.size() != static_cast<std::size_t>(dim)) {
+        ws.basis_rhs.resize(dim);
+    }
+    idx = 0;
+    for (int i = 0; i < dim; ++i) {
+        for (int j = i; j < dim; ++j) {
+            std::fill(ws.basis_rhs.begin(), ws.basis_rhs.end(), 0.0);
+            if (i == j) {
+                ws.basis_rhs[static_cast<std::size_t>(i)] =
+                    ws.center[static_cast<std::size_t>(i)];
+            } else {
+                ws.basis_rhs[static_cast<std::size_t>(i)] =
+                    ws.center[static_cast<std::size_t>(j)];
+                ws.basis_rhs[static_cast<std::size_t>(j)] =
+                    ws.center[static_cast<std::size_t>(i)];
+            }
+            solve_with_cholesky_into(ws.chol, ws.basis_rhs, dim, ws.solved);
+            double dot = 0.0;
+            for (int k = 0; k < dim; ++k) {
+                dot += ws.solved[static_cast<std::size_t>(k)] *
+                    ws.residual[static_cast<std::size_t>(k)];
+            }
+            ws.chain[idx++] = 2.0 * dot;
+        }
+    }
+    for (int axis = 0; axis < dim; ++axis) {
+        std::fill(ws.basis_rhs.begin(), ws.basis_rhs.end(), 0.0);
+        ws.basis_rhs[static_cast<std::size_t>(axis)] = 1.0;
+        solve_with_cholesky_into(ws.chol, ws.basis_rhs, dim, ws.solved);
+        double dot = 0.0;
+        for (int k = 0; k < dim; ++k) {
+            dot += ws.solved[static_cast<std::size_t>(k)] *
+                ws.residual[static_cast<std::size_t>(k)];
+        }
+        ws.chain[idx++] = 2.0 * dot;
+    }
+    // The constant term does not move the center.
+    ws.chain[idx] = 0.0;
+
+    double scalar = 0.0;
+    for (std::size_t k = 0; k < coef_length; ++k) {
+        scalar += ws.base[k] * (q[k] - p[k]);
+    }
+    const double inv2t = 0.5 / t;
+    const double one_minus_mu = 1.0 - mu;
+    for (std::size_t k = 0; k < coef_length; ++k) {
+        double dF_dp = ws.base[k] + one_minus_mu * ws.chain[k];
+        double dF_dq = -ws.base[k] + mu * ws.chain[k];
+        double d_mu_dp = -dF_dp / dF_dmu;
+        double d_mu_dq = -dF_dq / dF_dmu;
+        out_dt_dp[k] = inv2t * (one_minus_mu * ws.base[k] + scalar * d_mu_dp);
+        out_dt_dq[k] = inv2t * (mu * ws.base[k] + scalar * d_mu_dq);
+    }
+    out_dist[0] = t;
+}
+
 void copy_error(char* buffer, std::size_t size, const std::string& message) {
     if (buffer == nullptr || size == 0) {
         return;
@@ -1212,6 +1392,55 @@ ELLPHI_EXPORT extern "C" int pdist_tangency(
             value = 0.0;
         }
         out[idx++] = std::sqrt(value);
+            }
+        }
+        return 0;
+    } catch (const std::exception& ex) {
+        copy_error(err_buffer, err_buffer_len, ex.what());
+        return 1;
+    } catch (...) {
+        copy_error(err_buffer, err_buffer_len, "Unknown error");
+        return 1;
+    }
+}
+
+ELLPHI_EXPORT extern "C" int pdist_tangency_grad(
+    const double* coef,
+    std::size_t m,
+    std::size_t coef_length,
+    double* out_dists,
+    double* out_dt_dp,
+    double* out_dt_dq,
+    char* err_buffer,
+    std::size_t err_buffer_len
+) {
+    try {
+        int dim = infer_dim_from_coef_length(coef_length);
+        std::vector<std::vector<double>> conics(
+            m,
+            std::vector<double>(coef_length, 0.0)
+        );
+        for (std::size_t i = 0; i < m; ++i) {
+            const double* start = coef + i * coef_length;
+            std::copy(start, start + coef_length, conics[i].begin());
+        }
+
+        GradWorkspace ws{};
+        std::size_t idx = 0;
+        for (std::size_t i = 0; i < m; ++i) {
+            const std::vector<double>& p = conics[i];
+            for (std::size_t j = i + 1; j < m; ++j) {
+                const std::vector<double>& q = conics[j];
+                tangency_grad_pair(
+                    p,
+                    q,
+                    dim,
+                    ws,
+                    out_dists + idx,
+                    out_dt_dp + idx * coef_length,
+                    out_dt_dq + idx * coef_length
+                );
+                ++idx;
             }
         }
         return 0;
