@@ -1,4 +1,11 @@
-## Unreleased
+## 0.1.3 - 2026-10-02
+
+### Added
+
+- `EllipseCloud.rescale(..., return_diagnostics=True)` now returns a
+  `RescaleDiagnostics` dataclass with the applied scale factor and the
+  per-axis semi-axis summaries before and after rescaling. The default
+  `return_diagnostics=False` path is unchanged. (#119)
 
 ### Changed
 
@@ -8,6 +15,22 @@
   speedups for gradient-based workflows. The pure-Python implementation
   remains as the fallback and the public API is unchanged. Thanks to
   koki3070 and collaborators (TDA-ML) for the prototype and benchmarks.
+  (#134)
+
+### Documentation
+
+- Added `CITATION.cff` with software metadata and a preferred-citation
+  entry for the published JSIAM Letters paper (vol. 18, 2026, pp. 13-16,
+  DOI 10.14495/jsiaml.18.13), plus a README Citation section with a
+  ready-to-copy BibTeX entry. (#131)
+
+### Tooling
+
+- Migrated dependency management from Poetry to uv: dev/docs tooling now
+  live in PEP 735 `[dependency-groups]`, `uv.lock` replaces `poetry.lock`,
+  and all CI workflows use `astral-sh/setup-uv` with a `uv lock --check`
+  freshness step. The poetry-core build backend is kept so pip/uv installs
+  still compile the C++ tangency backend. (#132)
 
 ## 0.1.2 - 2026-03-25
 

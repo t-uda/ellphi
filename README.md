@@ -164,7 +164,7 @@ To cite the software itself:
 @software{Uda2026EllPHi,
   author  = {Uda, Tomoki},
   title   = {EllPHi},
-  version = {0.1.2},
+  version = {0.1.3},
   year    = {2026},
   url     = {https://github.com/t-uda/ellphi},
   license = {MIT},
