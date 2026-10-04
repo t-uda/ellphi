@@ -1542,7 +1542,7 @@ def solve_minimax(
     k, d = centers.shape
 
     _validate_tolerance("tol", tol, strictly_positive=True)
-    _validate_tolerance("newton_tol", newton_tol)
+    _validate_tolerance("newton_tol", newton_tol, strictly_positive=True)
     _validate_tolerance("regularization", regularization)
     _validate_tolerance("weight_tol", weight_tol)
     _validate_positive_int("max_iter", max_iter)

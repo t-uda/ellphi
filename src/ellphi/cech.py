@@ -133,7 +133,7 @@ def _validate_solver_parameters(
 ) -> None:
     """Validate public solver controls before dispatching to the engine."""
     _validate_tolerance("tol", tol, strictly_positive=True)
-    _validate_tolerance("newton_tol", newton_tol)
+    _validate_tolerance("newton_tol", newton_tol, strictly_positive=True)
     _validate_tolerance("weight_tol", weight_tol)
     _validate_positive_int("max_iter", max_iter)
     _validate_positive_int("newton_max_iter", newton_max_iter)

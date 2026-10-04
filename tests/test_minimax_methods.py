@@ -165,6 +165,12 @@ class TestMethodDispatch:
         res = solve_minimax(matrices, centers)
         assert res.method == "fw+bisect"
 
+    @pytest.mark.parametrize("newton_tol", [np.nan, 0.0])
+    def test_non_positive_or_non_finite_newton_tol_raises(self, newton_tol):
+        matrices, centers = _random_simplex(2, 2)
+        with pytest.raises(ValueError, match="newton_tol must be finite and > 0"):
+            solve_minimax(matrices, centers, newton_tol=newton_tol)
+
 
 # ---------------------------------------------------------------------------
 # Numerical agreement across methods

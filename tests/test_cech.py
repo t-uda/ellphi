@@ -463,6 +463,16 @@ def test_public_tol_must_be_finite_and_positive(value):
         ellphi.cech(coefs, tol=value)
 
 
+@pytest.mark.parametrize("value", [np.nan, 0.0])
+def test_public_newton_tol_must_be_finite_and_positive(value):
+    coefs = coef_from_cov(
+        np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
+    )
+
+    with pytest.raises(ValueError, match="newton_tol must be finite and > 0"):
+        ellphi.cech(coefs, newton_tol=value)
+
+
 def test_public_namedtuple_field_order():
     assert ellphi.CechResult._fields == (
         "t",
