@@ -5,20 +5,20 @@ import numpy as np
 from ._minimax_python import MethodName
 
 __all__ = [
-    "SimplexTangencyResult",
-    "SimplexTangencyGrad",
-    "tangency_simplex",
-    "tangency_simplex_grad",
+    "CechResult",
+    "CechGrad",
+    "cech",
+    "cech_grad",
 ]
 
-class SimplexTangencyResult(NamedTuple):
+class CechResult(NamedTuple):
     t: float
     point: np.ndarray
     mu: np.ndarray
     support: tuple[int, ...]
     active_set: tuple[int, ...]
 
-class SimplexTangencyGrad(NamedTuple):
+class CechGrad(NamedTuple):
     t: float
     point: np.ndarray
     mu: np.ndarray
@@ -26,7 +26,7 @@ class SimplexTangencyGrad(NamedTuple):
     support: tuple[int, ...]
     active_set: tuple[int, ...]
 
-def tangency_simplex(
+def cech(
     coefs: np.ndarray,
     *,
     method: MethodName | str = "fw+bisect",
@@ -39,7 +39,5 @@ def tangency_simplex(
     max_conditioning_steps: int = 8,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
-) -> SimplexTangencyResult: ...
-def tangency_simplex_grad(
-    coefs: np.ndarray, **solver_kwargs: Any
-) -> SimplexTangencyGrad: ...
+) -> CechResult: ...
+def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad: ...

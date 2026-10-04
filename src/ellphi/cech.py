@@ -1,8 +1,9 @@
-"""Pairwise-aligned many-body tangency API (provisional names).
+"""Anisotropic Čech filtration API.
 
-The names in this module are provisional.  ``tangency_simplex`` extends the
-pairwise :func:`ellphi.tangency` contract to one or more packed ellipsoid
-coefficient vectors while keeping the many-body numerical engine internal.
+The :func:`cech` function computes the anisotropic Čech filtration time for
+one or more packed ellipsoid coefficient vectors while keeping the many-body
+numerical engine internal.  For ``k = 2`` the Čech time equals the tangency
+time computed by :func:`ellphi.tangency`, and ``cech`` agrees with it.
 """
 
 from __future__ import annotations
@@ -15,10 +16,10 @@ from ._minimax_python import MethodName, solve_minimax
 from .geometry import unpack_conic
 
 __all__ = [
-    "SimplexTangencyResult",
-    "SimplexTangencyGrad",
-    "tangency_simplex",
-    "tangency_simplex_grad",
+    "CechResult",
+    "CechGrad",
+    "cech",
+    "cech_grad",
 ]
 
 
@@ -26,8 +27,17 @@ _NEGATIVE_ALPHA_ROUNDING_FACTOR = 64.0
 _MACHINE_EPSILON = np.finfo(float).eps
 
 
-class SimplexTangencyResult(NamedTuple):
-    """Result of a many-body tangency calculation.
+class CechResult(NamedTuple):
+    """Result of an anisotropic Čech filtration calculation.
+
+    For a simplex ``sigma`` of ellipsoids with quadratic functions ``f_i``,
+    ``t**2 = alpha(sigma) = min_x max_i f_i(x)`` is the least squared scale at
+    which all growing ellipsoids ``E_i(t) = {f_i <= t**2}`` share a point.
+    At the critical scale their intersection is the single point ``x*``;
+    active boundaries pass through ``x*`` and satisfy
+    ``sum_i mu_i grad f_i(x*) = 0`` with positive weights, but the boundaries
+    are not tangent to each other.  Pairwise tangency is only the ``k = 2``
+    special case.
 
     ``support`` is the thresholded weight support ``{i: mu[i] > weight_tol}``.
     ``active_set`` is the tight-constraint set at the returned point,
@@ -41,9 +51,10 @@ class SimplexTangencyResult(NamedTuple):
     support (historical ellcech naming) and is not part of the public API.
 
     Attributes:
-        t: Tangency time ``sqrt(max_i f_i(point))``.
-        point: Tangency point, shape ``(d,)``.
-        mu: Simplex multipliers, shape ``(k,)``.
+        t: Čech filtration time; ``t**2 = alpha(sigma)``.
+        point: Common intersection point ``x*`` at the critical scale, shape
+            ``(d,)``.
+        mu: Lagrange multipliers (dual weights on the simplex), shape ``(k,)``.
         support: Indices with multiplier greater than ``weight_tol``.
         active_set: Tight constraints satisfying the numerical active-set
             test with ``active_tol``.
@@ -56,16 +67,17 @@ class SimplexTangencyResult(NamedTuple):
     active_set: tuple[int, ...]
 
 
-class SimplexTangencyGrad(NamedTuple):
-    """Many-body tangency result and coefficient-space gradient.
+class CechGrad(NamedTuple):
+    """Čech filtration result and coefficient-space gradient.
 
     ``support`` and ``active_set`` have the definitions documented for
-    :class:`SimplexTangencyResult`.
+    :class:`CechResult`.
 
     Attributes:
-        t: Tangency time.
-        point: Tangency point, shape ``(d,)``.
-        mu: Simplex multipliers, shape ``(k,)``.
+        t: Čech filtration time; ``t**2 = alpha(sigma)``.
+        point: Common intersection point ``x*`` at the critical scale, shape
+            ``(d,)``.
+        mu: Lagrange multipliers (dual weights on the simplex), shape ``(k,)``.
         dt_dcoef: Gradient of ``t`` for independent packed coefficient
             perturbations, shape ``(k, m)``.
         support: Indices with multiplier greater than ``weight_tol``.
@@ -193,7 +205,7 @@ def _centered_constraint_values(
     return values + offsets
 
 
-def tangency_simplex(
+def cech(
     coefs: np.ndarray,
     *,
     method: MethodName | str = "fw+bisect",
@@ -206,8 +218,14 @@ def tangency_simplex(
     max_conditioning_steps: int = 8,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
-) -> SimplexTangencyResult:
-    """Compute the common tangency time for a simplex of ellipsoids.
+) -> CechResult:
+    """Compute the Čech filtration time for a simplex of ellipsoids.
+
+    The returned ``t`` satisfies ``t**2 = alpha(sigma)``, where
+    ``alpha(sigma) = min_x max_i f_i(x)`` is the least squared scale at which
+    all growing ellipsoids share a common point.  For ``k = 2`` the Čech time
+    equals the tangency time computed by :func:`ellphi.tangency`, and ``cech``
+    agrees with it.
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
@@ -224,13 +242,14 @@ def tangency_simplex(
         newton_max_iter: Maximum Newton-polishing iterations.
 
     Returns:
-        A result using tangency time rather than squared filtration value.
+        A result containing the Čech filtration time rather than the squared
+        filtration value.
 
     Raises:
         ValueError: If the coefficient array is not two-dimensional, is empty,
             a tolerance is not finite and non-negative, or a coefficient row
             has a singular quadratic matrix, or the packed quadrics have no
-            common non-negative tangency scale. Packed input requires
+            common non-negative filtration scale. Packed input requires
             ``d >= 2``, as for :func:`ellphi.tangency`.
         RuntimeError: If the internal solver does not converge or produces a
             non-finite output.  Solver diagnostics are included in the error.
@@ -281,7 +300,7 @@ def tangency_simplex(
     if not result.converged or not finite:
         reason = "did not converge" if not result.converged else "was non-finite"
         raise RuntimeError(
-            "tangency_simplex "
+            "cech "
             f"{reason}: method={result.method!r}, n_iter={result.n_iter}, "
             f"diagnostics={result.metadata!r}"
         )
@@ -291,7 +310,7 @@ def tangency_simplex(
     )
     if not np.all(np.isfinite(values)):
         raise RuntimeError(
-            "tangency_simplex was non-finite: "
+            "cech was non-finite: "
             f"method={result.method!r}, n_iter={result.n_iter}, "
             f"diagnostics={result.metadata!r}"
         )
@@ -303,7 +322,7 @@ def tangency_simplex(
         value_roundoff,
     )
     if alpha < -negative_tolerance:
-        raise ValueError("packed quadrics have no common non-negative tangency scale")
+        raise ValueError("packed quadrics have no common non-negative filtration scale")
     t_squared = float(max(alpha, 0.0))
     t = float(np.sqrt(max(0.0, t_squared)))
     support = tuple(int(i) for i in np.flatnonzero(result.weights > weight_tol))
@@ -312,7 +331,7 @@ def tangency_simplex(
         int(i) for i in np.flatnonzero(t_squared - values <= active_threshold)
     )
 
-    return SimplexTangencyResult(
+    return CechResult(
         t=t,
         point=result.circumcenter,
         mu=result.weights,
@@ -321,10 +340,8 @@ def tangency_simplex(
     )
 
 
-def tangency_simplex_grad(
-    coefs: np.ndarray, **solver_kwargs: Any
-) -> SimplexTangencyGrad:
-    """Return many-body tangency and its packed-coefficient gradient.
+def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad:
+    """Return the Čech filtration time and its coefficient-space gradient.
 
     For EllPHi's packed conic ``f_i(x) = coef_i @ basis(x)``, the basis is
     ``[x_j**2 if j == l else 2*x_j*x_l for j <= l, 2*x_0, ..., 2*x_(d-1), 1]``
@@ -353,23 +370,23 @@ def tangency_simplex_grad(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        **solver_kwargs: Forwarded to :func:`tangency_simplex`.
+        **solver_kwargs: Forwarded to :func:`cech`.
 
     Returns:
-        Tangency data and ``dt_dcoef`` with shape ``(k, m)``.
+        Čech filtration data and ``dt_dcoef`` with shape ``(k, m)``.
 
     Raises:
-        ZeroDivisionError: If the tangency time is zero.
+        ZeroDivisionError: If the Čech filtration time is zero.
         RuntimeError: If the forward solve fails.
     """
     coefs = np.asarray(coefs, dtype=float)
-    result = tangency_simplex(coefs, **solver_kwargs)
+    result = cech(coefs, **solver_kwargs)
     if result.t == 0.0:
-        raise ZeroDivisionError("tangency gradient is undefined when t == 0")
+        raise ZeroDivisionError("Čech gradient is undefined when t == 0")
 
     basis = _coefficient_basis(result.point)
     dt_dcoef = result.mu[:, np.newaxis] * basis[np.newaxis, :] / (2.0 * result.t)
-    return SimplexTangencyGrad(
+    return CechGrad(
         t=result.t,
         point=result.point,
         mu=result.mu,

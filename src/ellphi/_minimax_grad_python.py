@@ -15,8 +15,7 @@ Distributed as part of EllPHi under its MIT license; the ellcech source is
 MIT by owner decision (uda-lab/project-ellphi#26, 2026-10-04), aligned with
 EllPHi.
 
-This numerical engine is internal.  The provisional public interface is
-:mod:`ellphi.simplex`.
+This numerical engine is internal.  The public interface is :mod:`ellphi.cech`.
 
 Formula
 -------

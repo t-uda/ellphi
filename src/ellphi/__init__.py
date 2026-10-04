@@ -14,8 +14,7 @@ The library is organized into the following subpackages:
     two ellipses.
 - `ellphi.visualization`: Helper functions for visualizing ellipses and
     ellipse clouds.
-- `ellphi.simplex`: Pairwise-aligned many-body tangency values and gradients
-    (provisional names).
+- `ellphi.cech`: Anisotropic Čech filtration values and gradients.
 """
 
 import numpy as np
@@ -48,12 +47,12 @@ from .solver import (
 
 from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_cov_grad
 
-# many-body tangency (provisional names)
-from .simplex import (
-    SimplexTangencyResult,
-    SimplexTangencyGrad,
-    tangency_simplex,
-    tangency_simplex_grad,
+# anisotropic Čech filtration
+from .cech import (
+    CechResult,
+    CechGrad,
+    cech,
+    cech_grad,
 )
 
 FloatArray = NDArray[np.float64]
@@ -86,11 +85,11 @@ __all__ = [
     "tangency_grad",
     "pdist_tangency_grad",
     "coef_from_cov_grad",
-    # many-body tangency (provisional)
-    "SimplexTangencyResult",
-    "SimplexTangencyGrad",
-    "tangency_simplex",
-    "tangency_simplex_grad",
+    # anisotropic Čech filtration
+    "CechResult",
+    "CechGrad",
+    "cech",
+    "cech_grad",
     "__version__",
     "version_info",
 ]

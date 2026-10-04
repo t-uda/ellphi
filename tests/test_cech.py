@@ -1,4 +1,4 @@
-"""Tests for the pairwise-aligned many-body tangency API."""
+"""Tests for the anisotropic Čech filtration API."""
 
 from __future__ import annotations
 
@@ -43,9 +43,9 @@ def _value_roundoff_bound(coefs: np.ndarray) -> float:
     )
 
 
-def test_pairwise_agrees_with_tangency(solver_backend, rng):
+def test_pairwise_cech_agrees_with_tangency(solver_backend, rng):
     p, q = random_coef_pair(rng, dim=3)
-    result = ellphi.tangency_simplex(np.stack((p, q)))
+    result = ellphi.cech(np.stack((p, q)))
     pairwise = ellphi.tangency(p, q, backend=solver_backend)
 
     assert result.t == pytest.approx(pairwise.t, rel=1e-9)
@@ -56,7 +56,9 @@ def test_pairwise_agrees_with_tangency(solver_backend, rng):
 
 
 @pytest.mark.parametrize("dimension", [2, 3])
-def test_unnormalized_pairwise_agrees_with_tangency(solver_backend, rng, dimension):
+def test_unnormalized_pairwise_cech_agrees_with_tangency(
+    solver_backend, rng, dimension
+):
     for _ in range(5):
         centers = rng.uniform(-2.0, 2.0, size=(2, dimension))
         while np.linalg.norm(centers[0] - centers[1]) < 1.5:
@@ -67,7 +69,7 @@ def test_unnormalized_pairwise_agrees_with_tangency(solver_backend, rng, dimensi
         coefs = coef_from_cov(centers, covariances)
         coefs[:, -1] += rng.uniform(0.1, 1.0) + rng.uniform(-1e-4, 1e-4, size=2)
 
-        result = ellphi.tangency_simplex(coefs)
+        result = ellphi.cech(coefs)
         pairwise = ellphi.tangency(coefs[0], coefs[1], backend=solver_backend)
 
         assert result.t == pytest.approx(pairwise.t, rel=1e-9)
@@ -91,11 +93,11 @@ def test_translated_pair_uses_engine_value_and_centred_constraints(solver_backen
         * max(1.0, abs(float(constant)))
         for matrix, constant in zip(matrices, constants)
     )
-    result = ellphi.tangency_simplex(coefs)
+    result = ellphi.cech(coefs)
     pairwise = ellphi.tangency(
         pairwise_coefs[0], pairwise_coefs[1], backend=solver_backend
     )
-    gradient = ellphi.tangency_simplex_grad(coefs)
+    gradient = ellphi.cech_grad(coefs)
     tri_i, tri_j = np.triu_indices(2)
     basis = np.concatenate(
         (
@@ -123,7 +125,7 @@ def test_translated_singleton_roundoff_negative_scale_is_clipped():
     coefs = coef_from_cov(center, covariance[None])
     value_roundoff = _value_roundoff_bound(coefs)
 
-    result = ellphi.tangency_simplex(coefs)
+    result = ellphi.cech(coefs)
 
     assert abs(result.t) <= np.sqrt(value_roundoff)
 
@@ -134,7 +136,7 @@ def test_translated_coincident_roundoff_negative_scale_is_clipped():
     coefs = np.repeat(coef_from_cov(center, covariance[None]), 2, axis=0)
     value_roundoff = _value_roundoff_bound(coefs)
 
-    result = ellphi.tangency_simplex(coefs)
+    result = ellphi.cech(coefs)
 
     assert abs(result.t) <= np.sqrt(value_roundoff)
 
@@ -158,7 +160,7 @@ def test_coef_from_cov_accepts_rotated_spd_conditioning(dimension, condition_num
     )
 
     if condition_number <= 1e6:
-        result = ellphi.tangency_simplex(coefs)
+        result = ellphi.cech(coefs)
         assert result.t**2 <= precision_bound
         point = result.point
     else:
@@ -182,7 +184,7 @@ def test_scaled_centres_from_cov_are_accepted():
         ]
     )
 
-    result = ellphi.tangency_simplex(coef_from_cov(centers, covariances))
+    result = ellphi.cech(coef_from_cov(centers, covariances))
 
     assert np.isfinite(result.t)
     assert result.active_set == (0, 1)
@@ -197,9 +199,9 @@ def test_subthreshold_packed_constant_is_honoured_by_gradient():
     perturbed_coefs[0, -1] += 5e-10
     solver_kwargs = {"method": "fw+brentq+newton", "tol": 1e-12}
 
-    baseline = ellphi.tangency_simplex(baseline_coefs, **solver_kwargs)
-    perturbed = ellphi.tangency_simplex(perturbed_coefs, **solver_kwargs)
-    gradient = ellphi.tangency_simplex_grad(perturbed_coefs, **solver_kwargs)
+    baseline = ellphi.cech(baseline_coefs, **solver_kwargs)
+    perturbed = ellphi.cech(perturbed_coefs, **solver_kwargs)
+    gradient = ellphi.cech_grad(perturbed_coefs, **solver_kwargs)
 
     expected_change = baseline.mu[0] * 5e-10
     assert perturbed.t**2 - baseline.t**2 == pytest.approx(
@@ -212,8 +214,7 @@ def test_subthreshold_packed_constant_is_honoured_by_gradient():
     plus[0, -1] += h
     minus[0, -1] -= h
     finite_difference = (
-        ellphi.tangency_simplex(plus, **solver_kwargs).t
-        - ellphi.tangency_simplex(minus, **solver_kwargs).t
+        ellphi.cech(plus, **solver_kwargs).t - ellphi.cech(minus, **solver_kwargs).t
     ) / (2.0 * h)
     assert gradient.dt_dcoef[0, -1] == pytest.approx(
         finite_difference, rel=1e-6, abs=1e-12
@@ -227,9 +228,9 @@ def test_negative_packed_scale_raises():
     coefs[:, -1] -= 2.0
 
     with pytest.raises(
-        ValueError, match="packed quadrics have no common non-negative tangency scale"
+        ValueError, match="packed quadrics have no common non-negative filtration scale"
     ):
-        ellphi.tangency_simplex(coefs)
+        ellphi.cech(coefs)
 
 
 def test_packed_one_dimensional_input_is_rejected_like_pairwise():
@@ -238,7 +239,7 @@ def test_packed_one_dimensional_input_is_rejected_like_pairwise():
     with pytest.raises(
         ValueError, match="packed input requires d >= 2, as for ellphi.tangency"
     ):
-        ellphi.tangency_simplex(coefs)
+        ellphi.cech(coefs)
 
 
 @pytest.mark.parametrize("method", list(get_args(MethodName)))
@@ -246,7 +247,7 @@ def test_right_triangle_distinguishes_support_and_active_set(method):
     centers = np.array([[2.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
     coefs = coef_from_cov(centers, np.repeat(np.eye(2)[None], 3, axis=0))
 
-    result = ellphi.tangency_simplex(coefs, method=method, active_tol=1e-12)
+    result = ellphi.cech(coefs, method=method, active_tol=1e-12)
 
     assert result.t == pytest.approx(np.sqrt(2.0), rel=1e-12)
     np.testing.assert_allclose(result.point, [1.0, 1.0], atol=1e-12)
@@ -257,9 +258,9 @@ def test_right_triangle_distinguishes_support_and_active_set(method):
     assert result.active_set == (0, 1, 2)
 
 
-def test_singleton_and_empty_simplex():
+def test_singleton_and_empty_cech_input():
     coefs = coef_from_cov(np.array([[1.0, -2.0]]), np.eye(2)[None])
-    result = ellphi.tangency_simplex(coefs)
+    result = ellphi.cech(coefs)
 
     assert result.t == 0.0
     np.testing.assert_allclose(result.point, [1.0, -2.0])
@@ -268,13 +269,13 @@ def test_singleton_and_empty_simplex():
     assert result.active_set == (0,)
 
     with pytest.raises(ValueError, match="at least one vertex"):
-        ellphi.tangency_simplex(np.empty((0, coefs.shape[1])))
+        ellphi.cech(np.empty((0, coefs.shape[1])))
 
 
 def test_non_convergence_raises_with_diagnostics():
     coefs = _random_coefs(5, 3, seed=101)
     with pytest.raises(RuntimeError) as exc_info:
-        ellphi.tangency_simplex(coefs, method="fw+bisect", max_iter=1, tol=1e-15)
+        ellphi.cech(coefs, method="fw+bisect", max_iter=1, tol=1e-15)
 
     message = str(exc_info.value)
     assert "method='fw+bisect'" in message
@@ -295,7 +296,7 @@ def test_gradient_matches_independent_packed_central_difference(k, d, seed):
         "tol": 1e-12,
         "newton_tol": 1e-14,
     }
-    gradient = ellphi.tangency_simplex_grad(coefs, **solver_kwargs)
+    gradient = ellphi.cech_grad(coefs, **solver_kwargs)
     h = 1e-6
     finite_difference = np.empty_like(coefs)
     for index in np.ndindex(coefs.shape):
@@ -304,8 +305,7 @@ def test_gradient_matches_independent_packed_central_difference(k, d, seed):
         plus[index] += h
         minus[index] -= h
         finite_difference[index] = (
-            ellphi.tangency_simplex(plus, **solver_kwargs).t
-            - ellphi.tangency_simplex(minus, **solver_kwargs).t
+            ellphi.cech(plus, **solver_kwargs).t - ellphi.cech(minus, **solver_kwargs).t
         ) / (2.0 * h)
 
     error = _relative_error(gradient.dt_dcoef, finite_difference)
@@ -314,7 +314,7 @@ def test_gradient_matches_independent_packed_central_difference(k, d, seed):
 
 def test_pairwise_gradient_identity(solver_backend, rng):
     p, q = random_coef_pair(rng, dim=3)
-    gradient = ellphi.tangency_simplex_grad(np.stack((p, q)))
+    gradient = ellphi.cech_grad(np.stack((p, q)))
     pairwise = ellphi.tangency_grad(p, q, backend=solver_backend)
 
     error_p = _relative_error(gradient.dt_dcoef[0], pairwise.dt_dp)
@@ -326,10 +326,10 @@ def test_pairwise_gradient_identity(solver_backend, rng):
 def test_zero_time_gradient_raises():
     coefs = coef_from_cov(np.array([[1.0, -2.0]]), np.eye(2)[None])
     with pytest.raises(ZeroDivisionError, match="t == 0"):
-        ellphi.tangency_simplex_grad(coefs)
+        ellphi.cech_grad(coefs)
 
 
-@pytest.mark.parametrize("api", [ellphi.tangency_simplex, ellphi.tangency_simplex_grad])
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
 def test_unnormalized_constant_agrees_with_expected(api):
     coefs = coef_from_cov(
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
@@ -351,17 +351,17 @@ def test_public_surrogate_methods(method):
     coefs = pack_conic(matrices, linear, constants)
 
     if method == "scipy-slsqp":
-        result = ellphi.tangency_simplex(coefs, method=method)
+        result = ellphi.cech(coefs, method=method)
         assert result.t == pytest.approx(np.sqrt(0.9024444260258915), abs=1e-8)
     else:
         with pytest.raises(RuntimeError):
-            ellphi.tangency_simplex(coefs, method=method)
+            ellphi.cech(coefs, method=method)
 
 
-@pytest.mark.parametrize("api", [ellphi.tangency_simplex, ellphi.tangency_simplex_grad])
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
 @pytest.mark.parametrize("name", ["active_tol", "weight_tol"])
 @pytest.mark.parametrize("value", [np.nan, -1.0])
-def test_simplex_tolerances_must_be_finite_and_nonnegative(api, name, value):
+def test_cech_tolerances_must_be_finite_and_nonnegative(api, name, value):
     coefs = coef_from_cov(
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
     )
@@ -377,18 +377,18 @@ def test_public_tol_must_be_finite_and_positive(value):
     )
 
     with pytest.raises(ValueError, match="tol must be finite and > 0"):
-        ellphi.tangency_simplex(coefs, tol=value)
+        ellphi.cech(coefs, tol=value)
 
 
 def test_public_namedtuple_field_order():
-    assert ellphi.SimplexTangencyResult._fields == (
+    assert ellphi.CechResult._fields == (
         "t",
         "point",
         "mu",
         "support",
         "active_set",
     )
-    assert ellphi.SimplexTangencyGrad._fields == (
+    assert ellphi.CechGrad._fields == (
         "t",
         "point",
         "mu",
@@ -400,10 +400,10 @@ def test_public_namedtuple_field_order():
 
 def test_public_exports_hide_internal_engine():
     expected = {
-        "SimplexTangencyResult",
-        "SimplexTangencyGrad",
-        "tangency_simplex",
-        "tangency_simplex_grad",
+        "CechResult",
+        "CechGrad",
+        "cech",
+        "cech_grad",
     }
     assert expected <= set(ellphi.__all__)
     assert not {
