@@ -690,6 +690,31 @@ def _run_fw_bisect(
         mu = np.clip(mu, 0.0, None)
         mu /= mu.sum()
 
+    if not converged:
+        xstar, f = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        gradient = _dual_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            xstar,
+            f,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        converged = float(np.max(gradient) - np.dot(mu, gradient)) < tol
+
     return mu, converged, n_iter
 
 
@@ -781,6 +806,31 @@ def _run_fw_brentq(
         mu[v] -= gamma
         mu = np.clip(mu, 0.0, None)
         mu /= mu.sum()
+
+    if not converged:
+        xstar, f = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        gradient = _dual_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            xstar,
+            f,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        converged = float(np.max(gradient) - np.dot(mu, gradient)) < tol
 
     metadata = {
         "fw_iters": n_iter,
@@ -897,8 +947,27 @@ def _newton_polish(
         if offsets is not None:
             f = f + offsets[active_set]
 
-        # Residual: r_l = f_{i_l} - f_{i_{m-1}}
-        r = f[:-1] - f[-1]  # (m-1,)
+        if regularization == 0.0 and condition_number_limit is None:
+            # Keep the unregularized residual path bitwise identical.
+            r = f[:-1] - f[-1]
+        else:
+            diff_all = xstar[np.newaxis, :] - centers
+            f_all = np.einsum("ki,kij,kj->k", diff_all, matrices, diff_all)
+            if offsets is not None:
+                f_all = f_all + offsets
+            gradient = _dual_gradient(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                xstar,
+                f_all,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            r = gradient[active_set[:-1]] - gradient[active_set[-1]]
         if float(np.max(np.abs(r))) < tol:
             newton_status = "converged"
             break
@@ -1037,8 +1106,27 @@ def _damped_newton_polish(
         if offsets is not None:
             f = f + offsets[active_set]
 
-        # Residual
-        r = f[:-1] - f[-1]
+        if regularization == 0.0 and condition_number_limit is None:
+            # Keep the unregularized residual path bitwise identical.
+            r = f[:-1] - f[-1]
+        else:
+            diff_all = xstar[np.newaxis, :] - centers
+            f_all = np.einsum("ki,kij,kj->k", diff_all, matrices, diff_all)
+            if offsets is not None:
+                f_all = f_all + offsets
+            gradient = _dual_gradient(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                xstar,
+                f_all,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            r = gradient[active_set[:-1]] - gradient[active_set[-1]]
         try:
             _ensure_finite(float(np.max(np.abs(r))), "Newton residual")
         except RuntimeError:
@@ -1297,6 +1385,7 @@ def _check_newton_convergence(
     newton_tol: float,
     newton_status: str,
     *,
+    tol: float,
     regularization: float = 0.0,
     condition_number_limit: float | None = None,
     max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
@@ -1312,7 +1401,7 @@ def _check_newton_convergence(
         "nonfinite_step",
         "projection_failed",
     }
-    if not converged or newton_status in failure_statuses:
+    if newton_status in failure_statuses:
         return False
     try:
         A_mu = np.einsum("k,kij->ij", mu, matrices)
@@ -1329,10 +1418,24 @@ def _check_newton_convergence(
         f_check = np.einsum("ki,kij,kj->k", d_check, matrices, d_check)
         if offsets is not None:
             f_check = f_check + offsets
+        gradient_check = _dual_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            xstar_check,
+            f_check,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        fw_gap = float(np.max(gradient_check) - np.dot(mu, gradient_check))
+        if not np.isfinite(fw_gap) or fw_gap >= tol:
+            return False
         if len(active_set) <= 1:
             return True
-        f_active = f_check[active_set]
-        r_check = f_active[:-1] - f_active[-1]
+        r_check = gradient_check[active_set[:-1]] - gradient_check[active_set[-1]]
         return float(np.max(np.abs(r_check))) < newton_tol * 1e4
     except linalg.LinAlgError:
         return False
@@ -1544,6 +1647,7 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -1582,6 +1686,7 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -1620,6 +1725,7 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -1657,6 +1763,7 @@ def solve_minimax(
             True,
             newton_tol,
             meta_newton["newton_status"],
+            tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,

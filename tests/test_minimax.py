@@ -403,7 +403,7 @@ class TestNumericalStabilityControls:
         with pytest.raises(ValueError, match="weight_tol must satisfy"):
             solve_minimax(A, centers, weight_tol=threshold)
 
-    def test_fw_empty_face_fallback_does_not_false_converge(self):
+    def test_fw_empty_face_rechecks_gap_after_last_update(self):
         A = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
         centers = np.array([[0.0, 0.0], [2.0, 0.0]])
         offsets = np.array([1.0, 0.0])
@@ -423,7 +423,7 @@ class TestNumericalStabilityControls:
         )
 
         assert n_iter == 1
-        assert not converged
+        assert converged
         assert np.all(np.isfinite(mu))
 
     def test_regularized_slsqp_objective_gradient_matches(self):
@@ -544,7 +544,7 @@ class TestNumericalStabilityControls:
                 centers,
                 offsets=offsets,
                 method=method,
-                tol=stabilized_gap / 2.0,
+                tol=stabilized_gap / 100.0,
                 max_iter=1,
                 **kwargs,
             )
@@ -582,6 +582,45 @@ class TestNumericalStabilityControls:
         assert unadjusted.alpha == pytest.approx(stabilized.alpha, abs=1e-12)
         assert not np.array_equal(stabilized.weights, unadjusted.weights)
 
+    def test_newton_polishing_uses_conditioning_shift_gradient(self):
+        matrices = np.array([[[1.0]], [[2.0]]])
+        centers = np.array([[1e8], [2e8]])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
+        stability = {
+            "regularization": 0.0,
+            "condition_number_limit": 1e6,
+            "max_conditioning_steps": 0,
+        }
+        _, unadjusted_values = minimax_mod._eval_f(
+            np.array([0.5, 0.5]),
+            matrices,
+            Ax,
+            centers,
+            None,
+            **stability,
+        )
+        offsets = np.array([0.0, unadjusted_values[0] - unadjusted_values[1]])
+        mu, _, metadata = minimax_mod._damped_newton_polish(
+            np.array([0.5, 0.5]),
+            [0, 1],
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            max_iter=2,
+            tol=1.0,
+            **stability,
+        )
+        xstar, values = minimax_mod._eval_f(
+            mu, matrices, Ax, centers, offsets, **stability
+        )
+        gradient = minimax_mod._dual_gradient(
+            mu, matrices, Ax, centers, offsets, xstar, values, **stability
+        )
+
+        assert metadata["newton_status"] == "converged"
+        assert abs(float(gradient[0] - gradient[1])) <= 1.0
+
     def test_fw_gap_ignores_subthreshold_positive_weights(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
         centers = np.array([[2.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
@@ -604,6 +643,54 @@ class TestNumericalStabilityControls:
 
         assert n_iter == 1
         assert not converged
+
+    def test_newton_rechecks_global_gap_beyond_weight_face(self):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
+        centers = np.array(
+            [
+                [3.7476304, -3.7246354],
+                [0.8495570, -1.0704745],
+                [0.1480270, -3.5617054],
+            ]
+        )
+
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+bisect+newton",
+            weight_tol=0.2,
+            tol=1e-3,
+        )
+
+        assert result.weights[2] > 0.0
+        assert result.weights[2] < 0.2
+        assert result.active_set == [0, 1]
+        assert result.converged is False
+
+    def test_hybrid_rechecks_fw_optimum_hit_on_last_iteration(self):
+        matrices = np.array([np.eye(2), 4.0 * np.eye(2)])
+        centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+        reference = solve_minimax(
+            matrices,
+            centers,
+            method="fw+bisect",
+            tol=1e-12,
+            max_iter=2,
+        )
+        assert reference.converged
+        last_update = reference.n_iter - 1
+
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+bisect+newton",
+            tol=1e-12,
+            max_iter=last_update,
+        )
+
+        assert result.converged
+        assert result.alpha == reference.alpha
+        np.testing.assert_array_equal(result.weights, reference.weights)
 
     def test_slsqp_converges_with_regularization(self):
         matrices = np.array(
