@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import get_args
 
 import numpy as np
@@ -12,6 +13,9 @@ from ellphi._minimax_python import MethodName, solve_minimax
 from ellphi.geometry import coef_from_cov, pack_conic, unpack_conic
 
 from .factories import minimax_public_surrogate, random_coef_pair, random_covariance
+
+
+cech_module = importlib.import_module("ellphi.cech")
 
 
 def _random_coefs(k: int, d: int, seed: int) -> np.ndarray:
@@ -231,6 +235,55 @@ def test_negative_packed_scale_raises():
         ValueError, match="packed quadrics have no common non-negative filtration scale"
     ):
         ellphi.cech(coefs)
+
+
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        np.diag([1.0, -1.0]),
+        -np.eye(2),
+    ],
+)
+def test_public_api_rejects_non_spd_quadratic_blocks(api, matrix):
+    coefs = pack_conic(matrix[None], np.zeros((1, 2)), np.zeros(1))
+
+    with pytest.raises(
+        ValueError,
+        match=r"coefficient row 0 has a non-positive definite quadratic matrix",
+    ):
+        api(coefs)
+
+
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
+def test_public_api_rejects_non_symmetric_quadratic_blocks(api, monkeypatch):
+    matrices = np.array([[[2.0, 0.25], [0.0, 2.0]]])
+    linear = np.zeros((1, 2))
+    constants = np.zeros(1)
+    monkeypatch.setattr(
+        cech_module,
+        "unpack_conic",
+        lambda _: (matrices, linear, constants),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"coefficient row 0 has a non-symmetric quadratic matrix",
+    ):
+        api(np.zeros((1, 6)))
+
+
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
+def test_public_api_accepts_ill_conditioned_spd_quadratic_block(api):
+    matrix = np.diag([1.0, 1e12])
+    matrices = np.repeat(matrix[None], 2, axis=0)
+    centers = np.array([[0.0, 0.0], [2.0, 0.0]])
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    coefs = pack_conic(matrices, linear, constants)
+
+    result = api(coefs)
+    assert result.t == pytest.approx(1.0)
 
 
 def test_packed_one_dimensional_input_is_rejected_like_pairwise():

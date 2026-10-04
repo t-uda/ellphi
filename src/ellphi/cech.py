@@ -141,6 +141,35 @@ def _validate_solver_parameters(
         raise ValueError("weight_tol must satisfy 0 <= weight_tol < 1/k")
 
 
+def _validate_quadratic_matrices(matrices: np.ndarray) -> None:
+    """Validate symmetry and positive definiteness before solving centers."""
+    for row, matrix in enumerate(matrices):
+        if not np.all(np.isfinite(matrix)):
+            raise ValueError(f"coefficient row {row} has a non-finite quadratic matrix")
+
+        condition_number = float(np.linalg.cond(matrix, 2))
+        if not np.isfinite(condition_number):
+            condition_number = 1.0
+        symmetry_rtol = (
+            _NEGATIVE_ALPHA_ROUNDING_FACTOR
+            * _MACHINE_EPSILON
+            * max(1.0, condition_number)
+        )
+        matrix_scale = float(np.linalg.norm(matrix, ord=np.inf))
+        symmetry_error = float(np.linalg.norm(matrix - matrix.T, ord=np.inf))
+        if symmetry_error > symmetry_rtol * matrix_scale:
+            raise ValueError(
+                f"coefficient row {row} has a non-symmetric quadratic matrix"
+            )
+
+        try:
+            np.linalg.cholesky(matrix)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(
+                f"coefficient row {row} has a non-positive definite quadratic matrix"
+            ) from exc
+
+
 def _prepare_coefs(
     coefs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
@@ -155,6 +184,7 @@ def _prepare_coefs(
     first.
     """
     matrices, linear, constants = unpack_conic(coefs)
+    _validate_quadratic_matrices(matrices)
     centers = np.empty_like(linear)
     offsets = np.empty_like(constants)
     value_roundoff = 0.0
@@ -236,8 +266,9 @@ def cech(
     Raises:
         ValueError: If the coefficient array is not two-dimensional, is empty,
             a tolerance is not finite and non-negative, or a coefficient row
-            has a singular quadratic matrix, or the packed quadrics have no
-            common non-negative filtration scale. Packed input requires
+            has a non-symmetric or non-positive-definite quadratic matrix, or
+            the packed quadrics have no common non-negative filtration scale.
+            Packed input requires
             ``d >= 2``, as for :func:`ellphi.tangency`.
         RuntimeError: If the internal solver does not converge or produces a
             non-finite output.  Solver diagnostics are included in the error.
@@ -374,6 +405,7 @@ def cech_grad(
         Čech filtration data and ``dt_dcoef`` with shape ``(k, m)``.
 
     Raises:
+        ValueError: If a quadratic block is not symmetric positive definite.
         ZeroDivisionError: If the Čech filtration time is zero.
         RuntimeError: If the forward solve fails.
     """
