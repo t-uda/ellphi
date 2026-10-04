@@ -320,6 +320,16 @@ def _validate_positive_int(name: str, value: int) -> None:
         raise ValueError(f"{name} must be a positive integer")
 
 
+def _validate_non_negative_int(name: str, value: int) -> None:
+    """Validate a non-negative integer solver parameter."""
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, np.integer))
+        or value < 0
+    ):
+        raise ValueError(f"{name} must be a non-negative integer")
+
+
 def _cholesky_solve(
     A: np.ndarray,
     b: np.ndarray,
@@ -385,6 +395,35 @@ def _eval_f(
     return xstar, f
 
 
+def _dual_gradient(
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray | None,
+    xstar: np.ndarray,
+    f: np.ndarray,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> np.ndarray:
+    """Return the gradient of the dual represented by ``xstar`` and ``f``."""
+    if regularization == 0.0 and condition_number_limit is None:
+        return f
+
+    A_mu = np.einsum("k,kij->ij", mu, matrices)
+    shift_gradient = _conditioning_shift_gradient(
+        mu,
+        matrices,
+        A_mu,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    return f + shift_gradient * float(np.dot(xstar, xstar))
+
+
 def _regularized_dual_value(
     mu: np.ndarray,
     matrices: np.ndarray,
@@ -417,8 +456,8 @@ def _exact_line_search(
 ) -> float:
     """Find gamma* in [0, gamma_max] that maximises g along the pairwise direction.
 
-    Bisects on h(gamma) = f_s(x*(mu + gamma*(e_s - e_v))) - f_v(...) = 0.
-    dg/dgamma = f_s(x*(gamma)) - f_v(x*(gamma)) (positive at 0, negative at gamma_max).
+    Bisects on the stabilized dual directional derivative
+    ``h(gamma) = grad_s - grad_v``.
     """
     if gamma_max <= 0.0:
         return 0.0
@@ -427,7 +466,7 @@ def _exact_line_search(
         mu_g = mu.copy()
         mu_g[s] += gamma
         mu_g[v] -= gamma
-        _, f_g = _eval_f(
+        x_g, f_g = _eval_f(
             mu_g,
             matrices,
             Ax,
@@ -437,7 +476,19 @@ def _exact_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(f_g[s] - f_g[v])
+        gradient_g = _dual_gradient(
+            mu_g,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            x_g,
+            f_g,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        return float(gradient_g[s] - gradient_g[v])
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -493,7 +544,7 @@ def _brentq_line_search(
         mu_g = mu.copy()
         mu_g[s] += gamma
         mu_g[v] -= gamma
-        _, f_g = _eval_f(
+        x_g, f_g = _eval_f(
             mu_g,
             matrices,
             Ax,
@@ -503,7 +554,19 @@ def _brentq_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(f_g[s] - f_g[v])
+        gradient_g = _dual_gradient(
+            mu_g,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            x_g,
+            f_g,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        return float(gradient_g[s] - gradient_g[v])
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -576,19 +639,32 @@ def _run_fw_bisect(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-        s = int(np.argmax(f))
+        gradient = _dual_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            xstar,
+            f,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+
+        s = int(np.argmax(gradient))
         active_mask = mu > weight_tol
         if not np.any(active_mask):
             active_mask = np.ones_like(mu, dtype=bool)
-        f_active = np.where(active_mask, f, np.inf)
-        v = int(np.argmin(f_active))
+        gradient_active = np.where(active_mask, gradient, np.inf)
+        v = int(np.argmin(gradient_active))
         if s == v:
             positive_mask = mu > 0.0
             positive_mask[s] = False
             if np.any(positive_mask):
-                v = int(np.argmin(np.where(positive_mask, f, np.inf)))
+                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        fw_gap = float(np.max(f) - np.dot(mu, f))
+        fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
@@ -654,19 +730,32 @@ def _run_fw_brentq(
         )
         total_fevals += 1
 
-        s = int(np.argmax(f))
+        gradient = _dual_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            xstar,
+            f,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+
+        s = int(np.argmax(gradient))
         active_mask = mu > weight_tol
         if not np.any(active_mask):
             active_mask = np.ones_like(mu, dtype=bool)
-        f_active = np.where(active_mask, f, np.inf)
-        v = int(np.argmin(f_active))
+        gradient_active = np.where(active_mask, gradient, np.inf)
+        v = int(np.argmin(gradient_active))
         if s == v:
             positive_mask = mu > 0.0
             positive_mask[s] = False
             if np.any(positive_mask):
-                v = int(np.argmin(np.where(positive_mask, f, np.inf)))
+                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        fw_gap = float(np.max(f) - np.dot(mu, f))
+        fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
@@ -1115,24 +1204,27 @@ def _slsqp_objective_and_gradient(
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    if regularization == 0.0 and condition_number_limit is None:
-        # Keep the unregularized objective path bitwise identical.
-        return -float(np.dot(mu, f)), -f
-
-    # The stabilized dual is g_r(mu) = sum_i mu_i c_i -
-    # b(mu)^T A_used(mu)^(-1) b(mu), whose gradient is f for the
-    # effective matrix used in this evaluation.
-    g_regularized = _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
-    A_mu = np.einsum("k,kij->ij", mu, matrices)
-    shift_gradient = _conditioning_shift_gradient(
+    gradient = _dual_gradient(
         mu,
         matrices,
-        A_mu,
+        Ax,
+        centers,
+        offsets,
+        xstar,
+        f,
         regularization=regularization,
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    return -g_regularized, -f - shift_gradient * float(np.dot(xstar, xstar))
+    if regularization == 0.0 and condition_number_limit is None:
+        # Keep the unregularized objective path bitwise identical.
+        return -float(np.dot(mu, f)), -gradient
+
+    # The stabilized dual is g_r(mu) = sum_i mu_i c_i -
+    # b(mu)^T A_used(mu)^(-1) b(mu). Its gradient includes the derivative
+    # of any conditioning shift that depends on A(mu).
+    g_regularized = _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+    return -g_regularized, -gradient
 
 
 def _run_scipy_slsqp(
@@ -1316,8 +1408,9 @@ def solve_minimax(
         circumcenter for an unadjusted solve (``regularization == 0`` and
         ``condition_number_limit is None``), and the stabilised problem
         otherwise; in the pairwise case the exact value is
-        ``ellphi.tangency(p, q).t ** 2``. For ``k = 1`` the result is the
-        trivial ``alpha = delta_0`` at the center.
+        ``ellphi.tangency(p, q).t ** 2``. For ``k = 1`` the result uses the
+        same conditioned evaluation as the non-singleton paths and keeps
+        the trivial converged, zero-iteration semantics.
 
     Raises:
         ValueError: For an unknown method, an empty simplex or invalid
@@ -1351,7 +1444,7 @@ def solve_minimax(
     _validate_tolerance("weight_tol", weight_tol)
     _validate_positive_int("max_iter", max_iter)
     _validate_positive_int("newton_max_iter", newton_max_iter)
-    _validate_positive_int("max_conditioning_steps", max_conditioning_steps)
+    _validate_non_negative_int("max_conditioning_steps", max_conditioning_steps)
     if condition_number_limit is not None and (
         not np.isfinite(condition_number_limit) or condition_number_limit <= 1.0
     ):
@@ -1368,20 +1461,30 @@ def solve_minimax(
         if not np.all(np.isfinite(offsets)):
             raise ValueError("offsets must be finite")
 
+    # Precompute A_i x_bar_i (shape: k x d)
+    Ax = np.einsum("kij,kj->ki", matrices, centers)
+
     # --- Trivial case: single point ---
     if k == 1:
+        xstar, f = _eval_f(
+            np.array([1.0]),
+            matrices,
+            Ax,
+            centers,
+            offsets,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
         return MinimaxResult(
-            alpha=0.0 if offsets is None else float(offsets[0]),
-            circumcenter=centers[0].copy(),
+            alpha=float(f[0]),
+            circumcenter=xstar,
             weights=np.array([1.0]),
             active_set=[0],
             converged=True,
             n_iter=0,
             method=method,
         )
-
-    # Precompute A_i x_bar_i  (shape: k x d)
-    Ax = np.einsum("kij,kj->ki", matrices, centers)
 
     # Uniform initialisation for FW-based methods
     mu_init = np.full(k, 1.0 / k)

@@ -75,6 +75,18 @@ class TestTrivialCases:
         )
         assert res.alpha == 0.75
 
+    def test_single_point_uses_stabilized_matrix(self):
+        res = solve_minimax(
+            np.eye(2)[np.newaxis],
+            np.array([[1.0, 0.0]]),
+            regularization=1.0,
+        )
+
+        assert res.alpha == pytest.approx(0.25)
+        np.testing.assert_allclose(res.circumcenter, [0.5, 0.0])
+        assert res.converged
+        assert res.n_iter == 0
+
     def test_single_point_nan_offset_raises(self):
         with pytest.raises(ValueError, match="offsets must be finite"):
             solve_minimax(
@@ -365,6 +377,13 @@ class TestNumericalStabilityControls:
             solve_minimax(A, centers, condition_number_limit=1.0)
         with pytest.raises(ValueError):
             solve_minimax(A, centers, max_conditioning_steps=-1)
+        result = solve_minimax(
+            A,
+            centers,
+            condition_number_limit=2.0,
+            max_conditioning_steps=0,
+        )
+        assert np.isfinite(result.alpha)
         with pytest.raises(ValueError, match="offsets shape"):
             solve_minimax(A, centers, offsets=np.zeros(3))
 
@@ -496,6 +515,41 @@ class TestNumericalStabilityControls:
 
         np.testing.assert_allclose(finite_difference, gradient, rtol=1e-6, atol=1e-8)
         assert np.isfinite(objective)
+
+    def test_fw_gap_uses_conditioning_shift_gradient(self):
+        matrices = np.array([[[1.0]], [[2.0]]])
+        centers = np.array([[1e8], [2e8]])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
+        mu = np.array([0.5, 0.5])
+        kwargs = {
+            "regularization": 0.0,
+            "condition_number_limit": 1e6,
+            "max_conditioning_steps": 0,
+        }
+
+        _, unadjusted_f = minimax_mod._eval_f(mu, matrices, Ax, centers, None, **kwargs)
+        offsets = np.array([0.0, unadjusted_f[0] - unadjusted_f[1]])
+        xstar, f = minimax_mod._eval_f(mu, matrices, Ax, centers, offsets, **kwargs)
+        gradient = minimax_mod._dual_gradient(
+            mu, matrices, Ax, centers, offsets, xstar, f, **kwargs
+        )
+        raw_gap = float(np.max(f) - np.dot(mu, f))
+        stabilized_gap = float(np.max(gradient) - np.dot(mu, gradient))
+
+        assert raw_gap < 1.0
+        assert stabilized_gap > 1.0
+        for method in ("fw+bisect", "fw+brentq"):
+            result = solve_minimax(
+                matrices,
+                centers,
+                offsets=offsets,
+                method=method,
+                tol=stabilized_gap / 2.0,
+                max_iter=1,
+                **kwargs,
+            )
+            assert result.n_iter == 1
+            assert not result.converged
 
     def test_newton_polishing_uses_stabilized_stationarity(self):
         matrices = np.array([np.eye(2), 4.0 * np.eye(2)])
