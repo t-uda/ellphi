@@ -8,7 +8,7 @@ time computed by :func:`ellphi.tangency`, and ``cech`` agrees with it.
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 
@@ -128,24 +128,15 @@ def _validate_solver_parameters(
     tol: float,
     max_iter: int,
     weight_tol: float,
-    regularization: float,
-    condition_number_limit: float | None,
-    max_conditioning_steps: int,
     newton_tol: float,
     newton_max_iter: int,
 ) -> None:
     """Validate public solver controls before dispatching to the engine."""
     _validate_tolerance("tol", tol, strictly_positive=True)
     _validate_tolerance("newton_tol", newton_tol)
-    _validate_tolerance("regularization", regularization)
     _validate_tolerance("weight_tol", weight_tol)
     _validate_positive_int("max_iter", max_iter)
     _validate_positive_int("newton_max_iter", newton_max_iter)
-    _validate_positive_int("max_conditioning_steps", max_conditioning_steps)
-    if condition_number_limit is not None and (
-        not np.isfinite(condition_number_limit) or condition_number_limit <= 1.0
-    ):
-        raise ValueError("condition_number_limit must be finite and > 1 when provided")
     if weight_tol >= 1.0 / k:
         raise ValueError("weight_tol must satisfy 0 <= weight_tol < 1/k")
 
@@ -213,9 +204,6 @@ def cech(
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
-    regularization: float = 0.0,
-    condition_number_limit: float | None = None,
-    max_conditioning_steps: int = 8,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechResult:
@@ -235,11 +223,11 @@ def cech(
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set`` as the
             tight-constraint set at the returned point.
-        regularization: Optional diagonal regularization of weighted matrices.
-        condition_number_limit: Optional weighted-matrix condition target.
-        max_conditioning_steps: Maximum conditioning-shift escalations.
         newton_tol: Newton-polishing residual tolerance.
         newton_max_iter: Maximum Newton-polishing iterations.
+
+    Stabilized solves are available only through the private minimax engine;
+    they are research controls and carry no public gradient guarantee.
 
     Returns:
         A result containing the Čech filtration time rather than the squared
@@ -270,9 +258,6 @@ def cech(
         tol=tol,
         max_iter=max_iter,
         weight_tol=weight_tol,
-        regularization=regularization,
-        condition_number_limit=condition_number_limit,
-        max_conditioning_steps=max_conditioning_steps,
         newton_tol=newton_tol,
         newton_max_iter=newton_max_iter,
     )
@@ -286,9 +271,6 @@ def cech(
         tol=tol,
         max_iter=max_iter,
         weight_tol=weight_tol,
-        regularization=regularization,
-        condition_number_limit=condition_number_limit,
-        max_conditioning_steps=max_conditioning_steps,
         newton_tol=newton_tol,
         newton_max_iter=newton_max_iter,
     )
@@ -340,7 +322,17 @@ def cech(
     )
 
 
-def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad:
+def cech_grad(
+    coefs: np.ndarray,
+    *,
+    method: MethodName | str = "fw+bisect",
+    tol: float = 1e-9,
+    max_iter: int = 2000,
+    weight_tol: float = 1e-10,
+    active_tol: float = 1e-9,
+    newton_tol: float = 1e-14,
+    newton_max_iter: int = 20,
+) -> CechGrad:
     """Return the Čech filtration time and its coefficient-space gradient.
 
     For EllPHi's packed conic ``f_i(x) = coef_i @ basis(x)``, the basis is
@@ -370,7 +362,13 @@ def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad:
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        **solver_kwargs: Forwarded to :func:`cech`.
+        method: Internal many-body solver method.
+        tol: Frank-Wolfe gap tolerance.
+        max_iter: Maximum Frank-Wolfe iterations.
+        weight_tol: Threshold defining ``support``.
+        active_tol: Relative tolerance defining ``active_set``.
+        newton_tol: Newton-polishing residual tolerance.
+        newton_max_iter: Maximum Newton-polishing iterations.
 
     Returns:
         Čech filtration data and ``dt_dcoef`` with shape ``(k, m)``.
@@ -380,7 +378,16 @@ def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad:
         RuntimeError: If the forward solve fails.
     """
     coefs = np.asarray(coefs, dtype=float)
-    result = cech(coefs, **solver_kwargs)
+    result = cech(
+        coefs,
+        method=method,
+        tol=tol,
+        max_iter=max_iter,
+        weight_tol=weight_tol,
+        active_tol=active_tol,
+        newton_tol=newton_tol,
+        newton_max_iter=newton_max_iter,
+    )
     if result.t == 0.0:
         raise ZeroDivisionError("Čech gradient is undefined when t == 0")
 

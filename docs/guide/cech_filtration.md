@@ -22,6 +22,13 @@ ordered as `(t, point, mu, dt_dcoef, support, active_set)`.
 - `active_set`: the tight-constraint set at the returned point,
   `I = {i : t^2 - f_i(point) <= active_tol * max(1, t^2)}`.
 
+The public `cech` and `cech_grad` signatures intentionally do not expose
+matrix stabilization controls such as `regularization`,
+`condition_number_limit`, or `max_conditioning_steps`. Stabilized solves are
+available only through the private `ellphi._minimax_python` engine for
+research use, and the public coefficient-space gradient carries no guarantee
+for those stabilized solves.
+
 At the critical scale the intersection is the single point `x*`. The active
 ellipsoid boundaries pass through `x*` and satisfy
 `sum_i mu_i grad f_i(x*) = 0`, so their normals are positively dependent;

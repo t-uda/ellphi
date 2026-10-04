@@ -283,6 +283,36 @@ def test_non_convergence_raises_with_diagnostics():
     assert "diagnostics=" in message
 
 
+@pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("regularization", 1e-6),
+        ("condition_number_limit", 1e6),
+        ("max_conditioning_steps", 4),
+    ],
+)
+def test_public_api_rejects_private_stabilization_controls(api, name, value):
+    coefs = _random_coefs(2, 2, seed=107)
+
+    with pytest.raises(TypeError):
+        api(coefs, **{name: value})
+
+
+def test_public_newton_cold_returns_a_successful_fw_fallback():
+    coefs = _random_coefs(5, 3, seed=0)
+
+    result = ellphi.cech(
+        coefs,
+        method="newton-cold",
+        newton_max_iter=1,
+        tol=1e-10,
+    )
+
+    assert np.isfinite(result.t)
+    assert result.active_set
+
+
 @pytest.mark.parametrize("k,d,seed", [(3, 2, 201), (4, 2, 203)])
 def test_gradient_matches_independent_packed_central_difference(k, d, seed):
     rng = np.random.default_rng(seed)

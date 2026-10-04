@@ -1,4 +1,4 @@
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 
@@ -34,10 +34,17 @@ def cech(
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
-    regularization: float = 0.0,
-    condition_number_limit: float | None = None,
-    max_conditioning_steps: int = 8,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechResult: ...
-def cech_grad(coefs: np.ndarray, **solver_kwargs: Any) -> CechGrad: ...
+def cech_grad(
+    coefs: np.ndarray,
+    *,
+    method: MethodName | str = "fw+bisect",
+    tol: float = 1e-9,
+    max_iter: int = 2000,
+    weight_tol: float = 1e-10,
+    active_tol: float = 1e-9,
+    newton_tol: float = 1e-14,
+    newton_max_iter: int = 20,
+) -> CechGrad: ...
