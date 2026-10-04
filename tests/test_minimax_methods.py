@@ -310,16 +310,13 @@ class TestDampedNewton:
 
     def test_empty_thresholded_face_is_nonconverged(self):
         matrices, centers = _random_simplex(3, 2, seed=42)
-        res = solve_minimax(
-            matrices,
-            centers,
-            method="fw+bisect+damped-newton",
-            weight_tol=1.0,
-        )
-
-        assert res.converged is False
-        assert res.metadata is not None
-        assert res.metadata["newton_status"] == "empty_face"
+        with pytest.raises(ValueError, match="weight_tol must satisfy"):
+            solve_minimax(
+                matrices,
+                centers,
+                method="fw+bisect+damped-newton",
+                weight_tol=1.0,
+            )
 
 
 # ---------------------------------------------------------------------------

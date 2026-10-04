@@ -370,6 +370,16 @@ def test_simplex_tolerances_must_be_finite_and_nonnegative(api, name, value):
         api(coefs, **{name: value})
 
 
+@pytest.mark.parametrize("value", [np.inf, np.nan, 0.0])
+def test_public_tol_must_be_finite_and_positive(value):
+    coefs = coef_from_cov(
+        np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
+    )
+
+    with pytest.raises(ValueError, match="tol must be finite and > 0"):
+        ellphi.tangency_simplex(coefs, tol=value)
+
+
 def test_public_namedtuple_field_order():
     assert ellphi.SimplexTangencyResult._fields == (
         "t",

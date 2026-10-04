@@ -351,6 +351,148 @@ class TestNumericalStabilityControls:
         with pytest.raises(ValueError, match="offsets shape"):
             solve_minimax(A, centers, offsets=np.zeros(3))
 
+    @pytest.mark.parametrize("value", [np.inf, np.nan, 0.0])
+    def test_fw_tolerance_must_be_finite_and_positive(self, value):
+        A = np.eye(2)[np.newaxis].repeat(2, axis=0)
+        centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+        with pytest.raises(ValueError, match="tol must be finite and > 0"):
+            solve_minimax(A, centers, tol=value)
+
+    @pytest.mark.parametrize("k", [2, 3, 4])
+    @pytest.mark.parametrize("weight_tol", [None, 0.5])
+    def test_weight_tol_cannot_empty_the_fw_face(self, k, weight_tol):
+        A = np.repeat(np.eye(2)[np.newaxis], k, axis=0)
+        centers = np.arange(2 * k, dtype=float).reshape(k, 2)
+        threshold = 1.0 / k if weight_tol is None else weight_tol
+        with pytest.raises(ValueError, match="weight_tol must satisfy"):
+            solve_minimax(A, centers, weight_tol=threshold)
+
+    def test_fw_empty_face_fallback_does_not_false_converge(self):
+        A = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+        centers = np.array([[0.0, 0.0], [2.0, 0.0]])
+        offsets = np.array([1.0, 0.0])
+        Ax = np.einsum("kij,kj->ki", A, centers)
+        mu, converged, n_iter = minimax_mod._run_fw_bisect(
+            A,
+            Ax,
+            centers,
+            offsets,
+            np.full(2, 0.5),
+            tol=1e-12,
+            max_iter=1,
+            weight_tol=1.0,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
+        )
+
+        assert n_iter == 1
+        assert not converged
+        assert np.all(np.isfinite(mu))
+
+    def test_regularized_slsqp_objective_gradient_matches(self):
+        matrices = np.array(
+            [
+                [[2.0, 0.2], [0.2, 1.0]],
+                [[1.0, -0.1], [-0.1, 3.0]],
+                [[1.5, 0.3], [0.3, 2.0]],
+            ]
+        )
+        centers = np.array([[0.0, 0.0], [1.0, -0.5], [-0.5, 1.0]])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
+        mu = np.array([0.2, 0.3, 0.5])
+        objective, gradient = minimax_mod._slsqp_objective_and_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            None,
+            regularization=0.25,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
+        )
+        step = 1e-6
+        finite_difference = np.empty_like(mu)
+        for i in range(mu.size):
+            plus = mu.copy()
+            minus = mu.copy()
+            plus[i] += step
+            minus[i] -= step
+            plus_value, _ = minimax_mod._slsqp_objective_and_gradient(
+                plus,
+                matrices,
+                Ax,
+                centers,
+                None,
+                regularization=0.25,
+                condition_number_limit=None,
+                max_conditioning_steps=8,
+            )
+            minus_value, _ = minimax_mod._slsqp_objective_and_gradient(
+                minus,
+                matrices,
+                Ax,
+                centers,
+                None,
+                regularization=0.25,
+                condition_number_limit=None,
+                max_conditioning_steps=8,
+            )
+            finite_difference[i] = (plus_value - minus_value) / (2.0 * step)
+
+        np.testing.assert_allclose(finite_difference, gradient, rtol=1e-6, atol=1e-8)
+        assert np.isfinite(objective)
+
+    def test_slsqp_converges_with_regularization(self):
+        matrices = np.array(
+            [
+                [[2.0, 0.2], [0.2, 1.0]],
+                [[1.0, -0.1], [-0.1, 3.0]],
+                [[1.5, 0.3], [0.3, 2.0]],
+            ]
+        )
+        centers = np.array([[0.0, 0.0], [1.0, -0.5], [-0.5, 1.0]])
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="scipy-slsqp",
+            regularization=0.25,
+        )
+
+        assert result.converged
+        assert np.isfinite(result.alpha)
+        assert np.all(np.isfinite(result.weights))
+        assert result.weights.sum() == pytest.approx(1.0)
+
+    def test_slsqp_zero_regularization_objective_path_is_unchanged(self):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+        centers = np.array([[0.0, 0.0], [2.0, 0.0]])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
+        mu = np.array([0.25, 0.75])
+        objective, gradient = minimax_mod._slsqp_objective_and_gradient(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            None,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
+        )
+        _, f = minimax_mod._eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            None,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
+        )
+
+        assert objective == -float(np.dot(mu, f))
+        np.testing.assert_array_equal(gradient, -f)
+
     def test_conditioning_steps_cap_is_strict(self):
         A = np.diag([1e-12, 1.0])
         eye = np.eye(2)

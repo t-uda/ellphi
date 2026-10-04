@@ -31,6 +31,9 @@ from ellcech 82d13e3 in the following ways:
   unbacktracked full step.
 * The objective supports additive per-constraint offsets, including general
   packed conic constants.
+* For positive regularization, the SLSQP objective is the regularized dual
+  rather than ``dot(mu, f)``; this fixes the inherited ellcech objective and
+  Jacobian mismatch.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
 
@@ -253,6 +256,25 @@ def _condition_matrix(
         if np.isfinite(cond) and cond <= condition_number_limit:
             return A_reg
     return A_reg
+
+
+def _validate_tolerance(
+    name: str, value: float, *, strictly_positive: bool = False
+) -> None:
+    """Validate a finite numerical tolerance or regularization value."""
+    if not np.isfinite(value) or (value <= 0.0 if strictly_positive else value < 0.0):
+        qualifier = "finite and > 0" if strictly_positive else "finite and non-negative"
+        raise ValueError(f"{name} must be {qualifier}")
+
+
+def _validate_positive_int(name: str, value: int) -> None:
+    """Validate a positive integer solver parameter."""
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, np.integer))
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be a positive integer")
 
 
 def _cholesky_solve(
@@ -497,6 +519,8 @@ def _run_fw_bisect(
 
         s = int(np.argmax(f))
         active_mask = mu > weight_tol
+        if not np.any(active_mask):
+            active_mask = np.ones_like(mu, dtype=bool)
         f_active = np.where(active_mask, f, np.inf)
         v = int(np.argmin(f_active))
 
@@ -572,6 +596,8 @@ def _run_fw_brentq(
 
         s = int(np.argmax(f))
         active_mask = mu > weight_tol
+        if not np.any(active_mask):
+            active_mask = np.ones_like(mu, dtype=bool)
         f_active = np.where(active_mask, f, np.inf)
         v = int(np.argmin(f_active))
 
@@ -978,6 +1004,42 @@ def _simplex_residual(mu: npt.NDArray[np.float64]) -> float:
     return float(mu.sum() - 1.0)
 
 
+def _slsqp_objective_and_gradient(
+    mu: npt.NDArray[np.float64],
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray | None,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[float, np.ndarray]:
+    """Return SLSQP's negative dual objective and its negative gradient."""
+    xstar, f = _eval_f(
+        mu,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    if regularization == 0.0:
+        # Keep the unregularized objective path bitwise identical.
+        return -float(np.dot(mu, f)), -f
+
+    c = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    if offsets is not None:
+        c = c + offsets
+    b_mu = np.einsum("k,ki->i", mu, Ax)
+    # The regularized dual is g_r(mu) = sum_i mu_i c_i -
+    # b(mu)^T (A(mu) + r I)^(-1) b(mu), whose gradient is f.
+    g_regularized = float(np.dot(mu, c) - np.dot(b_mu, xstar))
+    return -g_regularized, -f
+
+
 def _run_scipy_slsqp(
     matrices: np.ndarray,
     Ax: np.ndarray,
@@ -1000,7 +1062,7 @@ def _run_scipy_slsqp(
 
     def neg_g_and_grad(mu: npt.NDArray[np.float64]) -> tuple[float, np.ndarray]:
         n_eval[0] += 1
-        _, f = _eval_f(
+        return _slsqp_objective_and_gradient(
             mu,
             matrices,
             Ax,
@@ -1010,8 +1072,6 @@ def _run_scipy_slsqp(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        # g(mu) = dot(mu, f);  gradient dg/dmu_i = f_i(x*(mu))
-        return -float(np.dot(mu, f)), -f
 
     x0 = np.full(k, 1.0 / k)
     bounds = [(0.0, None)] * k
@@ -1174,13 +1234,6 @@ def solve_minimax(
 
     matrices = np.asarray(matrices, dtype=float)
     centers = np.asarray(centers, dtype=float)
-    if regularization < 0.0:
-        raise ValueError("regularization must be non-negative")
-    if condition_number_limit is not None and condition_number_limit <= 1.0:
-        raise ValueError("condition_number_limit must be > 1 when provided")
-    if max_conditioning_steps < 0:
-        raise ValueError("max_conditioning_steps must be non-negative")
-
     # Accept single-simplex input (2D matrix, 1D center)
     if matrices.ndim == 2:
         matrices = matrices[np.newaxis]
@@ -1188,8 +1241,22 @@ def solve_minimax(
 
     k, d = centers.shape
 
+    _validate_tolerance("tol", tol, strictly_positive=True)
+    _validate_tolerance("newton_tol", newton_tol)
+    _validate_tolerance("regularization", regularization)
+    _validate_tolerance("weight_tol", weight_tol)
+    _validate_positive_int("max_iter", max_iter)
+    _validate_positive_int("newton_max_iter", newton_max_iter)
+    _validate_positive_int("max_conditioning_steps", max_conditioning_steps)
+    if condition_number_limit is not None and (
+        not np.isfinite(condition_number_limit) or condition_number_limit <= 1.0
+    ):
+        raise ValueError("condition_number_limit must be finite and > 1 when provided")
+
     if k == 0:
         raise ValueError("simplex must contain at least one vertex (k=0 given)")
+    if weight_tol >= 1.0 / k:
+        raise ValueError("weight_tol must satisfy 0 <= weight_tol < 1/k")
     if offsets is not None:
         offsets = np.asarray(offsets, dtype=float)
         if offsets.shape != (k,):

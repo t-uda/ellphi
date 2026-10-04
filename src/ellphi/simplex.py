@@ -91,10 +91,51 @@ def _coefficient_basis(point: np.ndarray) -> np.ndarray:
     return np.concatenate((quadratic, 2.0 * point, np.array([1.0])))
 
 
-def _validate_tolerance(name: str, value: float) -> None:
-    """Validate a finite, non-negative numerical tolerance."""
-    if not np.isfinite(value) or value < 0.0:
-        raise ValueError(f"{name} must be finite and non-negative")
+def _validate_tolerance(
+    name: str, value: float, *, strictly_positive: bool = False
+) -> None:
+    """Validate a finite numerical tolerance."""
+    if not np.isfinite(value) or (value <= 0.0 if strictly_positive else value < 0.0):
+        qualifier = "finite and > 0" if strictly_positive else "finite and non-negative"
+        raise ValueError(f"{name} must be {qualifier}")
+
+
+def _validate_positive_int(name: str, value: int) -> None:
+    """Validate a positive integer solver parameter."""
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, np.integer))
+        or value <= 0
+    ):
+        raise ValueError(f"{name} must be a positive integer")
+
+
+def _validate_solver_parameters(
+    k: int,
+    *,
+    tol: float,
+    max_iter: int,
+    weight_tol: float,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+    newton_tol: float,
+    newton_max_iter: int,
+) -> None:
+    """Validate public solver controls before dispatching to the engine."""
+    _validate_tolerance("tol", tol, strictly_positive=True)
+    _validate_tolerance("newton_tol", newton_tol)
+    _validate_tolerance("regularization", regularization)
+    _validate_tolerance("weight_tol", weight_tol)
+    _validate_positive_int("max_iter", max_iter)
+    _validate_positive_int("newton_max_iter", newton_max_iter)
+    _validate_positive_int("max_conditioning_steps", max_conditioning_steps)
+    if condition_number_limit is not None and (
+        not np.isfinite(condition_number_limit) or condition_number_limit <= 1.0
+    ):
+        raise ValueError("condition_number_limit must be finite and > 1 when provided")
+    if weight_tol >= 1.0 / k:
+        raise ValueError("weight_tol must satisfy 0 <= weight_tol < 1/k")
 
 
 def _prepare_coefs(
@@ -205,7 +246,17 @@ def tangency_simplex(
             "one-dimensional packed conics are not supported"
         )
     _validate_tolerance("active_tol", active_tol)
-    _validate_tolerance("weight_tol", weight_tol)
+    _validate_solver_parameters(
+        coefs.shape[0],
+        tol=tol,
+        max_iter=max_iter,
+        weight_tol=weight_tol,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+        newton_tol=newton_tol,
+        newton_max_iter=newton_max_iter,
+    )
     matrices, centers, offsets, value_roundoff = _prepare_coefs(coefs)
 
     result = solve_minimax(
