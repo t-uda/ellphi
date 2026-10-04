@@ -47,3 +47,23 @@ def random_cloud(
     coefs = coef_from_cov(means, covs)
     dummy_nbd = np.empty((n_ellipses, 0), dtype=int)
     return EllipseCloud(coef=coefs, mean=means, cov=covs, k=0, nbd=dummy_nbd)
+
+
+def random_simplex(
+    k: int,
+    d: int,
+    *,
+    rng: np.random.Generator,
+    cond_bound: float = 10.0,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Random centers and SPD matrices with ``cond(A_i) <= cond_bound``.
+
+    Same sampling as ellcech's ``benchmarks.make_random_simplex``.
+    """
+    centers = rng.standard_normal((k, d))
+    matrices = np.empty((k, d, d))
+    for i in range(k):
+        U = np.linalg.qr(rng.standard_normal((d, d)))[0]
+        eigvals = rng.uniform(1.0, cond_bound, size=d)
+        matrices[i] = U @ np.diag(eigvals) @ U.T
+    return matrices, centers

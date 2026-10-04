@@ -1,0 +1,1237 @@
+"""Many-body minimax solver for anisotropic filtration values (provisional).
+
+Provenance
+----------
+Adapted from uda-lab/ellcech ``src/ellphi_alpha/minimax.py`` at commit
+82d13e3e174f4903cdcd6adcee1f469348361c91, by Tomoki Uda (the author of
+EllPHi). That file is byte-identical at ellcech ``main``
+893056409db56865b7432274562db2d863e0abce. Numerical behaviour, method
+strings, defaults and tolerances are kept unchanged; the changes are
+packaging-level only (intra-package import of ``unpack_conic``, type
+annotations, documentation). Distributed as part of EllPHi under its MIT
+license. The rights question for the ellcech source is tracked in
+uda-lab/project-ellphi#26. The docstring corrections in items 1–3
+deliberately deviate from the ellcech 82d13e3 docstrings; code paths are
+unchanged.
+
+The module name and the public names exported from ``ellphi`` are
+provisional and may change.
+
+Mathematical background
+-----------------------
+Given vertices ``i = 0, ..., k-1`` with centers ``x_i`` in R^d and SPD
+matrices ``A_i``, the exact filtration value is
+
+    alpha = min_x  max_i f_i(x),   f_i(x) = (x - x_i)^T A_i (x - x_i).
+
+``alpha`` is a *squared* scale. In the pairwise case ``k = 2`` the exact
+value equals ``ellphi.tangency(p, q).t ** 2``; the tangency time is
+``sqrt(alpha)``. Every solver output is a finite-precision, finite-iteration
+approximation of these mathematical quantities (within the tolerances and
+subject to ``converged``). An *unadjusted* solve (``regularization == 0``
+and ``condition_number_limit is None``) approximates the exact problem
+directly; passing ``condition_number_limit`` always applies at least a
+machine-epsilon diagonal shift, and any positive ``regularization`` shifts
+``A(mu)``, so adjusted solves approximate a stabilised problem instead.
+
+By strong duality, ``alpha = max_{mu in Delta^{k-1}} g(mu)`` with
+
+    A(mu) = sum_i mu_i A_i
+    b(mu) = sum_i mu_i A_i x_i
+    g(mu) = sum_i mu_i x_i^T A_i x_i - b(mu)^T A(mu)^{-1} b(mu)
+          = sum_i mu_i f_i(x*(mu)),
+
+where ``x*(mu) = A(mu)^{-1} b(mu)`` is the circumcenter. The dual gradient is
+``dg/dmu_i = f_i(x*(mu))`` and the Hessian is
+``d2g/dmu_i dmu_j = -2 (x* - x_i)^T A_i A(mu)^{-1} A_j (x* - x_j)``.
+These identities describe the unadjusted problem; with regularization or
+conditioning the solver works on a stabilised ``A(mu)`` and its outputs
+approximate that stabilised problem.
+
+Weight support versus tight set
+-------------------------------
+``MinimaxResult.active_set`` is the *weight support*
+``{i : weights[i] > weight_tol}``. It is not the tight constraint set
+``{i : f_i(circumcenter) == alpha}``. At an exact optimum the support of the
+weights lies inside the tight set, but the tight set can be strictly larger:
+for three unit balls centered at ``(0, 0)``, ``(2, 0)`` and ``(0, 2)``, all
+three constraints are tight at the circumcenter ``(1, 1)`` with
+``alpha = 2``, while the unique optimal weights are ``(0, 1/2, 1/2)``.
+
+Value versus derivative reliability
+-----------------------------------
+``MinimaxResult.converged`` reports whether the chosen method met its own
+stopping test for the value. It is not a certificate that ``alpha`` is
+differentiable at the input or that the returned weights are accurate enough
+for derivatives; see :mod:`ellphi.minimax_grad` for the hypotheses under
+which the gradient formula applies.
+
+Correspondence with the pairwise solver
+---------------------------------------
+For ``k = 2`` the pairwise solver finds the root of
+``F(mu) = f_i(x*(mu)) - f_j(x*(mu))``, while this module maximises ``g``
+over ``Delta^1``; both give the same ``x*`` and ``dg/dmu = -F(mu)``. The
+pairwise scalar ``mu`` and the vector weights here are related primitives
+with different result contracts.
+
+Packed coefficients store the linear term as ``b = -A x_bar``, so the center
+is ``x_bar = -A^{-1} b``; :func:`solve_minimax_from_coefs` handles this.
+"""
+
+from __future__ import annotations
+
+import warnings
+from typing import Any, Literal, NamedTuple
+
+import numpy as np
+import numpy.typing as npt
+from scipy import linalg
+
+from .geometry import unpack_conic
+
+__all__ = [
+    "MethodName",
+    "MinimaxResult",
+    "solve_minimax",
+    "solve_minimax_from_coefs",
+]
+
+MethodName = Literal[
+    "fw+bisect",
+    "fw+brentq",
+    "fw+bisect+newton",
+    "fw+brentq+newton",
+    "fw+bisect+damped-newton",
+    "scipy-slsqp",
+    "newton-cold",
+]
+
+_DEFAULT_TOL = 1e-9
+_DEFAULT_MAX_ITER = 2000
+_DEFAULT_WEIGHT_TOL = 1e-10
+_DEFAULT_MAX_COND_STEPS = 8
+_N_BISECT = 52  # ~machine precision for double
+
+_NEWTON_TOL = 1e-14
+_NEWTON_MAX_ITER = 20
+
+# Brentq line search constants (analogous to ellphi _DEFAULT_HYBRID_BRACKET_MAXITER)
+_DEFAULT_BRENTQ_MAXITER = 28
+# Retained unused for fidelity with the ellcech source.
+_BRENTQ_FAILSAFE_MAXITER = 64
+_BRENTQ_XTOL = 1e-12
+_BRENTQ_RTOL = 4.0 * np.finfo(float).eps
+
+# Armijo backtracking constants
+_ARMIJO_BETA = 0.5
+_ARMIJO_SIGMA = 1e-4
+_ARMIJO_MAX_BACKTRACK = 10
+
+_VALID_METHODS: tuple[str, ...] = (
+    "fw+bisect",
+    "fw+brentq",
+    "fw+bisect+newton",
+    "fw+brentq+newton",
+    "fw+bisect+damped-newton",
+    "scipy-slsqp",
+    "newton-cold",
+)
+
+# Legacy alias
+_METHOD_ALIASES: dict[str, str] = {
+    "fw+newton": "fw+bisect+newton",
+}
+
+
+class MinimaxResult(NamedTuple):
+    """Result of the minimax solver.
+
+    Attributes:
+        alpha: Filtration value ``max_i f_i(circumcenter)``, a squared scale.
+            A numerical approximation of the exact minimax value within the
+            solver tolerances (see ``converged``). For an unadjusted solve
+            (``regularization == 0`` and ``condition_number_limit is None``)
+            the target is the exact problem; otherwise it is the stabilised
+            problem. In the pairwise case the exact value is
+            ``ellphi.tangency(p, q).t ** 2``.
+        circumcenter: Point ``x* = A(mu)^{-1} b(mu)`` for the returned
+            weights, computed from the unadjusted ``A(mu)`` for an unadjusted
+            solve and from the stabilised ``A(mu)`` otherwise.
+        weights: Returned dual weights ``mu`` in the simplex, shape ``(k,)``.
+        active_set: Weight support ``{i : weights[i] > weight_tol}``. This is
+            not the tight constraint set ``{i : f_i(x*) == alpha}``, which can
+            be strictly larger (see the module docstring).
+        converged: Whether the method met its stopping test for the value.
+            It is not a derivative certificate.
+        n_iter: Number of iterations performed.
+        method: Canonical solver method used (e.g. ``"fw+bisect"``).
+        metadata: Optional dict with method-specific diagnostics
+            (``fw_iters``, ``newton_iters``, ``hessian_cond``, ...).
+    """
+
+    alpha: float
+    circumcenter: np.ndarray
+    weights: np.ndarray
+    active_set: list[int]
+    converged: bool
+    n_iter: int
+    method: str = "fw+bisect"
+    metadata: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Low-level helpers (shared across methods)
+# ---------------------------------------------------------------------------
+
+
+def _condition_matrix(
+    A: np.ndarray,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> np.ndarray:
+    """Optionally regularise A to improve conditioning."""
+    if regularization < 0.0:
+        raise ValueError("regularization must be non-negative")
+    if condition_number_limit is not None and condition_number_limit <= 1.0:
+        raise ValueError("condition_number_limit must be > 1 when provided")
+    if max_conditioning_steps < 0:
+        raise ValueError("max_conditioning_steps must be non-negative")
+
+    if regularization == 0.0 and condition_number_limit is None:
+        return A
+
+    eye = np.eye(A.shape[0], dtype=A.dtype)
+    if condition_number_limit is None:
+        return A + regularization * eye
+
+    spectral_scale = float(np.linalg.norm(A, ord=2))
+    eps_floor = np.finfo(A.dtype).eps * max(1.0, spectral_scale)
+    reg = max(regularization, eps_floor)
+    A_reg = A + reg * eye
+
+    cond = np.linalg.cond(A_reg)
+    if np.isfinite(cond) and cond <= condition_number_limit:
+        return A_reg
+
+    # Strict cap: perform at most max_conditioning_steps escalations.
+    for _ in range(max_conditioning_steps):
+        reg *= 10.0
+        A_reg = A + reg * eye
+        cond = np.linalg.cond(A_reg)
+        if np.isfinite(cond) and cond <= condition_number_limit:
+            return A_reg
+    return A_reg
+
+
+def _cholesky_solve(
+    A: np.ndarray,
+    b: np.ndarray,
+    *,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
+) -> np.ndarray:
+    """Solve A x = b with optional conditioning safeguards."""
+    A = _condition_matrix(
+        A,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    try:
+        chol = linalg.cho_factor(A, check_finite=False)
+        return linalg.cho_solve(chol, b, check_finite=False)
+    except linalg.LinAlgError:
+        return np.linalg.lstsq(A, b, rcond=None)[0]
+
+
+def _exact_linear_solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Solve A x = b without stability regularization adjustments."""
+    try:
+        chol = linalg.cho_factor(A, check_finite=False)
+        return linalg.cho_solve(chol, b, check_finite=False)
+    except linalg.LinAlgError:
+        try:
+            return np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            return np.linalg.lstsq(A, b, rcond=None)[0]
+
+
+def _eval_f(
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute circumcenter x*(mu) and f_i(x*(mu)) for all i.
+
+    Also note: g(mu) = sum_i mu_i f_i(x*(mu)) = np.dot(mu, f).
+    """
+    A_mu = np.einsum("k,kij->ij", mu, matrices)
+    b_mu = np.einsum("k,ki->i", mu, Ax)
+    xstar = _cholesky_solve(
+        A_mu,
+        b_mu,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    diff = xstar[np.newaxis, :] - centers
+    f = np.einsum("ki,kij,kj->k", diff, matrices, diff)
+    return xstar, f
+
+
+def _exact_line_search(
+    s: int,
+    v: int,
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    gamma_max: float,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> float:
+    """Find gamma* in [0, gamma_max] that maximises g along the pairwise direction.
+
+    Bisects on h(gamma) = f_s(x*(mu + gamma*(e_s - e_v))) - f_v(...) = 0.
+    dg/dgamma = f_s(x*(gamma)) - f_v(x*(gamma)) (positive at 0, negative at gamma_max).
+    """
+    if gamma_max <= 0.0:
+        return 0.0
+
+    def h(gamma: float) -> float:
+        mu_g = mu.copy()
+        mu_g[s] += gamma
+        mu_g[v] -= gamma
+        _, f_g = _eval_f(
+            mu_g,
+            matrices,
+            Ax,
+            centers,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        return float(f_g[s] - f_g[v])
+
+    h0 = h(0.0)
+    if h0 <= 0.0:
+        return 0.0  # already at or past optimum in this direction
+
+    h_max = h(gamma_max)
+    if h_max >= 0.0:
+        return gamma_max  # optimum is at the boundary
+
+    lo, hi = 0.0, gamma_max
+    for _ in range(_N_BISECT):
+        mid = 0.5 * (lo + hi)
+        if h(mid) > 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def _ensure_finite(value: float, label: str) -> float:
+    """Raise RuntimeError if *value* is NaN or Inf (ellphi pattern)."""
+    if not np.isfinite(value):
+        raise RuntimeError(f"Non-finite {label} value: {value}")
+    return value
+
+
+def _brentq_line_search(
+    s: int,
+    v: int,
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    gamma_max: float,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[float, int]:
+    """Brentq-based line search replacing fixed 52-step bisection.
+
+    Returns:
+        (gamma, n_fevals): Optimal step and number of function evaluations.
+    """
+    if gamma_max <= 0.0:
+        return 0.0, 0
+
+    n_fevals = [0]
+
+    def h(gamma: float) -> float:
+        n_fevals[0] += 1
+        mu_g = mu.copy()
+        mu_g[s] += gamma
+        mu_g[v] -= gamma
+        _, f_g = _eval_f(
+            mu_g,
+            matrices,
+            Ax,
+            centers,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        return float(f_g[s] - f_g[v])
+
+    h0 = h(0.0)
+    if h0 <= 0.0:
+        return 0.0, n_fevals[0]
+
+    h_max = h(gamma_max)
+    if h_max >= 0.0:
+        return gamma_max, n_fevals[0]
+
+    try:
+        from scipy.optimize import brentq
+
+        gamma = brentq(
+            h,
+            0.0,
+            gamma_max,
+            xtol=_BRENTQ_XTOL,
+            rtol=_BRENTQ_RTOL,
+            maxiter=_DEFAULT_BRENTQ_MAXITER,
+        )
+        return float(gamma), n_fevals[0]
+    except (ValueError, RuntimeError):
+        # Fallback to fixed bisection
+        lo, hi = 0.0, gamma_max
+        for _ in range(_N_BISECT):
+            mid = 0.5 * (lo + hi)
+            if h(mid) > 0.0:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi), n_fevals[0]
+
+
+# ---------------------------------------------------------------------------
+# Per-method internal runners
+# ---------------------------------------------------------------------------
+
+
+def _run_fw_bisect(
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    mu: np.ndarray,
+    *,
+    tol: float,
+    max_iter: int,
+    weight_tol: float,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[np.ndarray, bool, int]:
+    """Pairwise Frank-Wolfe with exact bisection line search.
+
+    Returns:
+        (mu, converged, n_iter)
+    """
+    converged = False
+    n_iter = 0
+
+    for n_iter in range(1, max_iter + 1):
+        xstar, f = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+
+        s = int(np.argmax(f))
+        active_mask = mu > weight_tol
+        f_active = np.where(active_mask, f, np.inf)
+        v = int(np.argmin(f_active))
+
+        fw_gap = float(f[s] - np.dot(mu, f))
+        if fw_gap < tol:
+            converged = True
+            break
+
+        if s == v:
+            converged = True
+            break
+
+        gamma_max = float(mu[v])
+        gamma = _exact_line_search(
+            s,
+            v,
+            mu,
+            matrices,
+            Ax,
+            centers,
+            gamma_max,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+
+        mu = mu.copy()
+        mu[s] += gamma
+        mu[v] -= gamma
+        mu = np.clip(mu, 0.0, None)
+        mu /= mu.sum()
+
+    return mu, converged, n_iter
+
+
+def _run_fw_brentq(
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    mu: np.ndarray,
+    *,
+    tol: float,
+    max_iter: int,
+    weight_tol: float,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[np.ndarray, bool, int, dict]:
+    """Pairwise Frank-Wolfe with brentq line search.
+
+    Returns:
+        (mu, converged, n_iter, metadata)
+    """
+    converged = False
+    n_iter = 0
+    total_line_search_evals = 0
+    total_fevals = 0
+
+    for n_iter in range(1, max_iter + 1):
+        xstar, f = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        total_fevals += 1
+
+        s = int(np.argmax(f))
+        active_mask = mu > weight_tol
+        f_active = np.where(active_mask, f, np.inf)
+        v = int(np.argmin(f_active))
+
+        fw_gap = float(f[s] - np.dot(mu, f))
+        if fw_gap < tol:
+            converged = True
+            break
+
+        if s == v:
+            converged = True
+            break
+
+        gamma_max = float(mu[v])
+        gamma, ls_evals = _brentq_line_search(
+            s,
+            v,
+            mu,
+            matrices,
+            Ax,
+            centers,
+            gamma_max,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        total_line_search_evals += ls_evals
+
+        mu = mu.copy()
+        mu[s] += gamma
+        mu[v] -= gamma
+        mu = np.clip(mu, 0.0, None)
+        mu /= mu.sum()
+
+    metadata = {
+        "fw_iters": n_iter,
+        "n_fevals": total_fevals + total_line_search_evals,
+        "line_search_evals": total_line_search_evals,
+    }
+    return mu, converged, n_iter, metadata
+
+
+def _hessian_g_negative(
+    active: list[int],
+    xstar: np.ndarray,
+    matrices: np.ndarray,
+    Amu_inv: np.ndarray,
+    centers: np.ndarray,
+) -> np.ndarray:
+    """Negative Hessian of g on the active face (positive semidefinite).
+
+    neg_H[l, l'] = 2 (x* - x_{i_l})^T A_{i_l}  A(mu)^{-1}  A_{i_{l'}} (x* - x_{i_{l'}})
+
+    Equivalently neg_H = 2 * Ad @ Amu_inv @ Ad.T
+    where Ad[l] = A_{i_l} (x* - x_{i_l})  (shape m x d).
+    """
+    diff = xstar[np.newaxis, :] - centers[active]  # (m, d)
+    Ad = np.einsum("lij,lj->li", matrices[active], diff)  # (m, d)
+    return 2.0 * (Ad @ Amu_inv @ Ad.T)  # (m, m)
+
+
+def _newton_polish(
+    mu: np.ndarray,
+    active_set: list[int],
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    *,
+    max_iter: int = _NEWTON_MAX_ITER,
+    tol: float = _NEWTON_TOL,
+) -> tuple[np.ndarray, int]:
+    """Newton polishing on the dual restricted to the current active face.
+
+    Solves the KKT conditions r_l = f_{i_l}(x*) - f_{i_{m-1}}(x*) = 0
+    using the exact (negative) Hessian of g via the reduced system:
+
+        neg_H_r  delta = r
+        neg_H_r[l, l'] = neg_H[l,l'] - neg_H[l, m-1] - neg_H[m-1, l'] + neg_H[m-1, m-1]
+
+    Then  mu_{i_l} += delta[l],  mu_{i_{m-1}} -= sum(delta),
+    followed by simplex projection.
+
+    Returns:
+        (mu, n_iter): Updated weights and number of Newton steps performed.
+    """
+    m = len(active_set)
+    if m <= 1:
+        return mu, 0
+
+    mu = mu.copy()
+    n_iter = 0
+
+    for n_iter in range(1, max_iter + 1):
+        A_mu = np.einsum("k,kij->ij", mu, matrices)
+        b_mu = np.einsum("k,ki->i", mu, Ax)
+
+        try:
+            chol = linalg.cho_factor(A_mu, check_finite=False)
+            xstar = linalg.cho_solve(chol, b_mu, check_finite=False)
+            d = A_mu.shape[0]
+            Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
+        except linalg.LinAlgError:
+            break
+
+        diff = xstar[np.newaxis, :] - centers[active_set]  # (m, d)
+        f = np.einsum("ki,kij,kj->k", diff, matrices[active_set], diff)  # (m,)
+
+        # Residual: r_l = f_{i_l} - f_{i_{m-1}}
+        r = f[:-1] - f[-1]  # (m-1,)
+        if float(np.max(np.abs(r))) < tol:
+            break
+
+        neg_H = _hessian_g_negative(
+            active_set, xstar, matrices, Amu_inv, centers
+        )  # (m, m)
+
+        # Reduced system (eliminate last variable via sum=1 constraint)
+        neg_H_r = (
+            neg_H[:-1, :-1] - neg_H[:-1, -1:] - neg_H[-1:, :-1] + neg_H[-1, -1]
+        )  # (m-1, m-1)
+
+        try:
+            delta = np.linalg.solve(neg_H_r, r)
+        except np.linalg.LinAlgError:
+            break
+
+        mu_new = mu.copy()
+        for pos, idx in enumerate(active_set[:-1]):
+            mu_new[idx] += delta[pos]
+        mu_new[active_set[-1]] -= float(delta.sum())
+
+        # Project back to simplex
+        mu_new = np.clip(mu_new, 0.0, None)
+        s = mu_new.sum()
+        if s <= 0.0:
+            break
+        mu_new /= s
+        mu = mu_new
+
+    return mu, n_iter
+
+
+def _damped_newton_polish(
+    mu: np.ndarray,
+    active_set: list[int],
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    *,
+    max_iter: int = _NEWTON_MAX_ITER,
+    tol: float = _NEWTON_TOL,
+) -> tuple[np.ndarray, int, dict]:
+    """Newton polishing with Armijo backtracking and conditioning safeguards.
+
+    Like ``_newton_polish`` but adds:
+    - Condition number check on the reduced Hessian (regularize if > 1e12)
+    - Armijo backtracking line search on the Newton step
+    - ``_ensure_finite`` guards against NaN propagation
+
+    Returns:
+        (mu, n_iter, metadata)
+    """
+    m = len(active_set)
+    if m <= 1:
+        return mu, 0, {"newton_iters": 0, "hessian_cond": 0.0}
+
+    mu = mu.copy()
+    n_iter = 0
+    max_hessian_cond = 0.0
+
+    for n_iter in range(1, max_iter + 1):
+        A_mu = np.einsum("k,kij->ij", mu, matrices)
+        b_mu = np.einsum("k,ki->i", mu, Ax)
+
+        try:
+            chol = linalg.cho_factor(A_mu, check_finite=False)
+            xstar = linalg.cho_solve(chol, b_mu, check_finite=False)
+            d = A_mu.shape[0]
+            Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
+        except linalg.LinAlgError:
+            break
+
+        diff = xstar[np.newaxis, :] - centers[active_set]
+        f = np.einsum("ki,kij,kj->k", diff, matrices[active_set], diff)
+
+        # Residual
+        r = f[:-1] - f[-1]
+        try:
+            _ensure_finite(float(np.max(np.abs(r))), "Newton residual")
+        except RuntimeError:
+            break
+        if float(np.max(np.abs(r))) < tol:
+            break
+
+        neg_H = _hessian_g_negative(active_set, xstar, matrices, Amu_inv, centers)
+
+        neg_H_r = neg_H[:-1, :-1] - neg_H[:-1, -1:] - neg_H[-1:, :-1] + neg_H[-1, -1]
+
+        # Conditioning check
+        hess_cond = float(np.linalg.cond(neg_H_r))
+        max_hessian_cond = max(max_hessian_cond, hess_cond)
+        if hess_cond > 1e12:
+            # Diagonal regularization
+            reg = float(np.trace(neg_H_r)) / neg_H_r.shape[0] * 1e-10
+            reg = max(reg, 1e-14)
+            neg_H_r = neg_H_r + reg * np.eye(neg_H_r.shape[0])
+
+        try:
+            delta = np.linalg.solve(neg_H_r, r)
+        except np.linalg.LinAlgError:
+            break
+
+        if not np.all(np.isfinite(delta)):
+            break
+
+        # Current objective: g(mu) = dot(mu, f_full)
+        _, f_full = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=0,
+        )
+        g_current = float(np.dot(mu, f_full))
+
+        # Armijo backtracking
+        step = 1.0
+        accepted = False
+        for _ in range(_ARMIJO_MAX_BACKTRACK):
+            mu_trial = mu.copy()
+            for pos, idx in enumerate(active_set[:-1]):
+                mu_trial[idx] += step * delta[pos]
+            mu_trial[active_set[-1]] -= step * float(delta.sum())
+
+            # Project to simplex
+            mu_trial = np.clip(mu_trial, 0.0, None)
+            s = mu_trial.sum()
+            if s <= 0.0:
+                step *= _ARMIJO_BETA
+                continue
+            mu_trial /= s
+
+            _, f_trial = _eval_f(
+                mu_trial,
+                matrices,
+                Ax,
+                centers,
+                regularization=0.0,
+                condition_number_limit=None,
+                max_conditioning_steps=0,
+            )
+            g_trial = float(np.dot(mu_trial, f_trial))
+
+            # Armijo sufficient increase (maximizing g)
+            if g_trial >= g_current + _ARMIJO_SIGMA * step * float(r @ delta):
+                mu = mu_trial
+                accepted = True
+                break
+            step *= _ARMIJO_BETA
+
+        if not accepted:
+            # Accept full step anyway (like undamped Newton)
+            mu_new = mu.copy()
+            for pos, idx in enumerate(active_set[:-1]):
+                mu_new[idx] += delta[pos]
+            mu_new[active_set[-1]] -= float(delta.sum())
+            mu_new = np.clip(mu_new, 0.0, None)
+            s = mu_new.sum()
+            if s <= 0.0:
+                break
+            mu_new /= s
+            mu = mu_new
+
+    metadata = {
+        "newton_iters": n_iter,
+        "hessian_cond": max_hessian_cond,
+    }
+    return mu, n_iter, metadata
+
+
+def _simplex_residual(mu: npt.NDArray[np.float64]) -> float:
+    """Equality constraint ``sum(mu) - 1`` for SLSQP."""
+    return float(mu.sum() - 1.0)
+
+
+def _run_scipy_slsqp(
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    k: int,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[np.ndarray, bool, int]:
+    """Maximize g(mu) over the simplex using scipy SLSQP.
+
+    Returns:
+        (mu, converged, n_iter)
+    """
+    from scipy.optimize import minimize
+
+    n_eval = [0]
+
+    def neg_g_and_grad(mu: npt.NDArray[np.float64]) -> tuple[float, np.ndarray]:
+        n_eval[0] += 1
+        _, f = _eval_f(
+            mu,
+            matrices,
+            Ax,
+            centers,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        # g(mu) = dot(mu, f);  gradient dg/dmu_i = f_i(x*(mu))
+        return -float(np.dot(mu, f)), -f
+
+    x0 = np.full(k, 1.0 / k)
+    bounds = [(0.0, None)] * k
+
+    res = minimize(
+        neg_g_and_grad,
+        x0,
+        jac=True,
+        method="SLSQP",
+        bounds=bounds,
+        constraints={"type": "eq", "fun": _simplex_residual},
+        options={"ftol": 1e-14, "maxiter": 500},
+    )
+
+    mu = np.clip(res.x, 0.0, None)
+    s = mu.sum()
+    if s > 0.0:
+        mu /= s
+
+    return mu, bool(res.success), n_eval[0]
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def _check_newton_convergence(
+    mu: np.ndarray,
+    active_set_fw: list[int],
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    converged: bool,
+    newton_tol: float,
+) -> bool:
+    """Recheck convergence after Newton polishing."""
+    if len(active_set_fw) <= 1:
+        return converged
+    try:
+        A_mu = np.einsum("k,kij->ij", mu, matrices)
+        b_mu = np.einsum("k,ki->i", mu, Ax)
+        chol = linalg.cho_factor(A_mu, check_finite=False)
+        xstar_check = linalg.cho_solve(chol, b_mu, check_finite=False)
+        d_check = xstar_check[np.newaxis, :] - centers[active_set_fw]
+        f_check = np.einsum("ki,kij,kj->k", d_check, matrices[active_set_fw], d_check)
+        r_check = f_check[:-1] - f_check[-1]
+        return converged and float(np.max(np.abs(r_check))) < newton_tol * 1e4
+    except linalg.LinAlgError:
+        return converged
+
+
+def solve_minimax(
+    matrices: np.ndarray,
+    centers: np.ndarray,
+    *,
+    method: MethodName | str = "fw+bisect",
+    tol: float = _DEFAULT_TOL,
+    max_iter: int = _DEFAULT_MAX_ITER,
+    weight_tol: float = _DEFAULT_WEIGHT_TOL,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
+    newton_tol: float = _NEWTON_TOL,
+    newton_max_iter: int = _NEWTON_MAX_ITER,
+) -> MinimaxResult:
+    """Compute a numerical approximation of the filtration value.
+
+    The mathematical target is ``alpha = max_{mu in Delta} g(mu)``. The
+    returned value and circumcenter are finite-iteration approximations
+    within the solver tolerances; check ``converged``. For an unadjusted
+    solve (``regularization == 0`` and ``condition_number_limit is None``)
+    the target is the exact problem. Otherwise ``A(mu)`` is stabilised
+    (``condition_number_limit`` alone already applies at least a
+    machine-epsilon diagonal shift) and the outputs approximate the
+    stabilised problem.
+
+    Seven solver back-ends are available via ``method``:
+
+    * ``"fw+bisect"`` (default): Pairwise FW with 52-step bisection line search.
+    * ``"fw+brentq"``: Pairwise FW with adaptive brentq line search.
+    * ``"fw+bisect+newton"``: FW(bisect) warm-start + Newton polishing.
+    * ``"fw+brentq+newton"``: FW(brentq) warm-start + damped Newton polishing.
+    * ``"fw+bisect+damped-newton"``: FW(bisect) + Armijo-damped Newton.
+    * ``"scipy-slsqp"``: Direct SLSQP solve via scipy.
+    * ``"newton-cold"``: Newton from uniform mu=1/k (stability baseline).
+
+    The legacy name ``"fw+newton"`` is accepted as an alias for
+    ``"fw+bisect+newton"`` with a deprecation warning.
+
+    Args:
+        matrices: SPD matrices ``A_i``, shape ``(k, d, d)``, or ``(d, d)`` for
+            a single vertex.
+        centers: Centers ``x_i``, shape ``(k, d)``, or ``(d,)`` for a single
+            vertex.
+        method: One of the seven canonical method names above.
+        tol: Frank-Wolfe gap tolerance for the FW-based methods.
+        max_iter: Maximum number of Frank-Wolfe iterations.
+        weight_tol: Threshold defining the weight support ``active_set``. It
+            also selects the face used by Newton polishing.
+        regularization: Non-negative diagonal shift applied to ``A(mu)`` in
+            Frank-Wolfe evaluations and line searches, SLSQP evaluations, and
+            the final evaluation. Newton-polishing solves use the unshifted
+            ``A(mu)``.
+        condition_number_limit: Optional target for ``cond(A(mu))``. If the
+            target is exceeded, the diagonal shift is escalated by factors of
+            10 for at most ``max_conditioning_steps`` attempts; the target is
+            not guaranteed after the cap.
+        max_conditioning_steps: Maximum number of attempted conditioning
+            escalations.
+        newton_tol: Residual tolerance for Newton polishing.
+        newton_max_iter: Maximum number of Newton steps.
+
+    Returns:
+        MinimaxResult with ``.method`` recording the canonical solver name
+        and ``.metadata`` containing method-specific diagnostics. ``alpha``
+        and ``circumcenter`` approximate the exact minimax value and
+        circumcenter for an unadjusted solve (``regularization == 0`` and
+        ``condition_number_limit is None``), and the stabilised problem
+        otherwise; in the pairwise case the exact value is
+        ``ellphi.tangency(p, q).t ** 2``. For ``k = 1`` the result is the
+        trivial ``alpha = 0`` at the center.
+
+    Raises:
+        ValueError: For an unknown method, an empty simplex or invalid
+            conditioning parameters.
+    """
+    # Handle legacy alias
+    if method in _METHOD_ALIASES:
+        canonical = _METHOD_ALIASES[method]
+        warnings.warn(
+            f"Method {method!r} is deprecated, use {canonical!r} instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        method = canonical
+
+    if method not in _VALID_METHODS:
+        raise ValueError(f"Unknown method {method!r}. Valid methods: {_VALID_METHODS}")
+
+    matrices = np.asarray(matrices, dtype=float)
+    centers = np.asarray(centers, dtype=float)
+    if regularization < 0.0:
+        raise ValueError("regularization must be non-negative")
+    if condition_number_limit is not None and condition_number_limit <= 1.0:
+        raise ValueError("condition_number_limit must be > 1 when provided")
+    if max_conditioning_steps < 0:
+        raise ValueError("max_conditioning_steps must be non-negative")
+
+    # Accept single-simplex input (2D matrix, 1D center)
+    if matrices.ndim == 2:
+        matrices = matrices[np.newaxis]
+        centers = centers[np.newaxis]
+
+    k, d = centers.shape
+
+    if k == 0:
+        raise ValueError("simplex must contain at least one vertex (k=0 given)")
+
+    # --- Trivial case: single point ---
+    if k == 1:
+        return MinimaxResult(
+            alpha=0.0,
+            circumcenter=centers[0].copy(),
+            weights=np.array([1.0]),
+            active_set=[0],
+            converged=True,
+            n_iter=0,
+            method=method,
+        )
+
+    # Precompute A_i x_bar_i  (shape: k x d)
+    Ax = np.einsum("kij,kj->ki", matrices, centers)
+
+    # Uniform initialisation for FW-based methods
+    mu_init = np.full(k, 1.0 / k)
+
+    _fw_kwargs: dict[str, Any] = dict(
+        tol=tol,
+        max_iter=max_iter,
+        weight_tol=weight_tol,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+
+    metadata: dict[str, Any] = {}
+
+    # --- Dispatch ---
+    if method == "fw+bisect":
+        mu, converged, n_iter = _run_fw_bisect(
+            matrices, Ax, centers, mu_init, **_fw_kwargs
+        )
+        metadata["fw_iters"] = n_iter
+
+    elif method == "fw+brentq":
+        mu, converged, n_iter, meta_fw = _run_fw_brentq(
+            matrices, Ax, centers, mu_init, **_fw_kwargs
+        )
+        metadata.update(meta_fw)
+
+    elif method == "fw+bisect+newton":
+        mu, converged, n_iter_fw = _run_fw_bisect(
+            matrices, Ax, centers, mu_init, **_fw_kwargs
+        )
+        active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
+        mu, n_iter_newton = _newton_polish(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            max_iter=newton_max_iter,
+            tol=newton_tol,
+        )
+        n_iter = n_iter_fw + n_iter_newton
+        converged = _check_newton_convergence(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            converged,
+            newton_tol,
+        )
+        metadata["fw_iters"] = n_iter_fw
+        metadata["newton_iters"] = n_iter_newton
+
+    elif method == "fw+brentq+newton":
+        mu, converged, n_iter_fw, meta_fw = _run_fw_brentq(
+            matrices, Ax, centers, mu_init, **_fw_kwargs
+        )
+        active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
+        mu, n_iter_newton, meta_newton = _damped_newton_polish(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            max_iter=newton_max_iter,
+            tol=newton_tol,
+        )
+        n_iter = n_iter_fw + n_iter_newton
+        converged = _check_newton_convergence(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            converged,
+            newton_tol,
+        )
+        metadata.update(meta_fw)
+        metadata.update(meta_newton)
+
+    elif method == "fw+bisect+damped-newton":
+        mu, converged, n_iter_fw = _run_fw_bisect(
+            matrices, Ax, centers, mu_init, **_fw_kwargs
+        )
+        active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
+        mu, n_iter_newton, meta_newton = _damped_newton_polish(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            max_iter=newton_max_iter,
+            tol=newton_tol,
+        )
+        n_iter = n_iter_fw + n_iter_newton
+        converged = _check_newton_convergence(
+            mu,
+            active_set_fw,
+            matrices,
+            Ax,
+            centers,
+            converged,
+            newton_tol,
+        )
+        metadata["fw_iters"] = n_iter_fw
+        metadata.update(meta_newton)
+
+    elif method == "newton-cold":
+        # Newton from uniform start (no FW warm-up)
+        active_set_cold = list(range(k))
+        mu, n_iter_newton, meta_newton = _damped_newton_polish(
+            mu_init.copy(),
+            active_set_cold,
+            matrices,
+            Ax,
+            centers,
+            max_iter=newton_max_iter,
+            tol=newton_tol,
+        )
+        n_iter = n_iter_newton
+        converged = _check_newton_convergence(
+            mu,
+            active_set_cold,
+            matrices,
+            Ax,
+            centers,
+            True,
+            newton_tol,
+        )
+        metadata.update(meta_newton)
+
+    elif method == "scipy-slsqp":
+        mu, converged, n_iter = _run_scipy_slsqp(
+            matrices,
+            Ax,
+            centers,
+            k,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        metadata["n_fevals"] = n_iter
+
+    # --- Final evaluation ---
+    xstar, f = _eval_f(
+        mu,
+        matrices,
+        Ax,
+        centers,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    alpha = float(np.max(f))
+    if not (np.isfinite(alpha) and np.all(np.isfinite(xstar))):
+        converged = False
+    active_set = [i for i in range(k) if mu[i] > weight_tol]
+
+    return MinimaxResult(
+        alpha=alpha,
+        circumcenter=xstar,
+        weights=mu,
+        active_set=active_set,
+        converged=converged,
+        n_iter=n_iter,
+        method=method,
+        metadata=metadata or None,
+    )
+
+
+def solve_minimax_from_coefs(
+    coefs: np.ndarray,
+    **kwargs: Any,
+) -> MinimaxResult:
+    """Convenience wrapper: accept ellphi packed conic coefficient vectors.
+
+    Converts ellphi's packed representation (A, b_ellphi, c) to (A_i, x_bar_i)
+    and calls solve_minimax.
+
+    Sign convention:
+        ellphi stores ``b_ellphi = -A x_bar`` (linear term of
+        ``x^T A x + 2 b^T x + c``), so ``x_bar = -A^{-1} b_ellphi``.
+
+    Value correspondence:
+        In the pairwise case ``result.alpha`` approximates
+        ``ellphi.tangency(coefs[0], coefs[1]).t ** 2`` (exactly equal in the
+        mathematical problem; numerically within solver tolerances for an
+        unadjusted solve, i.e. ``regularization == 0`` and
+        ``condition_number_limit is None``).
+
+    Args:
+        coefs: Packed conic coefficient array, shape (k, m) or (m,) for k=1.
+        **kwargs: Forwarded to solve_minimax (method, tol, max_iter, weight_tol,
+            regularization, condition_number_limit, max_conditioning_steps,
+            newton_tol, newton_max_iter).
+
+    Returns:
+        MinimaxResult.
+    """
+    coefs = np.asarray(coefs, dtype=float)
+    if coefs.ndim == 1:
+        coefs = coefs[np.newaxis]
+
+    A_arr, b_arr, _ = unpack_conic(coefs)  # (k,d,d), (k,d), (k,)
+
+    # x_bar_i = -A_i^{-1} b_i  (ellphi sign convention: b = -A x_bar)
+    k = A_arr.shape[0]
+    centers = np.empty_like(b_arr)
+    for i in range(k):
+        centers[i] = _exact_linear_solve(A_arr[i], -b_arr[i])
+
+    return solve_minimax(A_arr, centers, **kwargs)
