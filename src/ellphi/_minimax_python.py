@@ -34,6 +34,10 @@ from ellcech 82d13e3 in the following ways:
 * For stabilization, the SLSQP and damped-Newton objectives are the
   regularized dual rather than ``dot(mu, f)``; this keeps their objective and
   Jacobian consistent with the conditioned matrix.
+* Under ``condition_number_limit``, the Newton Hessian omits the derivative
+  of the mu-dependent epsilon-floor shift, so the Newton step uses an
+  approximate Hessian. The residual test uses the exact stabilised gradient;
+  this can increase the step count without changing the accepted result.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
 
@@ -876,11 +880,17 @@ def _newton_polish(
 ) -> tuple[np.ndarray, int, dict]:
     """Newton polishing on the dual restricted to the current active face.
 
-    Solves the KKT conditions r_l = f_{i_l}(x*) - f_{i_{m-1}}(x*) = 0
-    using the exact (negative) Hessian of g via the reduced system:
+    Solves the KKT conditions using the stabilised gradient via the reduced
+    system:
 
         neg_H_r  delta = r
         neg_H_r[l, l'] = neg_H[l,l'] - neg_H[l, m-1] - neg_H[m-1, l'] + neg_H[m-1, m-1]
+
+    When ``condition_number_limit`` is set, the epsilon-floor shift depends on
+    ``mu`` through ``||A(mu)||_2``. The Hessian above omits the derivative of
+    that shift, so this is a quasi-Newton step with an approximate Hessian;
+    the residual test still uses the exact stabilised gradient. The omitted
+    terms can increase the step count without changing the accepted result.
 
     Then  mu_{i_l} += delta[l],  mu_{i_{m-1}} -= sum(delta),
     followed by simplex projection.
@@ -1038,6 +1048,12 @@ def _damped_newton_polish(
     - Condition number check on the reduced Hessian (regularize if > 1e12)
     - Armijo backtracking line search on the Newton step
     - ``_ensure_finite`` guards against NaN propagation
+
+    Under ``condition_number_limit``, the epsilon-floor shift depends on
+    ``mu`` through ``||A(mu)||_2``. The Newton Hessian omits its derivative,
+    making this a quasi-Newton step with an approximate Hessian; the residual
+    test uses the exact stabilised gradient. The omitted terms may increase
+    the step count without changing the accepted result.
 
     Returns:
         (mu, n_iter, metadata)

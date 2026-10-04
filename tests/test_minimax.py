@@ -583,9 +583,15 @@ class TestNumericalStabilityControls:
         assert not np.array_equal(stabilized.weights, unadjusted.weights)
 
     def test_newton_polishing_uses_conditioning_shift_gradient(self):
+        """The quasi-Newton polish meets the exact stabilised residual test.
+
+        The mu-dependent conditioning shift is omitted from the Hessian, but
+        the residual uses the exact stabilised gradient.
+        """
         matrices = np.array([[[1.0]], [[2.0]]])
         centers = np.array([[1e8], [2e8]])
         Ax = np.einsum("kij,kj->ki", matrices, centers)
+        newton_tol = 1.0
         stability = {
             "regularization": 0.0,
             "condition_number_limit": 1e6,
@@ -608,7 +614,7 @@ class TestNumericalStabilityControls:
             centers,
             offsets,
             max_iter=2,
-            tol=1.0,
+            tol=newton_tol,
             **stability,
         )
         xstar, values = minimax_mod._eval_f(
@@ -619,7 +625,7 @@ class TestNumericalStabilityControls:
         )
 
         assert metadata["newton_status"] == "converged"
-        assert abs(float(gradient[0] - gradient[1])) <= 1.0
+        assert abs(float(gradient[0] - gradient[1])) < newton_tol
 
     def test_fw_gap_ignores_subthreshold_positive_weights(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
