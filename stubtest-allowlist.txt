@@ -1,2 +1,2 @@
 ellphi._solver_python.MethodName
-ellphi.minimax.MethodName
+ellphi._minimax_python.MethodName

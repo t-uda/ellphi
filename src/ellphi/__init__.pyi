@@ -32,14 +32,11 @@ from .grad import (
     pdist_tangency_grad as pdist_tangency_grad,
     coef_from_cov_grad as coef_from_cov_grad,
 )
-from .minimax import (
-    MinimaxResult as MinimaxResult,
-    solve_minimax as solve_minimax,
-    solve_minimax_from_coefs as solve_minimax_from_coefs,
-)
-from .minimax_grad import (
-    GradientResult as GradientResult,
-    compute_gradient as compute_gradient,
+from .simplex import (
+    SimplexTangencyGrad as SimplexTangencyGrad,
+    SimplexTangencyResult as SimplexTangencyResult,
+    tangency_simplex as tangency_simplex,
+    tangency_simplex_grad as tangency_simplex_grad,
 )
 from ._version import __version__ as __version__
 
@@ -68,11 +65,10 @@ __all__ = [
     "tangency_grad",
     "pdist_tangency_grad",
     "coef_from_cov_grad",
-    "MinimaxResult",
-    "solve_minimax",
-    "solve_minimax_from_coefs",
-    "GradientResult",
-    "compute_gradient",
+    "SimplexTangencyResult",
+    "SimplexTangencyGrad",
+    "tangency_simplex",
+    "tangency_simplex_grad",
     "FloatArray",
     "__version__",
     "version_info",

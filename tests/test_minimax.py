@@ -15,9 +15,9 @@ import numpy as np
 import pytest
 
 import ellphi
-import ellphi.minimax as minimax_mod
+import ellphi._minimax_python as minimax_mod
 from ellphi.geometry import unpack_conic
-from ellphi.minimax import solve_minimax, solve_minimax_from_coefs
+from ellphi._minimax_python import solve_minimax, solve_minimax_from_coefs
 
 from .factories import random_coef_pair
 
@@ -385,7 +385,7 @@ def test_pairwise_alpha_is_squared_tangency_time(solver_backend, rng, dim):
 
 
 @pytest.mark.parametrize("method", list(get_args(minimax_mod.MethodName)))
-def test_right_triangle_support_differs_from_tight_set(method):
+def test_right_triangle_support_differs_from_tight_constraint_set(method):
     """Support-vs-tight-set fixture: three unit balls on a right triangle.
 
     The centers ``(2, 0)``, ``(0, 2)`` and ``(0, 0)`` give ``alpha = 2`` at the

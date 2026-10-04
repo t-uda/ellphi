@@ -15,8 +15,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ellphi.minimax import solve_minimax
-from ellphi.minimax_grad import GradientResult, compute_gradient
+from ellphi._minimax_grad_python import GradientResult, compute_gradient
+from ellphi._minimax_python import solve_minimax
 
 
 # ---------------------------------------------------------------------------

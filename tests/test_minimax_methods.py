@@ -16,7 +16,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from ellphi.minimax import MethodName, MinimaxResult, solve_minimax
+from ellphi._minimax_python import MethodName, MinimaxResult, solve_minimax
 
 from .factories import random_simplex
 

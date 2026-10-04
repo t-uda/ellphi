@@ -14,8 +14,8 @@ license; the ellcech source is MIT by owner decision
 corrections in items 1–3 deliberately deviate from the ellcech 82d13e3
 docstrings; code paths are unchanged.
 
-The module name and the public names exported from ``ellphi`` are
-provisional and may change.
+This numerical engine is internal.  The provisional public interface is
+:mod:`ellphi.simplex`.
 
 Mathematical background
 -----------------------
@@ -63,7 +63,7 @@ Value versus derivative reliability
 ``MinimaxResult.converged`` reports whether the chosen method met its own
 stopping test for the value. It is not a certificate that ``alpha`` is
 differentiable at the input or that the returned weights are accurate enough
-for derivatives; see :mod:`ellphi.minimax_grad` for the hypotheses under
+for derivatives; see :mod:`ellphi._minimax_grad_python` for the hypotheses under
 which the gradient formula applies.
 
 Correspondence with the pairwise solver

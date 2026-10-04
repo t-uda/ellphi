@@ -3,7 +3,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .minimax import MinimaxResult
+from ._minimax_python import MinimaxResult
 
 __all__ = [
     "GradientResult",

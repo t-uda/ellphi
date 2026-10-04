@@ -14,8 +14,8 @@ The library is organized into the following subpackages:
     two ellipses.
 - `ellphi.visualization`: Helper functions for visualizing ellipses and
     ellipse clouds.
-- `ellphi.minimax`, `ellphi.minimax_grad`: Many-body minimax filtration
-    values and their gradients (provisional names).
+- `ellphi.simplex`: Pairwise-aligned many-body tangency values and gradients
+    (provisional names).
 """
 
 import numpy as np
@@ -48,9 +48,13 @@ from .solver import (
 
 from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_cov_grad
 
-# many-body minimax (provisional names)
-from .minimax import MinimaxResult, solve_minimax, solve_minimax_from_coefs
-from .minimax_grad import GradientResult, compute_gradient
+# many-body tangency (provisional names)
+from .simplex import (
+    SimplexTangencyResult,
+    SimplexTangencyGrad,
+    tangency_simplex,
+    tangency_simplex_grad,
+)
 
 FloatArray = NDArray[np.float64]
 
@@ -82,12 +86,11 @@ __all__ = [
     "tangency_grad",
     "pdist_tangency_grad",
     "coef_from_cov_grad",
-    # many-body minimax (provisional)
-    "MinimaxResult",
-    "solve_minimax",
-    "solve_minimax_from_coefs",
-    "GradientResult",
-    "compute_gradient",
+    # many-body tangency (provisional)
+    "SimplexTangencyResult",
+    "SimplexTangencyGrad",
+    "tangency_simplex",
+    "tangency_simplex_grad",
     "__version__",
     "version_info",
 ]

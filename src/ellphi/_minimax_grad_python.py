@@ -13,12 +13,12 @@ Distributed as part of EllPHi under its MIT license; the ellcech source is
 MIT by owner decision (uda-lab/project-ellphi#26, 2026-10-04), aligned with
 EllPHi.
 
-The module name and the public names exported from ``ellphi`` are
-provisional and may change.
+This numerical engine is internal.  The provisional public interface is
+:mod:`ellphi.simplex`.
 
 Formula
 -------
-Given a :class:`~ellphi.minimax.MinimaxResult` with weights ``mu`` and
+Given a :class:`~ellphi._minimax_python.MinimaxResult` with weights ``mu`` and
 circumcenter ``x*``, the envelope theorem applied to the dual gives
 
     d alpha / d xbar_i = 2 mu_i A_i (xbar_i - x*)
@@ -57,7 +57,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .minimax import MinimaxResult
+from ._minimax_python import MinimaxResult
 
 __all__ = [
     "GradientResult",
@@ -99,7 +99,8 @@ def compute_gradient(
     gradient.
 
     Args:
-        result: A MinimaxResult from :func:`ellphi.minimax.solve_minimax`
+        result: A MinimaxResult from
+            :func:`ellphi._minimax_python.solve_minimax`
             computed for the same ``centers`` and ``matrices``.
         centers: Centers ``xbar_i``, shape ``(k, d)``.
         matrices: SPD matrices ``A_i``, shape ``(k, d, d)``.
