@@ -9,8 +9,9 @@ ebe63a42060ac6420ad42d90b3ffe942969d54ec) is documentation-only. This
 docstring is written for EllPHi rather than copied from either revision: it
 adopts the ebe63a4 remark that zero weights give zero gradient blocks, but
 not its characterization of differentiability. The code is unchanged.
-Distributed as part of EllPHi under its MIT license. The rights question for
-the ellcech source is tracked in uda-lab/project-ellphi#26.
+Distributed as part of EllPHi under its MIT license; the ellcech source is
+MIT by owner decision (uda-lab/project-ellphi#26, 2026-10-04), aligned with
+EllPHi.
 
 The module name and the public names exported from ``ellphi`` are
 provisional and may change.

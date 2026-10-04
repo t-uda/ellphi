@@ -9,10 +9,10 @@ EllPHi). That file is byte-identical at ellcech ``main``
 strings, defaults and tolerances are kept unchanged; the changes are
 packaging-level only (intra-package import of ``unpack_conic``, type
 annotations, documentation). Distributed as part of EllPHi under its MIT
-license. The rights question for the ellcech source is tracked in
-uda-lab/project-ellphi#26. The docstring corrections in items 1–3
-deliberately deviate from the ellcech 82d13e3 docstrings; code paths are
-unchanged.
+license; the ellcech source is MIT by owner decision
+(uda-lab/project-ellphi#26, 2026-10-04), aligned with EllPHi. The docstring
+corrections in items 1–3 deliberately deviate from the ellcech 82d13e3
+docstrings; code paths are unchanged.
 
 The module name and the public names exported from ``ellphi`` are
 provisional and may change.
