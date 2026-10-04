@@ -19,7 +19,7 @@ from ellcech 82d13e3 in the following ways:
   Damped Newton uses diagonal regularization at that threshold instead.
 * ``newton-cold`` starts at the uniform weights. If Newton does not converge,
   it falls back to a freshly run ``fw+bisect`` iterate from that same uniform
-  start and explicitly reports ``converged=False``.
+  start and reports the fallback's convergence status.
 * Newton failure statuses force ``converged=False``; these statuses are
   ``"empty_face"``, ``"armijo_rejected"``, ``"factorization_failed"``,
   ``"ill_conditioned_hessian"``, ``"linear_solve_failed"``,
@@ -31,9 +31,9 @@ from ellcech 82d13e3 in the following ways:
   unbacktracked full step.
 * The objective supports additive per-constraint offsets, including general
   packed conic constants.
-* For positive regularization, the SLSQP objective is the regularized dual
-  rather than ``dot(mu, f)``; this fixes the inherited ellcech objective and
-  Jacobian mismatch.
+* For stabilization, the SLSQP and damped-Newton objectives are the
+  regularized dual rather than ``dot(mu, f)``; this keeps their objective and
+  Jacobian consistent with the conditioned matrix.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
 
@@ -257,6 +257,50 @@ def _condition_matrix(
     return A_reg
 
 
+def _conditioning_shift_gradient(
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    A_mu: np.ndarray,
+    *,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> np.ndarray:
+    """Differentiate the active scalar conditioning shift with respect to mu."""
+    if condition_number_limit is None:
+        return np.zeros(mu.shape, dtype=float)
+
+    spectral_scale = float(np.linalg.norm(A_mu, ord=2))
+    if spectral_scale < 1.0:
+        return np.zeros(mu.shape, dtype=float)
+    eps_floor = np.finfo(A_mu.dtype).eps * spectral_scale
+    base_shift_from_floor = regularization < eps_floor
+    if not base_shift_from_floor:
+        base_shift = regularization
+        base_gradient = np.zeros(mu.shape, dtype=float)
+    else:
+        base_shift = eps_floor
+        base_gradient = np.empty(mu.shape, dtype=float)
+    A_used = _condition_matrix(
+        A_mu,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    effective_shift = float(np.trace(A_used - A_mu) / A_mu.shape[0])
+    escalation = effective_shift / base_shift
+    _, eigenvectors = np.linalg.eigh(A_mu)
+    leading_vector = eigenvectors[:, -1]
+    if base_shift_from_floor:
+        spectral_gradient = np.einsum(
+            "i,kij,j->k", leading_vector, matrices, leading_vector
+        )
+        base_gradient = np.finfo(A_mu.dtype).eps * spectral_gradient
+        if spectral_scale == 1.0:
+            base_gradient *= 0.5
+    return escalation * base_gradient
+
+
 def _validate_tolerance(
     name: str, value: float, *, strictly_positive: bool = False
 ) -> None:
@@ -339,6 +383,22 @@ def _eval_f(
     if offsets is not None:
         f = f + offsets
     return xstar, f
+
+
+def _regularized_dual_value(
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray | None,
+    xstar: np.ndarray,
+) -> float:
+    """Evaluate the dual value for the matrix used to obtain ``xstar``."""
+    c = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    if offsets is not None:
+        c = c + offsets
+    b_mu = np.einsum("k,ki->i", mu, Ax)
+    return float(np.dot(mu, c) - np.dot(b_mu, xstar))
 
 
 def _exact_line_search(
@@ -522,13 +582,14 @@ def _run_fw_bisect(
             active_mask = np.ones_like(mu, dtype=bool)
         f_active = np.where(active_mask, f, np.inf)
         v = int(np.argmin(f_active))
-
-        fw_gap = float(f[s] - np.dot(mu, f))
-        if fw_gap < tol:
-            converged = True
-            break
-
         if s == v:
+            positive_mask = mu > 0.0
+            positive_mask[s] = False
+            if np.any(positive_mask):
+                v = int(np.argmin(np.where(positive_mask, f, np.inf)))
+
+        fw_gap = float(np.max(f) - np.dot(mu, f))
+        if fw_gap < tol:
             converged = True
             break
 
@@ -599,13 +660,14 @@ def _run_fw_brentq(
             active_mask = np.ones_like(mu, dtype=bool)
         f_active = np.where(active_mask, f, np.inf)
         v = int(np.argmin(f_active))
-
-        fw_gap = float(f[s] - np.dot(mu, f))
-        if fw_gap < tol:
-            converged = True
-            break
-
         if s == v:
+            positive_mask = mu > 0.0
+            positive_mask[s] = False
+            if np.any(positive_mask):
+                v = int(np.argmin(np.where(positive_mask, f, np.inf)))
+
+        fw_gap = float(np.max(f) - np.dot(mu, f))
+        if fw_gap < tol:
             converged = True
             break
 
@@ -669,6 +731,9 @@ def _newton_polish(
     weight_tol: float = _DEFAULT_WEIGHT_TOL,
     max_iter: int = _NEWTON_MAX_ITER,
     tol: float = _NEWTON_TOL,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
 ) -> tuple[np.ndarray, int, dict]:
     """Newton polishing on the dual restricted to the current active face.
 
@@ -722,11 +787,17 @@ def _newton_polish(
 
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
+        A_used = _condition_matrix(
+            A_mu,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
 
         try:
-            chol = linalg.cho_factor(A_mu, check_finite=False)
+            chol = linalg.cho_factor(A_used, check_finite=False)
             xstar = linalg.cho_solve(chol, b_mu, check_finite=False)
-            d = A_mu.shape[0]
+            d = A_used.shape[0]
             Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
         except linalg.LinAlgError:
             newton_status = "factorization_failed"
@@ -799,6 +870,9 @@ def _damped_newton_polish(
     reidentify_face: bool = True,
     max_iter: int = _NEWTON_MAX_ITER,
     tol: float = _NEWTON_TOL,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
 ) -> tuple[np.ndarray, int, dict]:
     """Newton polishing with Armijo backtracking and conditioning safeguards.
 
@@ -853,11 +927,17 @@ def _damped_newton_polish(
 
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
+        A_used = _condition_matrix(
+            A_mu,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
 
         try:
-            chol = linalg.cho_factor(A_mu, check_finite=False)
+            chol = linalg.cho_factor(A_used, check_finite=False)
             xstar = linalg.cho_solve(chol, b_mu, check_finite=False)
-            d = A_mu.shape[0]
+            d = A_used.shape[0]
             Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
         except linalg.LinAlgError:
             newton_status = "factorization_failed"
@@ -909,11 +989,16 @@ def _damped_newton_polish(
             Ax,
             centers,
             offsets,
-            regularization=0.0,
-            condition_number_limit=None,
-            max_conditioning_steps=0,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
-        g_current = float(np.dot(mu, f_full))
+        if regularization == 0.0 and condition_number_limit is None:
+            g_current = float(np.dot(mu, f_full))
+        else:
+            g_current = _regularized_dual_value(
+                mu, matrices, Ax, centers, offsets, xstar
+            )
         if g_current > best_g:
             best_g = g_current
             best_mu = mu.copy()
@@ -935,17 +1020,22 @@ def _damped_newton_polish(
                 continue
             mu_trial /= s
 
-            _, f_trial = _eval_f(
+            xstar_trial, f_trial = _eval_f(
                 mu_trial,
                 matrices,
                 Ax,
                 centers,
                 offsets,
-                regularization=0.0,
-                condition_number_limit=None,
-                max_conditioning_steps=0,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
             )
-            g_trial = float(np.dot(mu_trial, f_trial))
+            if regularization == 0.0 and condition_number_limit is None:
+                g_trial = float(np.dot(mu_trial, f_trial))
+            else:
+                g_trial = _regularized_dual_value(
+                    mu_trial, matrices, Ax, centers, offsets, xstar_trial
+                )
             armijo_target = g_current + _ARMIJO_SIGMA * step * float(r @ delta)
             armijo_roundoff = (
                 8.0
@@ -1025,18 +1115,24 @@ def _slsqp_objective_and_gradient(
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    if regularization == 0.0:
+    if regularization == 0.0 and condition_number_limit is None:
         # Keep the unregularized objective path bitwise identical.
         return -float(np.dot(mu, f)), -f
 
-    c = np.einsum("ki,kij,kj->k", centers, matrices, centers)
-    if offsets is not None:
-        c = c + offsets
-    b_mu = np.einsum("k,ki->i", mu, Ax)
-    # The regularized dual is g_r(mu) = sum_i mu_i c_i -
-    # b(mu)^T (A(mu) + r I)^(-1) b(mu), whose gradient is f.
-    g_regularized = float(np.dot(mu, c) - np.dot(b_mu, xstar))
-    return -g_regularized, -f
+    # The stabilized dual is g_r(mu) = sum_i mu_i c_i -
+    # b(mu)^T A_used(mu)^(-1) b(mu), whose gradient is f for the
+    # effective matrix used in this evaluation.
+    g_regularized = _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+    A_mu = np.einsum("k,kij->ij", mu, matrices)
+    shift_gradient = _conditioning_shift_gradient(
+        mu,
+        matrices,
+        A_mu,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    return -g_regularized, -f - shift_gradient * float(np.dot(xstar, xstar))
 
 
 def _run_scipy_slsqp(
@@ -1108,6 +1204,10 @@ def _check_newton_convergence(
     converged: bool,
     newton_tol: float,
     newton_status: str,
+    *,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
 ) -> bool:
     """Recheck convergence after Newton polishing."""
     failure_statuses = {
@@ -1125,7 +1225,13 @@ def _check_newton_convergence(
     try:
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
-        chol = linalg.cho_factor(A_mu, check_finite=False)
+        A_used = _condition_matrix(
+            A_mu,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+        )
+        chol = linalg.cho_factor(A_used, check_finite=False)
         xstar_check = linalg.cho_solve(chol, b_mu, check_finite=False)
         d_check = xstar_check[np.newaxis, :] - centers
         f_check = np.einsum("ki,kij,kj->k", d_check, matrices, d_check)
@@ -1192,9 +1298,8 @@ def solve_minimax(
         weight_tol: Threshold defining the weight support ``active_set``. It
             also selects the face used by Newton polishing.
         regularization: Non-negative diagonal shift applied to ``A(mu)`` in
-            Frank-Wolfe evaluations and line searches, SLSQP evaluations, and
-            the final evaluation. Newton-polishing solves use the unshifted
-            ``A(mu)``.
+            Frank-Wolfe evaluations and line searches, SLSQP evaluations,
+            Newton polishing, and the final evaluation.
         condition_number_limit: Optional target for ``cond(A(mu))``. If the
             target is exceeded, the diagonal shift is escalated by factors of
             10 for at most ``max_conditioning_steps`` attempts; the target is
@@ -1320,6 +1425,9 @@ def solve_minimax(
             weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
@@ -1333,6 +1441,9 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         metadata["fw_iters"] = n_iter_fw
         metadata.update(meta_newton)
@@ -1352,6 +1463,9 @@ def solve_minimax(
             weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
@@ -1365,6 +1479,9 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         metadata.update(meta_fw)
         metadata.update(meta_newton)
@@ -1384,6 +1501,9 @@ def solve_minimax(
             weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
@@ -1397,6 +1517,9 @@ def solve_minimax(
             converged,
             newton_tol,
             meta_newton["newton_status"],
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         metadata["fw_iters"] = n_iter_fw
         metadata.update(meta_newton)
@@ -1415,6 +1538,9 @@ def solve_minimax(
             reidentify_face=False,
             max_iter=newton_max_iter,
             tol=newton_tol,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
@@ -1428,14 +1554,20 @@ def solve_minimax(
             True,
             newton_tol,
             meta_newton["newton_status"],
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
         )
         if not converged:
-            mu, _, n_iter_fw = _run_fw_bisect(
+            mu, fallback_converged, n_iter_fw = _run_fw_bisect(
                 matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
             )
+            converged = fallback_converged
             n_iter += n_iter_fw
             meta_newton["fallback_method"] = "fw+bisect"
             meta_newton["fallback_fw_iters"] = n_iter_fw
+            meta_newton["fallback_converged"] = fallback_converged
+            meta_newton["newton_status"] = "fw_fallback"
         metadata.update(meta_newton)
 
     elif method == "scipy-slsqp":

@@ -288,6 +288,21 @@ class TestNewtonCold:
         assert np.isfinite(res.alpha)
         assert np.all(np.isfinite(res.circumcenter))
 
+    def test_converged_fw_fallback_is_reported(self):
+        matrices, centers = _random_simplex(5, 3, seed=0)
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="newton-cold",
+            newton_max_iter=1,
+            tol=1e-10,
+        )
+
+        assert result.converged
+        assert result.metadata is not None
+        assert result.metadata["newton_status"] == "fw_fallback"
+        assert result.metadata["fallback_converged"] is True
+
 
 # ---------------------------------------------------------------------------
 # fw+bisect+damped-newton specific
