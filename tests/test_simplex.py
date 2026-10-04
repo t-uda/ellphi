@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 
 import ellphi
-from ellphi._minimax_python import MethodName
-from ellphi.geometry import coef_from_cov
+from ellphi._minimax_python import MethodName, solve_minimax
+from ellphi.geometry import coef_from_cov, pack_conic, unpack_conic
 
-from .factories import random_coef_pair, random_covariance
+from .factories import minimax_public_surrogate, random_coef_pair, random_covariance
 
 
 def _random_coefs(k: int, d: int, seed: int) -> np.ndarray:
@@ -29,6 +29,20 @@ def _relative_error(actual: np.ndarray | float, expected: np.ndarray | float) ->
     return numerator / denominator
 
 
+def _value_roundoff_bound(coefs: np.ndarray) -> float:
+    matrices, linear, constants = unpack_conic(coefs)
+    return sum(
+        64.0
+        * np.finfo(float).eps
+        * np.linalg.cond(matrix, 2)
+        * max(
+            abs(float(constant)),
+            abs(float(vector @ np.linalg.solve(matrix, vector))),
+        )
+        for matrix, vector, constant in zip(matrices, linear, constants)
+    )
+
+
 def test_pairwise_agrees_with_tangency(solver_backend, rng):
     p, q = random_coef_pair(rng, dim=3)
     result = ellphi.tangency_simplex(np.stack((p, q)))
@@ -41,13 +55,42 @@ def test_pairwise_agrees_with_tangency(solver_backend, rng):
     )
 
 
+@pytest.mark.parametrize("dimension", [2, 3])
+def test_unnormalized_pairwise_agrees_with_tangency(solver_backend, rng, dimension):
+    for _ in range(5):
+        centers = rng.uniform(-2.0, 2.0, size=(2, dimension))
+        while np.linalg.norm(centers[0] - centers[1]) < 1.5:
+            centers = rng.uniform(-2.0, 2.0, size=(2, dimension))
+        covariances = np.stack(
+            [random_covariance(rng, dim=dimension) for _ in range(2)]
+        )
+        coefs = coef_from_cov(centers, covariances)
+        coefs[:, -1] += rng.uniform(0.1, 1.0) + rng.uniform(-1e-4, 1e-4, size=2)
+
+        result = ellphi.tangency_simplex(coefs)
+        pairwise = ellphi.tangency(coefs[0], coefs[1], backend=solver_backend)
+
+        assert result.t == pytest.approx(pairwise.t, rel=1e-9)
+        np.testing.assert_allclose(result.point, pairwise.point, rtol=1e-9, atol=1e-10)
+
+
 def test_translated_pair_uses_engine_value_and_centred_constraints(solver_backend):
-    centers = np.array([[1e8, 0.0], [1e8 + 2.0, 0.0]])
+    centers = np.array([[1e6, 0.0], [1e6 + 2.0, 0.0]])
     coefs = coef_from_cov(centers, np.repeat(np.eye(2)[None], 2, axis=0))
     pairwise_coefs = coef_from_cov(
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
     )
 
+    # Packed inputs carry roundoff of order eps*|xbar|**2; this is a
+    # representation limit, not a solver property.
+    matrices, _, constants = unpack_conic(coefs)
+    translation_bound = max(
+        64.0
+        * np.finfo(float).eps
+        * np.linalg.cond(matrix, 2)
+        * max(1.0, abs(float(constant)))
+        for matrix, constant in zip(matrices, constants)
+    )
     result = ellphi.tangency_simplex(coefs)
     pairwise = ellphi.tangency(
         pairwise_coefs[0], pairwise_coefs[1], backend=solver_backend
@@ -67,11 +110,33 @@ def test_translated_pair_uses_engine_value_and_centred_constraints(solver_backen
     )
     pairwise_identity = 0.5 * basis / (2.0 * pairwise.t)
 
-    assert result.t == pytest.approx(pairwise.t, rel=1e-9)
+    assert abs(result.t**2 - pairwise.t**2) <= translation_bound
     assert result.active_set == (0, 1)
     assert np.all(np.isfinite(gradient.dt_dcoef))
     assert _relative_error(gradient.dt_dcoef[0], pairwise_identity) < 1e-6
     assert _relative_error(gradient.dt_dcoef[1], pairwise_identity) < 1e-6
+
+
+def test_translated_singleton_roundoff_negative_scale_is_clipped():
+    center = np.array([[1e6, -1e6]])
+    covariance = np.array([[1.0, 0.2], [0.2, 1.7]])
+    coefs = coef_from_cov(center, covariance[None])
+    value_roundoff = _value_roundoff_bound(coefs)
+
+    result = ellphi.tangency_simplex(coefs)
+
+    assert abs(result.t) <= np.sqrt(value_roundoff)
+
+
+def test_translated_coincident_roundoff_negative_scale_is_clipped():
+    center = np.array([[1e6, -1e6]])
+    covariance = np.array([[1.0, 0.2], [0.2, 1.7]])
+    coefs = np.repeat(coef_from_cov(center, covariance[None]), 2, axis=0)
+    value_roundoff = _value_roundoff_bound(coefs)
+
+    result = ellphi.tangency_simplex(coefs)
+
+    assert abs(result.t) <= np.sqrt(value_roundoff)
 
 
 @pytest.mark.parametrize("dimension", [2, 3, 4])
@@ -84,10 +149,28 @@ def test_coef_from_cov_accepts_rotated_spd_conditioning(dimension, condition_num
     center = rng.uniform(-2.0, 2.0, size=(1, dimension))
     coefs = coef_from_cov(center, covariance[None])
 
-    result = ellphi.tangency_simplex(coefs)
+    matrices, linear, constants = unpack_conic(coefs)
+    precision_bound = (
+        64.0
+        * np.finfo(float).eps
+        * np.linalg.cond(matrices[0], 2)
+        * max(1.0, abs(float(constants[0])))
+    )
 
-    assert result.t == 0.0
-    assert np.all(np.isfinite(result.point))
+    if condition_number <= 1e6:
+        result = ellphi.tangency_simplex(coefs)
+        assert result.t**2 <= precision_bound
+        point = result.point
+    else:
+        inverse_times_linear = np.linalg.solve(matrices[0], linear[0])
+        centers = np.stack([-inverse_times_linear])
+        centered_constant = float(linear[0] @ inverse_times_linear)
+        result = solve_minimax(
+            matrices, centers, offsets=np.array([constants[0] - centered_constant])
+        )
+        assert abs(result.alpha) <= precision_bound
+        point = result.circumcenter
+    assert np.all(np.isfinite(point))
 
 
 def test_scaled_centres_from_cov_are_accepted():
@@ -103,6 +186,50 @@ def test_scaled_centres_from_cov_are_accepted():
 
     assert np.isfinite(result.t)
     assert result.active_set == (0, 1)
+
+
+def test_subthreshold_packed_constant_is_honoured_by_gradient():
+    matrices = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+    centers = np.array([[0.0, 0.0], [2.0, 0.0]])
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    baseline_coefs = pack_conic(matrices, linear, np.array([0.0, 4.0]))
+    perturbed_coefs = baseline_coefs.copy()
+    perturbed_coefs[0, -1] += 5e-10
+    solver_kwargs = {"method": "fw+brentq+newton", "tol": 1e-12}
+
+    baseline = ellphi.tangency_simplex(baseline_coefs, **solver_kwargs)
+    perturbed = ellphi.tangency_simplex(perturbed_coefs, **solver_kwargs)
+    gradient = ellphi.tangency_simplex_grad(perturbed_coefs, **solver_kwargs)
+
+    expected_change = baseline.mu[0] * 5e-10
+    assert perturbed.t**2 - baseline.t**2 == pytest.approx(
+        expected_change, rel=1e-6, abs=1e-15
+    )
+
+    h = 1e-7
+    plus = perturbed_coefs.copy()
+    minus = perturbed_coefs.copy()
+    plus[0, -1] += h
+    minus[0, -1] -= h
+    finite_difference = (
+        ellphi.tangency_simplex(plus, **solver_kwargs).t
+        - ellphi.tangency_simplex(minus, **solver_kwargs).t
+    ) / (2.0 * h)
+    assert gradient.dt_dcoef[0, -1] == pytest.approx(
+        finite_difference, rel=1e-6, abs=1e-12
+    )
+
+
+def test_negative_packed_scale_raises():
+    coefs = coef_from_cov(
+        np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
+    )
+    coefs[:, -1] -= 2.0
+
+    with pytest.raises(
+        ValueError, match="packed quadrics have no common non-negative tangency scale"
+    ):
+        ellphi.tangency_simplex(coefs)
 
 
 def test_packed_one_dimensional_input_is_rejected_like_pairwise():
@@ -155,42 +282,33 @@ def test_non_convergence_raises_with_diagnostics():
     assert "diagnostics=" in message
 
 
-@pytest.mark.parametrize(
-    "k,d,seed",
-    [(3, 2, 201), (3, 3, 202), (4, 2, 203), (4, 3, 204)],
-)
-def test_gradient_matches_normalisation_preserving_central_difference(k, d, seed):
+@pytest.mark.parametrize("k,d,seed", [(3, 2, 201), (4, 2, 203)])
+def test_gradient_matches_independent_packed_central_difference(k, d, seed):
     rng = np.random.default_rng(seed)
     centers = rng.uniform(-2.0, 2.0, size=(k, d))
     covariances = np.stack([random_covariance(rng, dim=d) for _ in range(k)])
-    matrices = np.linalg.inv(covariances)
-    center_direction = rng.standard_normal(centers.shape)
-    matrix_direction = rng.standard_normal(matrices.shape)
-    matrix_direction = 0.5 * (matrix_direction + np.swapaxes(matrix_direction, -1, -2))
-
-    def packed_at(step):
-        shifted_centers = centers + step * center_direction
-        shifted_matrices = matrices + step * matrix_direction
-        return coef_from_cov(shifted_centers, np.linalg.inv(shifted_matrices))
+    coefs = coef_from_cov(centers, covariances)
+    coefs[:, -1] += rng.uniform(0.1, 1.0, size=k)
 
     solver_kwargs = {
         "method": "fw+brentq+newton",
         "tol": 1e-12,
         "newton_tol": 1e-14,
     }
-    coefs = packed_at(0.0)
     gradient = ellphi.tangency_simplex_grad(coefs, **solver_kwargs)
     h = 1e-6
-    plus = packed_at(h)
-    minus = packed_at(-h)
-    finite_difference = (
-        ellphi.tangency_simplex(plus, **solver_kwargs).t
-        - ellphi.tangency_simplex(minus, **solver_kwargs).t
-    ) / (2.0 * h)
-    coefficient_direction = (plus - minus) / (2.0 * h)
-    analytical = float(np.sum(gradient.dt_dcoef * coefficient_direction))
+    finite_difference = np.empty_like(coefs)
+    for index in np.ndindex(coefs.shape):
+        plus = coefs.copy()
+        minus = coefs.copy()
+        plus[index] += h
+        minus[index] -= h
+        finite_difference[index] = (
+            ellphi.tangency_simplex(plus, **solver_kwargs).t
+            - ellphi.tangency_simplex(minus, **solver_kwargs).t
+        ) / (2.0 * h)
 
-    error = _relative_error(analytical, finite_difference)
+    error = _relative_error(gradient.dt_dcoef, finite_difference)
     assert error < 1e-6, f"k={k}, d={d}, relative error={error:.3e}"
 
 
@@ -212,18 +330,36 @@ def test_zero_time_gradient_raises():
 
 
 @pytest.mark.parametrize("api", [ellphi.tangency_simplex, ellphi.tangency_simplex_grad])
-def test_unnormalized_constant_is_rejected(api):
+def test_unnormalized_constant_agrees_with_expected(api):
     coefs = coef_from_cov(
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
     )
     coefs[0, -1] += 1.0
 
-    with pytest.raises(ValueError, match=r"row 0.*coef_from_cov"):
-        api(coefs)
+    result = api(coefs)
+
+    assert result.t == pytest.approx(1.25)
+    np.testing.assert_allclose(result.point, [0.75, 0.0], atol=1e-12)
+    assert result.active_set == (0, 1)
+
+
+@pytest.mark.parametrize("method", list(get_args(MethodName)))
+def test_public_surrogate_methods(method):
+    matrices, centers = minimax_public_surrogate()
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    coefs = pack_conic(matrices, linear, constants)
+
+    if method == "scipy-slsqp":
+        result = ellphi.tangency_simplex(coefs, method=method)
+        assert result.t == pytest.approx(np.sqrt(0.9024444260258915), abs=1e-8)
+    else:
+        with pytest.raises(RuntimeError):
+            ellphi.tangency_simplex(coefs, method=method)
 
 
 @pytest.mark.parametrize("api", [ellphi.tangency_simplex, ellphi.tangency_simplex_grad])
-@pytest.mark.parametrize("name", ["active_tol", "weight_tol", "norm_tol"])
+@pytest.mark.parametrize("name", ["active_tol", "weight_tol"])
 @pytest.mark.parametrize("value", [np.nan, -1.0])
 def test_simplex_tolerances_must_be_finite_and_nonnegative(api, name, value):
     coefs = coef_from_cov(

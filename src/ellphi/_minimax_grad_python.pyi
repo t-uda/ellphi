@@ -14,6 +14,7 @@ __all__ = [
 class GradientResult:
     d_xbar: list[np.ndarray]
     d_A: list[np.ndarray]
+    d_offsets: np.ndarray
     alpha: float
     circumcenter: np.ndarray
     weights: np.ndarray

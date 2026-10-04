@@ -5,14 +5,40 @@ Provenance
 Adapted from uda-lab/ellcech ``src/ellphi_alpha/minimax.py`` at commit
 82d13e3e174f4903cdcd6adcee1f469348361c91, by Tomoki Uda (the author of
 EllPHi). That file is byte-identical at ellcech ``main``
-893056409db56865b7432274562db2d863e0abce. Numerical behaviour, method
-strings, defaults and tolerances are kept unchanged; the changes are
-packaging-level only (intra-package import of ``unpack_conic``, type
-annotations, documentation). Distributed as part of EllPHi under its MIT
-license; the ellcech source is MIT by owner decision
-(uda-lab/project-ellphi#26, 2026-10-04), aligned with EllPHi. The docstring
-corrections in items 1–3 deliberately deviate from the ellcech 82d13e3
-docstrings; code paths are unchanged.
+893056409db56865b7432274562db2d863e0abce. This engine deliberately deviates
+from ellcech 82d13e3 in the following ways:
+
+* Armijo-rejected Newton steps are never applied. The best iterate by dual
+  value is retained, the status is ``"armijo_rejected"``, and
+  ``converged=False``.
+* After an accepted warm-start Newton step, the weight-thresholded face is
+  re-identified before the next step; the cold-start baseline keeps its full
+  initial face during Newton.
+* Undamped Newton polishing stops when the reduced Hessian is ill-conditioned
+  beyond the configured limit, with status ``"ill_conditioned_hessian"``.
+  Damped Newton uses diagonal regularization at that threshold instead.
+* ``newton-cold`` starts at the uniform weights. If Newton does not converge,
+  it falls back to a freshly run ``fw+bisect`` iterate from that same uniform
+  start and explicitly reports ``converged=False``.
+* Newton failure statuses force ``converged=False``; these statuses are
+  ``"empty_face"``, ``"armijo_rejected"``, ``"factorization_failed"``,
+  ``"ill_conditioned_hessian"``, ``"linear_solve_failed"``,
+  ``"nonfinite_residual"``, ``"nonfinite_step"``, and
+  ``"projection_failed"``. A full Newton step may additionally be accepted
+  for roundoff when
+  ``g_trial + 8 * eps * max(1, abs(g_current), abs(g_trial),
+  abs(armijo_target)) >= armijo_target``; this allowance applies only to the
+  unbacktracked full step.
+* The objective supports additive per-constraint offsets, including general
+  packed conic constants.
+* A post-polish Cholesky factorization failure forces ``converged=False``;
+  ellcech 82d13e3 preserved the prior convergence flag in this case.
+
+The list above exhausts numerical and solver-behavior deviations from ellcech.
+The remaining differences are packaging-only (the intra-package import of
+``unpack_conic`` and type annotations) or documentation. Distributed as part
+of EllPHi under its MIT license; the ellcech source is MIT by owner decision
+(uda-lab/project-ellphi#26, 2026-10-04), aligned with EllPHi.
 
 This numerical engine is internal.  The provisional public interface is
 :mod:`ellphi.simplex`.
@@ -20,9 +46,10 @@ This numerical engine is internal.  The provisional public interface is
 Mathematical background
 -----------------------
 Given vertices ``i = 0, ..., k-1`` with centers ``x_i`` in R^d and SPD
-matrices ``A_i``, the exact filtration value is
+matrices ``A_i`` and offsets ``delta_i``, the exact filtration value is
 
-    alpha = min_x  max_i f_i(x),   f_i(x) = (x - x_i)^T A_i (x - x_i).
+    alpha = min_x  max_i f_i(x),
+    f_i(x) = (x - x_i)^T A_i (x - x_i) + delta_i.
 
 ``alpha`` is a *squared* scale. In the pairwise case ``k = 2`` the exact
 value equals ``ellphi.tangency(p, q).t ** 2``; the tangency time is
@@ -38,7 +65,8 @@ By strong duality, ``alpha = max_{mu in Delta^{k-1}} g(mu)`` with
 
     A(mu) = sum_i mu_i A_i
     b(mu) = sum_i mu_i A_i x_i
-    g(mu) = sum_i mu_i x_i^T A_i x_i - b(mu)^T A(mu)^{-1} b(mu)
+    g(mu) = sum_i mu_i (x_i^T A_i x_i + delta_i)
+            - b(mu)^T A(mu)^{-1} b(mu)
           = sum_i mu_i f_i(x*(mu)),
 
 where ``x*(mu) = A(mu)^{-1} b(mu)`` is the circumcenter. The dual gradient is
@@ -75,7 +103,8 @@ pairwise scalar ``mu`` and the vector weights here are related primitives
 with different result contracts.
 
 Packed coefficients store the linear term as ``b = -A x_bar``, so the center
-is ``x_bar = -A^{-1} b``; :func:`solve_minimax_from_coefs` handles this.
+is ``x_bar = -A^{-1} b`` and ``delta = c - x_bar^T A x_bar``;
+:func:`solve_minimax_from_coefs` handles both conversions.
 """
 
 from __future__ import annotations
@@ -114,6 +143,7 @@ _N_BISECT = 52  # ~machine precision for double
 
 _NEWTON_TOL = 1e-14
 _NEWTON_MAX_ITER = 20
+_NEWTON_HESSIAN_COND_LIMIT = 1e12
 
 # Brentq line search constants (analogous to ellphi _DEFAULT_HYBRID_BRACKET_MAXITER)
 _DEFAULT_BRENTQ_MAXITER = 28
@@ -264,6 +294,7 @@ def _eval_f(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     *,
     regularization: float,
     condition_number_limit: float | None,
@@ -284,6 +315,8 @@ def _eval_f(
     )
     diff = xstar[np.newaxis, :] - centers
     f = np.einsum("ki,kij,kj->k", diff, matrices, diff)
+    if offsets is not None:
+        f = f + offsets
     return xstar, f
 
 
@@ -294,6 +327,7 @@ def _exact_line_search(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     gamma_max: float,
     *,
     regularization: float,
@@ -317,6 +351,7 @@ def _exact_line_search(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -355,6 +390,7 @@ def _brentq_line_search(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     gamma_max: float,
     *,
     regularization: float,
@@ -381,6 +417,7 @@ def _brentq_line_search(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -428,6 +465,7 @@ def _run_fw_bisect(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     mu: np.ndarray,
     *,
     tol: float,
@@ -451,6 +489,7 @@ def _run_fw_bisect(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -478,6 +517,7 @@ def _run_fw_bisect(
             matrices,
             Ax,
             centers,
+            offsets,
             gamma_max,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
@@ -497,6 +537,7 @@ def _run_fw_brentq(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     mu: np.ndarray,
     *,
     tol: float,
@@ -522,6 +563,7 @@ def _run_fw_brentq(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -550,6 +592,7 @@ def _run_fw_brentq(
             matrices,
             Ax,
             centers,
+            offsets,
             gamma_max,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
@@ -596,10 +639,12 @@ def _newton_polish(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     *,
+    weight_tol: float = _DEFAULT_WEIGHT_TOL,
     max_iter: int = _NEWTON_MAX_ITER,
     tol: float = _NEWTON_TOL,
-) -> tuple[np.ndarray, int]:
+) -> tuple[np.ndarray, int, dict]:
     """Newton polishing on the dual restricted to the current active face.
 
     Solves the KKT conditions r_l = f_{i_l}(x*) - f_{i_{m-1}}(x*) = 0
@@ -612,16 +657,44 @@ def _newton_polish(
     followed by simplex projection.
 
     Returns:
-        (mu, n_iter): Updated weights and number of Newton steps performed.
+        Updated weights, number of Newton steps, and diagnostics.
     """
     m = len(active_set)
+    if m == 0:
+        return (
+            mu,
+            0,
+            {
+                "newton_iters": 0,
+                "hessian_cond": 0.0,
+                "newton_status": "empty_face",
+            },
+        )
     if m <= 1:
-        return mu, 0
+        return (
+            mu,
+            0,
+            {
+                "newton_iters": 0,
+                "hessian_cond": 0.0,
+                "newton_status": "singleton_face",
+            },
+        )
 
     mu = mu.copy()
     n_iter = 0
+    max_hessian_cond = 0.0
+    newton_status = "max_iter"
 
     for n_iter in range(1, max_iter + 1):
+        m = len(active_set)
+        if m == 0:
+            newton_status = "empty_face"
+            break
+        if m <= 1:
+            newton_status = "singleton_face"
+            break
+
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
 
@@ -631,14 +704,18 @@ def _newton_polish(
             d = A_mu.shape[0]
             Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
         except linalg.LinAlgError:
+            newton_status = "factorization_failed"
             break
 
         diff = xstar[np.newaxis, :] - centers[active_set]  # (m, d)
         f = np.einsum("ki,kij,kj->k", diff, matrices[active_set], diff)  # (m,)
+        if offsets is not None:
+            f = f + offsets[active_set]
 
         # Residual: r_l = f_{i_l} - f_{i_{m-1}}
         r = f[:-1] - f[-1]  # (m-1,)
         if float(np.max(np.abs(r))) < tol:
+            newton_status = "converged"
             break
 
         neg_H = _hessian_g_negative(
@@ -650,9 +727,16 @@ def _newton_polish(
             neg_H[:-1, :-1] - neg_H[:-1, -1:] - neg_H[-1:, :-1] + neg_H[-1, -1]
         )  # (m-1, m-1)
 
+        hess_cond = float(np.linalg.cond(neg_H_r))
+        max_hessian_cond = max(max_hessian_cond, hess_cond)
+        if not np.isfinite(hess_cond) or hess_cond > _NEWTON_HESSIAN_COND_LIMIT:
+            newton_status = "ill_conditioned_hessian"
+            break
+
         try:
             delta = np.linalg.solve(neg_H_r, r)
         except np.linalg.LinAlgError:
+            newton_status = "linear_solve_failed"
             break
 
         mu_new = mu.copy()
@@ -664,11 +748,18 @@ def _newton_polish(
         mu_new = np.clip(mu_new, 0.0, None)
         s = mu_new.sum()
         if s <= 0.0:
+            newton_status = "projection_failed"
             break
         mu_new /= s
         mu = mu_new
+        active_set = [i for i in range(len(mu)) if mu[i] > weight_tol]
 
-    return mu, n_iter
+    metadata = {
+        "newton_iters": n_iter,
+        "hessian_cond": max_hessian_cond,
+        "newton_status": newton_status,
+    }
+    return mu, n_iter, metadata
 
 
 def _damped_newton_polish(
@@ -677,7 +768,10 @@ def _damped_newton_polish(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     *,
+    weight_tol: float = _DEFAULT_WEIGHT_TOL,
+    reidentify_face: bool = True,
     max_iter: int = _NEWTON_MAX_ITER,
     tol: float = _NEWTON_TOL,
 ) -> tuple[np.ndarray, int, dict]:
@@ -692,14 +786,46 @@ def _damped_newton_polish(
         (mu, n_iter, metadata)
     """
     m = len(active_set)
+    if m == 0:
+        return (
+            mu,
+            0,
+            {
+                "newton_iters": 0,
+                "hessian_cond": 0.0,
+                "newton_status": "empty_face",
+            },
+        )
     if m <= 1:
-        return mu, 0, {"newton_iters": 0, "hessian_cond": 0.0}
+        return (
+            mu,
+            0,
+            {
+                "newton_iters": 0,
+                "hessian_cond": 0.0,
+                "newton_status": "singleton_face",
+            },
+        )
 
     mu = mu.copy()
+    best_mu = mu.copy()
+    best_g = -np.inf
     n_iter = 0
     max_hessian_cond = 0.0
+    newton_status = "max_iter"
+    rejected_step_diagnostics: dict[str, float] = {}
+    roundoff_accepts = 0
+    max_armijo_roundoff_shortfall = 0.0
 
     for n_iter in range(1, max_iter + 1):
+        m = len(active_set)
+        if m == 0:
+            newton_status = "empty_face"
+            break
+        if m <= 1:
+            newton_status = "singleton_face"
+            break
+
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
 
@@ -709,18 +835,23 @@ def _damped_newton_polish(
             d = A_mu.shape[0]
             Amu_inv = linalg.cho_solve(chol, np.eye(d), check_finite=False)
         except linalg.LinAlgError:
+            newton_status = "factorization_failed"
             break
 
         diff = xstar[np.newaxis, :] - centers[active_set]
         f = np.einsum("ki,kij,kj->k", diff, matrices[active_set], diff)
+        if offsets is not None:
+            f = f + offsets[active_set]
 
         # Residual
         r = f[:-1] - f[-1]
         try:
             _ensure_finite(float(np.max(np.abs(r))), "Newton residual")
         except RuntimeError:
+            newton_status = "nonfinite_residual"
             break
         if float(np.max(np.abs(r))) < tol:
+            newton_status = "converged"
             break
 
         neg_H = _hessian_g_negative(active_set, xstar, matrices, Amu_inv, centers)
@@ -730,7 +861,7 @@ def _damped_newton_polish(
         # Conditioning check
         hess_cond = float(np.linalg.cond(neg_H_r))
         max_hessian_cond = max(max_hessian_cond, hess_cond)
-        if hess_cond > 1e12:
+        if hess_cond > _NEWTON_HESSIAN_COND_LIMIT:
             # Diagonal regularization
             reg = float(np.trace(neg_H_r)) / neg_H_r.shape[0] * 1e-10
             reg = max(reg, 1e-14)
@@ -739,9 +870,11 @@ def _damped_newton_polish(
         try:
             delta = np.linalg.solve(neg_H_r, r)
         except np.linalg.LinAlgError:
+            newton_status = "linear_solve_failed"
             break
 
         if not np.all(np.isfinite(delta)):
+            newton_status = "nonfinite_step"
             break
 
         # Current objective: g(mu) = dot(mu, f_full)
@@ -750,16 +883,20 @@ def _damped_newton_polish(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=0.0,
             condition_number_limit=None,
             max_conditioning_steps=0,
         )
         g_current = float(np.dot(mu, f_full))
+        if g_current > best_g:
+            best_g = g_current
+            best_mu = mu.copy()
 
         # Armijo backtracking
         step = 1.0
         accepted = False
-        for _ in range(_ARMIJO_MAX_BACKTRACK):
+        for backtrack in range(_ARMIJO_MAX_BACKTRACK):
             mu_trial = mu.copy()
             for pos, idx in enumerate(active_set[:-1]):
                 mu_trial[idx] += step * delta[pos]
@@ -778,36 +915,61 @@ def _damped_newton_polish(
                 matrices,
                 Ax,
                 centers,
+                offsets,
                 regularization=0.0,
                 condition_number_limit=None,
                 max_conditioning_steps=0,
             )
             g_trial = float(np.dot(mu_trial, f_trial))
+            armijo_target = g_current + _ARMIJO_SIGMA * step * float(r @ delta)
+            armijo_roundoff = (
+                8.0
+                * np.finfo(float).eps
+                * max(1.0, abs(g_current), abs(g_trial), abs(armijo_target))
+            )
+            if backtrack == 0:
+                rejected_step_diagnostics = {
+                    "armijo_g_current": g_current,
+                    "armijo_full_step_g": g_trial,
+                    "armijo_full_step_target": armijo_target,
+                    "armijo_residual": float(np.max(np.abs(r))),
+                }
 
             # Armijo sufficient increase (maximizing g)
-            if g_trial >= g_current + _ARMIJO_SIGMA * step * float(r @ delta):
+            roundoff_accepted = (
+                backtrack == 0 and g_trial + armijo_roundoff >= armijo_target
+            )
+            if g_trial >= armijo_target or roundoff_accepted:
+                if roundoff_accepted and g_trial < armijo_target:
+                    roundoff_accepts += 1
+                    max_armijo_roundoff_shortfall = max(
+                        max_armijo_roundoff_shortfall, armijo_target - g_trial
+                    )
                 mu = mu_trial
+                if g_trial > best_g:
+                    best_g = g_trial
+                    best_mu = mu.copy()
                 accepted = True
                 break
             step *= _ARMIJO_BETA
 
         if not accepted:
-            # Accept full step anyway (like undamped Newton)
-            mu_new = mu.copy()
-            for pos, idx in enumerate(active_set[:-1]):
-                mu_new[idx] += delta[pos]
-            mu_new[active_set[-1]] -= float(delta.sum())
-            mu_new = np.clip(mu_new, 0.0, None)
-            s = mu_new.sum()
-            if s <= 0.0:
-                break
-            mu_new /= s
-            mu = mu_new
+            newton_status = "armijo_rejected"
+            mu = best_mu
+            break
+
+        if reidentify_face:
+            active_set = [i for i in range(len(mu)) if mu[i] > weight_tol]
 
     metadata = {
         "newton_iters": n_iter,
         "hessian_cond": max_hessian_cond,
+        "newton_status": newton_status,
+        "armijo_roundoff_accepts": roundoff_accepts,
+        "armijo_roundoff_shortfall": max_armijo_roundoff_shortfall,
     }
+    if newton_status == "armijo_rejected":
+        metadata.update(rejected_step_diagnostics)
     return mu, n_iter, metadata
 
 
@@ -820,6 +982,7 @@ def _run_scipy_slsqp(
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     k: int,
     *,
     regularization: float,
@@ -842,6 +1005,7 @@ def _run_scipy_slsqp(
             matrices,
             Ax,
             centers,
+            offsets,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
@@ -877,33 +1041,51 @@ def _run_scipy_slsqp(
 
 def _check_newton_convergence(
     mu: np.ndarray,
-    active_set_fw: list[int],
+    active_set: list[int],
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
+    offsets: np.ndarray | None,
     converged: bool,
     newton_tol: float,
+    newton_status: str,
 ) -> bool:
     """Recheck convergence after Newton polishing."""
-    if len(active_set_fw) <= 1:
-        return converged
+    failure_statuses = {
+        "empty_face",
+        "armijo_rejected",
+        "factorization_failed",
+        "ill_conditioned_hessian",
+        "linear_solve_failed",
+        "nonfinite_residual",
+        "nonfinite_step",
+        "projection_failed",
+    }
+    if not converged or newton_status in failure_statuses:
+        return False
     try:
         A_mu = np.einsum("k,kij->ij", mu, matrices)
         b_mu = np.einsum("k,ki->i", mu, Ax)
         chol = linalg.cho_factor(A_mu, check_finite=False)
         xstar_check = linalg.cho_solve(chol, b_mu, check_finite=False)
-        d_check = xstar_check[np.newaxis, :] - centers[active_set_fw]
-        f_check = np.einsum("ki,kij,kj->k", d_check, matrices[active_set_fw], d_check)
-        r_check = f_check[:-1] - f_check[-1]
-        return converged and float(np.max(np.abs(r_check))) < newton_tol * 1e4
+        d_check = xstar_check[np.newaxis, :] - centers
+        f_check = np.einsum("ki,kij,kj->k", d_check, matrices, d_check)
+        if offsets is not None:
+            f_check = f_check + offsets
+        if len(active_set) <= 1:
+            return True
+        f_active = f_check[active_set]
+        r_check = f_active[:-1] - f_active[-1]
+        return float(np.max(np.abs(r_check))) < newton_tol * 1e4
     except linalg.LinAlgError:
-        return converged
+        return False
 
 
 def solve_minimax(
     matrices: np.ndarray,
     centers: np.ndarray,
     *,
+    offsets: np.ndarray | None = None,
     method: MethodName | str = "fw+bisect",
     tol: float = _DEFAULT_TOL,
     max_iter: int = _DEFAULT_MAX_ITER,
@@ -943,6 +1125,8 @@ def solve_minimax(
             a single vertex.
         centers: Centers ``x_i``, shape ``(k, d)``, or ``(d,)`` for a single
             vertex.
+        offsets: Optional additive constants ``delta_i``, shape ``(k,)``.
+            ``None`` is the original zero-offset problem.
         method: One of the seven canonical method names above.
         tol: Frank-Wolfe gap tolerance for the FW-based methods.
         max_iter: Maximum number of Frank-Wolfe iterations.
@@ -969,7 +1153,7 @@ def solve_minimax(
         ``condition_number_limit is None``), and the stabilised problem
         otherwise; in the pairwise case the exact value is
         ``ellphi.tangency(p, q).t ** 2``. For ``k = 1`` the result is the
-        trivial ``alpha = 0`` at the center.
+        trivial ``alpha = delta_0`` at the center.
 
     Raises:
         ValueError: For an unknown method, an empty simplex or invalid
@@ -1006,11 +1190,17 @@ def solve_minimax(
 
     if k == 0:
         raise ValueError("simplex must contain at least one vertex (k=0 given)")
+    if offsets is not None:
+        offsets = np.asarray(offsets, dtype=float)
+        if offsets.shape != (k,):
+            raise ValueError(f"offsets shape {offsets.shape} inconsistent with k={k}")
+        if not np.all(np.isfinite(offsets)):
+            raise ValueError("offsets must be finite")
 
     # --- Trivial case: single point ---
     if k == 1:
         return MinimaxResult(
-            alpha=0.0,
+            alpha=0.0 if offsets is None else float(offsets[0]),
             circumcenter=centers[0].copy(),
             weights=np.array([1.0]),
             active_set=[0],
@@ -1039,46 +1229,51 @@ def solve_minimax(
     # --- Dispatch ---
     if method == "fw+bisect":
         mu, converged, n_iter = _run_fw_bisect(
-            matrices, Ax, centers, mu_init, **_fw_kwargs
+            matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         metadata["fw_iters"] = n_iter
 
     elif method == "fw+brentq":
         mu, converged, n_iter, meta_fw = _run_fw_brentq(
-            matrices, Ax, centers, mu_init, **_fw_kwargs
+            matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         metadata.update(meta_fw)
 
     elif method == "fw+bisect+newton":
         mu, converged, n_iter_fw = _run_fw_bisect(
-            matrices, Ax, centers, mu_init, **_fw_kwargs
+            matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
-        mu, n_iter_newton = _newton_polish(
+        mu, n_iter_newton, meta_newton = _newton_polish(
             mu,
             active_set_fw,
             matrices,
             Ax,
             centers,
+            offsets,
+            weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
         )
         n_iter = n_iter_fw + n_iter_newton
+        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_fw,
+            active_set_newton,
             matrices,
             Ax,
             centers,
+            offsets,
             converged,
             newton_tol,
+            meta_newton["newton_status"],
         )
         metadata["fw_iters"] = n_iter_fw
-        metadata["newton_iters"] = n_iter_newton
+        metadata.update(meta_newton)
 
     elif method == "fw+brentq+newton":
         mu, converged, n_iter_fw, meta_fw = _run_fw_brentq(
-            matrices, Ax, centers, mu_init, **_fw_kwargs
+            matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
@@ -1087,25 +1282,30 @@ def solve_minimax(
             matrices,
             Ax,
             centers,
+            offsets,
+            weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
         )
         n_iter = n_iter_fw + n_iter_newton
+        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_fw,
+            active_set_newton,
             matrices,
             Ax,
             centers,
+            offsets,
             converged,
             newton_tol,
+            meta_newton["newton_status"],
         )
         metadata.update(meta_fw)
         metadata.update(meta_newton)
 
     elif method == "fw+bisect+damped-newton":
         mu, converged, n_iter_fw = _run_fw_bisect(
-            matrices, Ax, centers, mu_init, **_fw_kwargs
+            matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
@@ -1114,18 +1314,23 @@ def solve_minimax(
             matrices,
             Ax,
             centers,
+            offsets,
+            weight_tol=weight_tol,
             max_iter=newton_max_iter,
             tol=newton_tol,
         )
         n_iter = n_iter_fw + n_iter_newton
+        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_fw,
+            active_set_newton,
             matrices,
             Ax,
             centers,
+            offsets,
             converged,
             newton_tol,
+            meta_newton["newton_status"],
         )
         metadata["fw_iters"] = n_iter_fw
         metadata.update(meta_newton)
@@ -1139,19 +1344,32 @@ def solve_minimax(
             matrices,
             Ax,
             centers,
+            offsets,
+            weight_tol=weight_tol,
+            reidentify_face=False,
             max_iter=newton_max_iter,
             tol=newton_tol,
         )
         n_iter = n_iter_newton
+        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_cold,
+            active_set_newton,
             matrices,
             Ax,
             centers,
+            offsets,
             True,
             newton_tol,
+            meta_newton["newton_status"],
         )
+        if not converged:
+            mu, _, n_iter_fw = _run_fw_bisect(
+                matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
+            )
+            n_iter += n_iter_fw
+            meta_newton["fallback_method"] = "fw+bisect"
+            meta_newton["fallback_fw_iters"] = n_iter_fw
         metadata.update(meta_newton)
 
     elif method == "scipy-slsqp":
@@ -1159,6 +1377,7 @@ def solve_minimax(
             matrices,
             Ax,
             centers,
+            offsets,
             k,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
@@ -1172,6 +1391,7 @@ def solve_minimax(
         matrices,
         Ax,
         centers,
+        offsets,
         regularization=regularization,
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
@@ -1199,12 +1419,14 @@ def solve_minimax_from_coefs(
 ) -> MinimaxResult:
     """Convenience wrapper: accept ellphi packed conic coefficient vectors.
 
-    Converts ellphi's packed representation (A, b_ellphi, c) to (A_i, x_bar_i)
-    and calls solve_minimax.
+    Converts ellphi's packed representation (A, b_ellphi, c) to
+    (A_i, x_bar_i, delta_i) and calls solve_minimax.
 
     Sign convention:
         ellphi stores ``b_ellphi = -A x_bar`` (linear term of
         ``x^T A x + 2 b^T x + c``), so ``x_bar = -A^{-1} b_ellphi``.
+        Completing the square gives
+        ``delta = c - x_bar^T A x_bar``.
 
     Value correspondence:
         In the pairwise case ``result.alpha`` approximates
@@ -1226,7 +1448,7 @@ def solve_minimax_from_coefs(
     if coefs.ndim == 1:
         coefs = coefs[np.newaxis]
 
-    A_arr, b_arr, _ = unpack_conic(coefs)  # (k,d,d), (k,d), (k,)
+    A_arr, b_arr, c_arr = unpack_conic(coefs)  # (k,d,d), (k,d), (k,)
 
     # x_bar_i = -A_i^{-1} b_i  (ellphi sign convention: b = -A x_bar)
     k = A_arr.shape[0]
@@ -1234,4 +1456,6 @@ def solve_minimax_from_coefs(
     for i in range(k):
         centers[i] = _exact_linear_solve(A_arr[i], -b_arr[i])
 
-    return solve_minimax(A_arr, centers, **kwargs)
+    centered_constants = np.einsum("ki,kij,kj->k", centers, A_arr, centers)
+    offsets = c_arr - centered_constants
+    return solve_minimax(A_arr, centers, offsets=offsets, **kwargs)

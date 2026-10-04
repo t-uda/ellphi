@@ -67,3 +67,60 @@ def random_simplex(
         eigvals = rng.uniform(1.0, cond_bound, size=d)
         matrices[i] = U @ np.diag(eigvals) @ U.T
     return matrices, centers
+
+
+def minimax_public_surrogate() -> tuple[np.ndarray, np.ndarray]:
+    """Return the public-safe deterministic minimax regression instance.
+
+    The literals are reproduced from this complete recipe. Create
+    ``rng = np.random.default_rng(10602)`` and traverse zero-based instances
+    ``0`` through ``12`` in order. For each instance, first traverse matrix
+    rows ``i = 0`` through ``5`` and, for each row, draw
+    ``q = np.linalg.qr(rng.standard_normal((2, 2)))[0]`` followed by
+    ``eigenvalues = np.exp(rng.uniform(-1.0, 1.0, size=2))`` and construct
+    ``(q * eigenvalues) @ q.T``. After all six matrices, draw
+    ``centers = rng.standard_normal((6, 2))``. The returned literals are the
+    matrices and centers from instance 12; this explicit matrix-first,
+    row-major traversal is part of the fixture definition.
+    """
+    matrices = np.array(
+        [
+            [
+                [0.6508813596346038, 0.2489660729149641],
+                [0.2489660729149641, 0.7881614960406568],
+            ],
+            [
+                [0.7004122505872777, 0.14197229432398561],
+                [0.14197229432398561, 1.1445419752575752],
+            ],
+            [
+                [0.6661363125679673, -0.7228217513541597],
+                [-0.7228217513541597, 2.3994411001217943],
+            ],
+            [
+                [0.555802471026214, 0.26197345221646695],
+                [0.26197345221646695, 0.9029253520499695],
+            ],
+            [
+                [2.304214987069779, 0.6449129856946328],
+                [0.6449129856946328, 0.737837149118542],
+            ],
+            [
+                [0.7373374529979612, 0.10773179234057872],
+                [0.10773179234057872, 0.8413822561278285],
+            ],
+        ],
+        dtype=float,
+    )
+    centers = np.array(
+        [
+            [0.3708705067926382, 0.48366396611109785],
+            [1.16738707134914, -0.9051617225542165],
+            [-0.6339208703399198, -0.47057481821754643],
+            [0.1207125164253454, -1.267286300475832],
+            [0.877114694674914, -0.46523959355638184],
+            [-0.4268970087617493, 0.6371793650807637],
+        ],
+        dtype=float,
+    )
+    return matrices, centers

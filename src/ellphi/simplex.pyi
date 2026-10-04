@@ -2,6 +2,8 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
+from ._minimax_python import MethodName
+
 __all__ = [
     "SimplexTangencyResult",
     "SimplexTangencyGrad",
@@ -27,12 +29,11 @@ class SimplexTangencyGrad(NamedTuple):
 def tangency_simplex(
     coefs: np.ndarray,
     *,
-    method: str = "fw+bisect",
+    method: MethodName | str = "fw+bisect",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
-    norm_tol: float = 1e-9,
     regularization: float = 0.0,
     condition_number_limit: float | None = None,
     max_conditioning_steps: int = 8,

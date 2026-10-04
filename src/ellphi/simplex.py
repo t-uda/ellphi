@@ -11,7 +11,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from ._minimax_python import MethodName, solve_minimax_from_coefs
+from ._minimax_python import MethodName, solve_minimax
 from .geometry import unpack_conic
 
 __all__ = [
@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 
-_NORMALIZATION_ROUNDING_FACTOR = 64.0
+_NEGATIVE_ALPHA_ROUNDING_FACTOR = 64.0
 _MACHINE_EPSILON = np.finfo(float).eps
 
 
@@ -66,8 +66,8 @@ class SimplexTangencyGrad(NamedTuple):
         t: Tangency time.
         point: Tangency point, shape ``(d,)``.
         mu: Simplex multipliers, shape ``(k,)``.
-        dt_dcoef: Gradient of ``t`` for normalization-preserving packed
-            coefficient perturbations, shape ``(k, m)``.
+        dt_dcoef: Gradient of ``t`` for independent packed coefficient
+            perturbations, shape ``(k, m)``.
         support: Indices with multiplier greater than ``weight_tol``.
         active_set: Tight constraints at ``point`` under ``active_tol``.
     """
@@ -97,49 +97,59 @@ def _validate_tolerance(name: str, value: float) -> None:
         raise ValueError(f"{name} must be finite and non-negative")
 
 
-def _validate_normalized_coefs(
-    coefs: np.ndarray, norm_tol: float
-) -> tuple[np.ndarray, np.ndarray]:
-    """Validate the normalized conic identity used by the private engine."""
+def _prepare_coefs(
+    coefs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """Reconstruct centers and preserve exact completed-square offsets.
+
+    A packed row encodes the constant as
+    ``c = xbar.T @ A @ xbar + delta``. Computing ``delta`` from a
+    far-translated or ill-conditioned row can therefore lose precision of
+    order ``eps * cond2(A) * max(abs(c), abs(xbar.T @ A @ xbar))``. The
+    returned ``value_roundoff`` is the sum of these per-row bounds; callers
+    needing exact normalization at large translations should center their data
+    first.
+    """
     matrices, linear, constants = unpack_conic(coefs)
     centers = np.empty_like(linear)
+    offsets = np.empty_like(constants)
+    value_roundoff = 0.0
     for row, (matrix, vector, constant) in enumerate(zip(matrices, linear, constants)):
         try:
             inverse_times_linear = np.linalg.solve(matrix, vector)
         except np.linalg.LinAlgError as exc:
             raise ValueError(
-                f"coefficient row {row} is not a normalised conic; use "
-                "ellphi.coef_from_cov for normalised conics"
+                f"coefficient row {row} has a singular quadratic matrix"
             ) from exc
 
         centered_constant = float(vector @ inverse_times_linear)
-        residual = abs(float(constant) - centered_constant)
-        condition_number = float(np.linalg.cond(matrix, 2))
-        scale = max(1.0, abs(float(constant)), abs(centered_constant))
-        bound = max(
-            norm_tol * max(1.0, abs(float(constant))),
-            _NORMALIZATION_ROUNDING_FACTOR
+        delta = float(constant) - centered_constant
+        row_roundoff = (
+            _NEGATIVE_ALPHA_ROUNDING_FACTOR
             * _MACHINE_EPSILON
-            * condition_number
-            * scale,
+            * float(np.linalg.cond(matrix, 2))
+            * max(abs(float(constant)), abs(centered_constant))
         )
-        if not np.isfinite(residual) or residual > bound:
+        if not np.isfinite(delta) or not np.isfinite(row_roundoff):
             raise ValueError(
-                f"coefficient row {row} is not a normalised conic: "
-                f"|c_i - b_i^T A_i^-1 b_i|={residual} exceeds "
-                f"the normalization tolerance bound={bound}; use "
-                "ellphi.coef_from_cov for normalised conics"
+                f"coefficient row {row} has a non-finite normalization residual"
             )
         centers[row] = -inverse_times_linear
-    return matrices, centers
+        offsets[row] = delta
+        value_roundoff += row_roundoff
+    return matrices, centers, offsets, float(value_roundoff)
 
 
 def _centered_constraint_values(
-    point: np.ndarray, matrices: np.ndarray, centers: np.ndarray
+    point: np.ndarray,
+    matrices: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray,
 ) -> np.ndarray:
-    """Evaluate all constraints using the engine's reconstructed centers."""
+    """Evaluate all centered constraints with the engine's offsets."""
     differences = point[np.newaxis, :] - centers
-    return np.einsum("ki,kij,kj->k", differences, matrices, differences)
+    values = np.einsum("ki,kij,kj->k", differences, matrices, differences)
+    return values + offsets
 
 
 def tangency_simplex(
@@ -150,7 +160,6 @@ def tangency_simplex(
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
-    norm_tol: float = 1e-9,
     regularization: float = 0.0,
     condition_number_limit: float | None = None,
     max_conditioning_steps: int = 8,
@@ -167,12 +176,6 @@ def tangency_simplex(
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set`` as the
             tight-constraint set at the returned point.
-        norm_tol: Relative tolerance for the required normalized-conic
-            identity. The accepted residual bound is the maximum of
-            ``norm_tol * max(1, |c_i|)`` and
-            ``64 * eps * cond2(A_i) * max(1, |c_i|,
-            |b_i^T A_i^{-1} b_i|)``. Each row must use the convention
-            ``b_i = -A_i xbar_i`` and ``c_i = xbar_i^T A_i xbar_i``.
         regularization: Optional diagonal regularization of weighted matrices.
         condition_number_limit: Optional weighted-matrix condition target.
         max_conditioning_steps: Maximum conditioning-shift escalations.
@@ -185,9 +188,9 @@ def tangency_simplex(
     Raises:
         ValueError: If the coefficient array is not two-dimensional, is empty,
             a tolerance is not finite and non-negative, or a coefficient row
-            is not a normalized conic.  Packed input requires ``d >= 2``, as
-            for :func:`ellphi.tangency`. Use :func:`ellphi.coef_from_cov` to
-            construct normalized rows.
+            has a singular quadratic matrix, or the packed quadrics have no
+            common non-negative tangency scale. Packed input requires
+            ``d >= 2``, as for :func:`ellphi.tangency`.
         RuntimeError: If the internal solver does not converge or produces a
             non-finite output.  Solver diagnostics are included in the error.
     """
@@ -203,11 +206,12 @@ def tangency_simplex(
         )
     _validate_tolerance("active_tol", active_tol)
     _validate_tolerance("weight_tol", weight_tol)
-    _validate_tolerance("norm_tol", norm_tol)
-    matrices, centers = _validate_normalized_coefs(coefs, norm_tol)
+    matrices, centers, offsets, value_roundoff = _prepare_coefs(coefs)
 
-    result = solve_minimax_from_coefs(
-        coefs,
+    result = solve_minimax(
+        matrices,
+        centers,
+        offsets=offsets,
         method=method,
         tol=tol,
         max_iter=max_iter,
@@ -231,14 +235,25 @@ def tangency_simplex(
             f"diagnostics={result.metadata!r}"
         )
 
-    values = _centered_constraint_values(result.circumcenter, matrices, centers)
+    values = _centered_constraint_values(
+        result.circumcenter, matrices, centers, offsets
+    )
     if not np.all(np.isfinite(values)):
         raise RuntimeError(
             "tangency_simplex was non-finite: "
             f"method={result.method!r}, n_iter={result.n_iter}, "
             f"diagnostics={result.metadata!r}"
         )
-    t_squared = float(max(result.alpha, 0.0))
+    alpha = float(result.alpha)
+    constraint_scale = float(np.max(np.abs(values)))
+    scale = max(abs(alpha), constraint_scale)
+    negative_tolerance = max(
+        _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * max(1.0, scale),
+        value_roundoff,
+    )
+    if alpha < -negative_tolerance:
+        raise ValueError("packed quadrics have no common non-negative tangency scale")
+    t_squared = float(max(alpha, 0.0))
     t = float(np.sqrt(max(0.0, t_squared)))
     support = tuple(int(i) for i in np.flatnonzero(result.weights > weight_tol))
     active_threshold = active_tol * max(1.0, t_squared)
@@ -258,7 +273,7 @@ def tangency_simplex(
 def tangency_simplex_grad(
     coefs: np.ndarray, **solver_kwargs: Any
 ) -> SimplexTangencyGrad:
-    """Return many-body tangency and its normalized-coefficient gradient.
+    """Return many-body tangency and its packed-coefficient gradient.
 
     For EllPHi's packed conic ``f_i(x) = coef_i @ basis(x)``, the basis is
     ``[x_j**2 if j == l else 2*x_j*x_l for j <= l, 2*x_0, ..., 2*x_(d-1), 1]``
@@ -266,13 +281,17 @@ def tangency_simplex_grad(
     ``d(t**2)/d coef_i = mu_i * basis(point)`` and therefore
     ``dt/d coef_i = mu_i * basis(point) / (2*t)``.
 
-    The private engine reconstructs each center from ``A_i`` and ``b_i`` and
-    ignores ``c_i`` during optimization.  Therefore ``dt_dcoef`` is the
-    coefficient-space covector for packed perturbations that preserve
-    ``b_i = -A_i xbar_i`` and ``c_i = xbar_i^T A_i xbar_i``.  It is not a
-    derivative with respect to arbitrary independent packed-coordinate
-    perturbations; the constant component has this normalization-preserving
-    chain-rule meaning.
+    The engine passes the completed-square offset
+    ``delta_i = c_i - b_i^T A_i^-1 b_i`` through the minimax problem. Thus
+    ``dt_dcoef`` is the true gradient for independent packed-coordinate
+    perturbations, including the constant component ``mu_i / (2*t)``.
+
+    A packed row encodes ``c_i = xbar_i^T A_i xbar_i + delta_i``. For
+    ``|xbar_i|**2 >> 1`` or ill-conditioned ``A_i``, the representable
+    ``delta_i`` carries roundoff of order
+    ``eps * cond2(A_i) * max(|c_i|, |xbar_i^T A_i xbar_i|)``. Callers
+    needing exact normalization at large translations should center their data
+    first.
 
     This is a gradient of ``t``, not ``t**2``.  Its hypotheses are a
     non-degenerate input, at least two indices in ``active_set``, multipliers

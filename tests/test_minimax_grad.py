@@ -101,6 +101,7 @@ class TestGradientResult:
         grad = compute_gradient(result, centers, matrices)
         assert len(grad.d_xbar) == k
         assert len(grad.d_A) == k
+        assert grad.d_offsets.shape == (k,)
         for i in range(k):
             assert grad.d_xbar[i].shape == (d,)
             assert grad.d_A[i].shape == (d, d)
@@ -119,6 +120,7 @@ class TestGradientResult:
             if result.weights[i] < 1e-10:
                 np.testing.assert_allclose(grad.d_xbar[i], 0.0, atol=1e-14)
                 np.testing.assert_allclose(grad.d_A[i], 0.0, atol=1e-14)
+                assert grad.d_offsets[i] == pytest.approx(0.0, abs=1e-14)
 
     def test_d_A_symmetric(self):
         """d alpha / d A_k = mu_k outer(diff, diff) is symmetric."""
@@ -148,6 +150,29 @@ class TestGradientResult:
         result = solve_minimax(matrices, centers, method="fw+brentq+newton")
         grad = compute_gradient(result, centers, matrices)
         np.testing.assert_allclose(grad.weights, result.weights, atol=1e-15)
+        np.testing.assert_array_equal(grad.d_offsets, result.weights)
+
+    def test_zero_offsets_leave_existing_gradients_unchanged(self):
+        rng = np.random.default_rng(6)
+        d, k = 2, 3
+        matrices = np.stack([_make_spd(rng, d) for _ in range(k)])
+        centers = rng.standard_normal((k, d))
+
+        baseline = solve_minimax(matrices, centers, method="scipy-slsqp")
+        with_zeros = solve_minimax(
+            matrices,
+            centers,
+            offsets=np.zeros(k),
+            method="scipy-slsqp",
+        )
+        baseline_grad = compute_gradient(baseline, centers, matrices)
+        zero_grad = compute_gradient(with_zeros, centers, matrices)
+
+        for actual, expected in zip(zero_grad.d_xbar, baseline_grad.d_xbar):
+            np.testing.assert_array_equal(actual, expected)
+        for actual, expected in zip(zero_grad.d_A, baseline_grad.d_A):
+            np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(zero_grad.d_offsets, baseline_grad.d_offsets)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +254,34 @@ class TestFiniteDifferenceValidation:
             fd = _fd_grad_xbar(matrices, centers, i)
             err = _rel_err(grad.d_xbar[i], fd)
             assert err < 1e-5, f"pairwise xbar[{i}] rel_err={err:.2e}"
+
+    def test_offset_gradient_matches_finite_differences(self):
+        rng = np.random.default_rng(31)
+        d, k = 2, 3
+        matrices = np.stack([_make_spd(rng, d) for _ in range(k)])
+        centers = rng.standard_normal((k, d))
+        offsets = np.array([0.2, 0.5, 0.1])
+        result = solve_minimax(matrices, centers, offsets=offsets, method="scipy-slsqp")
+        grad = compute_gradient(result, centers, matrices)
+        h = 1e-6
+
+        finite_difference = np.empty(k)
+        for i in range(k):
+            plus = offsets.copy()
+            minus = offsets.copy()
+            plus[i] += h
+            minus[i] -= h
+            alpha_plus = solve_minimax(
+                matrices, centers, offsets=plus, method="scipy-slsqp"
+            ).alpha
+            alpha_minus = solve_minimax(
+                matrices, centers, offsets=minus, method="scipy-slsqp"
+            ).alpha
+            finite_difference[i] = (alpha_plus - alpha_minus) / (2.0 * h)
+
+        np.testing.assert_allclose(
+            grad.d_offsets, finite_difference, rtol=1e-5, atol=1e-7
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,22 @@ class TestTrivialCases:
         res = solve_minimax(A[np.newaxis], x[np.newaxis])
         assert res.alpha == pytest.approx(0.0, abs=1e-12)
 
+    def test_single_point_offset(self):
+        res = solve_minimax(
+            np.eye(2)[np.newaxis],
+            np.array([[1.0, 2.0]]),
+            offsets=np.array([0.75]),
+        )
+        assert res.alpha == 0.75
+
+    def test_single_point_nan_offset_raises(self):
+        with pytest.raises(ValueError, match="offsets must be finite"):
+            solve_minimax(
+                np.eye(2)[np.newaxis],
+                np.zeros((1, 2)),
+                offsets=np.array([np.nan]),
+            )
+
 
 # ---------------------------------------------------------------------------
 # Isotropic (A_i = I) special cases
@@ -110,6 +126,16 @@ class TestIsotropic:
         f = np.einsum("ki,kij,kj->k", diff, A, diff)
         assert np.max(f) - np.min(f) == pytest.approx(0.0, abs=1e-6)
         assert res.converged
+
+    def test_two_points_with_offset(self):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+        centers = np.array([[0.0, 0.0], [2.0, 0.0]])
+
+        res = solve_minimax(matrices, centers, offsets=np.array([1.0, 0.0]))
+
+        assert res.converged
+        assert res.alpha == pytest.approx(1.5625, abs=1e-12)
+        np.testing.assert_allclose(res.circumcenter, [0.75, 0.0], atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +261,23 @@ class TestHigherOrder:
 
 
 class TestNumericalStabilityControls:
+    @pytest.mark.parametrize("method", list(get_args(minimax_mod.MethodName)))
+    def test_zero_offsets_are_bitwise_identical(self, method):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
+        centers = np.array([[0.0, 0.0], [2.0, 0.0], [0.5, 1.0]])
+
+        baseline = solve_minimax(matrices, centers, method=method)
+        explicit_zeros = solve_minimax(
+            matrices, centers, offsets=np.zeros(3), method=method
+        )
+
+        assert explicit_zeros.alpha == baseline.alpha
+        np.testing.assert_array_equal(
+            explicit_zeros.circumcenter, baseline.circumcenter
+        )
+        np.testing.assert_array_equal(explicit_zeros.weights, baseline.weights)
+        assert explicit_zeros.converged == baseline.converged
+
     def test_explicit_default_controls_match_previous_behaviour(self):
         rng = np.random.default_rng(321)
         centers = rng.standard_normal((4, 3))
@@ -305,6 +348,8 @@ class TestNumericalStabilityControls:
             solve_minimax(A, centers, condition_number_limit=1.0)
         with pytest.raises(ValueError):
             solve_minimax(A, centers, max_conditioning_steps=-1)
+        with pytest.raises(ValueError, match="offsets shape"):
+            solve_minimax(A, centers, offsets=np.zeros(3))
 
     def test_conditioning_steps_cap_is_strict(self):
         A = np.diag([1e-12, 1.0])
@@ -377,6 +422,24 @@ def test_pairwise_alpha_is_squared_tangency_time(solver_backend, rng, dim):
         assert res.converged
         assert res.alpha == pytest.approx(t**2, rel=1e-9)
         assert res.weights.sum() == pytest.approx(1.0, abs=1e-12)
+
+
+@pytest.mark.parametrize("dim", [2, 3])
+def test_unnormalized_pairwise_coefs_match_tangency(solver_backend, rng, dim):
+    """General packed constants agree with pairwise tangency."""
+    for _ in range(5):
+        pcoef, qcoef = random_coef_pair(rng, dim=dim)
+        coefs = np.stack([pcoef, qcoef])
+        coefs[:, -1] += rng.uniform(0.1, 1.0, size=2)
+
+        pairwise = ellphi.tangency(coefs[0], coefs[1], backend=solver_backend)
+        res = solve_minimax_from_coefs(coefs, tol=1e-11)
+
+        assert res.converged
+        assert res.alpha == pytest.approx(pairwise.t**2, rel=1e-9)
+        np.testing.assert_allclose(
+            res.circumcenter, pairwise.point, rtol=1e-9, atol=1e-10
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,9 @@ EllPHi). The only later change to that file on ellcech ``main`` (commit
 ebe63a42060ac6420ad42d90b3ffe942969d54ec) is documentation-only. This
 docstring is written for EllPHi rather than copied from either revision: it
 adopts the ebe63a4 remark that zero weights give zero gradient blocks, but
-not its characterization of differentiability. The code is unchanged.
+not its characterization of differentiability. EllPHi adds the offset
+gradient ``d alpha / d delta_i = mu_i``; the original center and matrix
+gradient code is unchanged.
 Distributed as part of EllPHi under its MIT license; the ellcech source is
 MIT by owner decision (uda-lab/project-ellphi#26, 2026-10-04), aligned with
 EllPHi.
@@ -23,6 +25,7 @@ circumcenter ``x*``, the envelope theorem applied to the dual gives
 
     d alpha / d xbar_i = 2 mu_i A_i (xbar_i - x*)
     d alpha / d A_i    = mu_i outer(xbar_i - x*, xbar_i - x*)
+    d alpha / d delta_i = mu_i
 
 with centers ``xbar_i`` and matrices ``A_i`` treated as independent
 parameters. For ``k = 2`` these are the pairwise gradients of ``t ** 2``.
@@ -74,6 +77,8 @@ class GradientResult:
             of shape ``(d,)`` per vertex.
         d_A: Gradients with respect to the matrices ``A_i``, one symmetric
             array of shape ``(d, d)`` per vertex.
+        d_offsets: Gradient with respect to additive offsets ``delta_i``,
+            shape ``(k,)``.
         alpha: The filtration value from the forward pass.
         circumcenter: The circumcenter ``x*`` from the forward pass.
         weights: The weights ``mu`` from the forward pass.
@@ -81,6 +86,7 @@ class GradientResult:
 
     d_xbar: list[np.ndarray]
     d_A: list[np.ndarray]
+    d_offsets: np.ndarray
     alpha: float
     circumcenter: np.ndarray
     weights: np.ndarray
@@ -93,10 +99,10 @@ def compute_gradient(
 ) -> GradientResult:
     """Evaluate the envelope-theorem gradient of ``alpha`` at a solver result.
 
-    Computes ``d alpha / d xbar_i = 2 mu_i A_i (xbar_i - x*)`` and
-    ``d alpha / d A_i = mu_i outer(xbar_i - x*, xbar_i - x*)``. See the module
-    docstring for the hypotheses under which these approximate the true
-    gradient.
+    Computes ``d alpha / d xbar_i = 2 mu_i A_i (xbar_i - x*)``,
+    ``d alpha / d A_i = mu_i outer(xbar_i - x*, xbar_i - x*)``, and
+    ``d alpha / d delta_i = mu_i``. See the module docstring for the hypotheses
+    under which these approximate the true gradient.
 
     Args:
         result: A MinimaxResult from
@@ -106,7 +112,8 @@ def compute_gradient(
         matrices: SPD matrices ``A_i``, shape ``(k, d, d)``.
 
     Returns:
-        GradientResult with ``d_xbar`` and ``d_A`` lists of length ``k``.
+        GradientResult with ``d_xbar`` and ``d_A`` lists of length ``k`` and
+        ``d_offsets`` of shape ``(k,)``.
 
     Raises:
         ValueError: If the shapes of ``centers``, ``matrices`` and
@@ -152,6 +159,7 @@ def compute_gradient(
     return GradientResult(
         d_xbar=d_xbar,
         d_A=d_A,
+        d_offsets=mu.copy(),
         alpha=result.alpha,
         circumcenter=xstar.copy(),
         weights=mu.copy(),

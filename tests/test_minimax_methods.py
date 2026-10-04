@@ -18,7 +18,7 @@ import pytest
 
 from ellphi._minimax_python import MethodName, MinimaxResult, solve_minimax
 
-from .factories import random_simplex
+from .factories import minimax_public_surrogate, random_simplex
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +41,88 @@ CANONICAL_METHODS = (
     "scipy-slsqp",
     "newton-cold",
 )
+
+SURROGATE_ALPHA = 0.9024444260258915
+
+
+def _surrogate_diagnostics(result, matrices, centers):
+    diff = result.circumcenter[np.newaxis, :] - centers
+    values = np.einsum("ki,kij,kj->k", diff, matrices, diff)
+    gap = float(np.max(values) - result.weights @ values)
+    stationarity = np.einsum("k,kij,kj->i", result.weights, matrices, diff)
+    residual = float(np.linalg.norm(stationarity, ord=np.inf))
+    return gap, residual
+
+
+@pytest.fixture(scope="module")
+def public_surrogate_results():
+    matrices, centers = minimax_public_surrogate()
+    results = {
+        method: solve_minimax(matrices, centers, method=method)
+        for method in CANONICAL_METHODS
+    }
+    return matrices, centers, results
+
+
+def test_public_surrogate_recipe_matches_literals():
+    rng = np.random.default_rng(10602)
+    expected_matrices = np.empty((6, 2, 2))
+    expected_centers = np.empty((6, 2))
+    for instance in range(13):
+        matrices = np.empty((6, 2, 2))
+        for row in range(6):
+            q = np.linalg.qr(rng.standard_normal((2, 2)))[0]
+            eigenvalues = np.exp(rng.uniform(-1.0, 1.0, size=2))
+            matrices[row] = (q * eigenvalues) @ q.T
+        centers = rng.standard_normal((6, 2))
+
+        if instance == 12:
+            expected_matrices = matrices
+            expected_centers = centers
+
+    matrices, centers = minimax_public_surrogate()
+    np.testing.assert_allclose(matrices, expected_matrices, rtol=1e-15, atol=1e-15)
+    np.testing.assert_array_equal(centers, expected_centers)
+
+
+class TestPublicSurrogate:
+    def test_slsqp_reference_value_and_gap(self, public_surrogate_results):
+        matrices, centers, results = public_surrogate_results
+        result = results["scipy-slsqp"]
+        gap, residual = _surrogate_diagnostics(result, matrices, centers)
+
+        assert result.converged
+        assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
+        assert gap <= 1e-8
+        assert residual <= 1e-8
+
+    @pytest.mark.parametrize(
+        "method", [method for method in CANONICAL_METHODS if method != "scipy-slsqp"]
+    )
+    def test_other_methods_are_accurate_or_report_failure(
+        self, method, public_surrogate_results
+    ):
+        matrices, centers, results = public_surrogate_results
+        result = results[method]
+        gap, residual = _surrogate_diagnostics(result, matrices, centers)
+
+        if result.converged:
+            assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
+            assert gap <= 1e-8
+            assert residual <= 1e-8
+        else:
+            assert result.converged is False
+
+    def test_newton_failures_do_not_collapse_to_a_vertex(
+        self, public_surrogate_results
+    ):
+        _, _, results = public_surrogate_results
+        bisect_error = abs(results["fw+bisect"].alpha - SURROGATE_ALPHA)
+        brentq_error = abs(results["fw+brentq"].alpha - SURROGATE_ALPHA)
+
+        for method in ("fw+bisect+newton", "fw+bisect+damped-newton", "newton-cold"):
+            assert abs(results[method].alpha - SURROGATE_ALPHA) <= bisect_error
+        assert abs(results["fw+brentq+newton"].alpha - SURROGATE_ALPHA) <= brentq_error
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +307,19 @@ class TestDampedNewton:
         res = solve_minimax(matrices, centers, method="fw+bisect+damped-newton")
         assert res.metadata is not None
         assert "hessian_cond" in res.metadata
+
+    def test_empty_thresholded_face_is_nonconverged(self):
+        matrices, centers = _random_simplex(3, 2, seed=42)
+        res = solve_minimax(
+            matrices,
+            centers,
+            method="fw+bisect+damped-newton",
+            weight_tol=1.0,
+        )
+
+        assert res.converged is False
+        assert res.metadata is not None
+        assert res.metadata["newton_status"] == "empty_face"
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ def solve_minimax(
     matrices: np.ndarray,
     centers: np.ndarray,
     *,
+    offsets: np.ndarray | None = None,
     method: MethodName | str = "fw+bisect",
     tol: float = 1e-09,
     max_iter: int = 2000,

@@ -23,32 +23,29 @@ raises `RuntimeError` with its diagnostics.
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.
 
-Every coefficient row must be a normalized conic. If `unpack_conic` returns
-`(A_i, b_i, c_i)`, the required convention is
-`b_i = -A_i xbar_i` and `c_i = xbar_i^T A_i xbar_i`, equivalently
-`c_i = b_i^T A_i^{-1} b_i` within the maximum of
-`norm_tol * max(1, abs(c_i))` and
-`64 * eps * cond2(A_i) * max(1, abs(c_i), abs(b_i^T A_i^{-1} b_i))`,
-where `eps` is machine epsilon and `norm_tol` defaults to `1e-9`.
-`tangency_simplex` and `tangency_simplex_grad` reject an offending row with
-`ValueError`; `ellphi.coef_from_cov` constructs coefficients in this form.
+If `unpack_conic` returns `(A_i, b_i, c_i)`, the center is
+`xbar_i = -A_i^{-1} b_i` and the completed-square constant is
+`delta_i = c_i - b_i^T A_i^{-1} b_i`. The public API passes this exactly
+computed `delta_i` to the many-body engine, including when it is small, so
+general independent constants are supported.
+
+A packed row encodes its constant as
+`c_i = xbar_i^T A_i xbar_i + delta_i`. For `|xbar_i|^2 >> 1` or
+ill-conditioned `A_i`, the representable `delta_i` carries roundoff of order
+`eps * |xbar_i|^2`, with a `cond2(A_i)` factor for ill-conditioned matrices.
+Callers needing exact normalization at large translations should center their
+data first.
 Packed input requires `d >= 2`, as for `ellphi.tangency`; d=1 packed conics
 are not supported and raise `ValueError`.
 
-The private engine reconstructs each center from `(A_i, b_i)` and ignores
-`c_i` during optimization. Thus `tangency_simplex_grad(coefs)` returns
-`dt_dcoef`, a coefficient-space covector whose contraction with a packed
-direction is the derivative of `t` only for normalization-preserving
-perturbations. For the upper-triangular packed basis
+The many-body engine uses the completed-square offsets above. Thus
+`tangency_simplex_grad(coefs)` returns `dt_dcoef`, the gradient for arbitrary
+independent packed-coordinate perturbations, including the constant
+component. For the upper-triangular packed basis
 `[x_i**2, 2*x_i*x_j (i < j), 2*x_i, 1]`, the formula is
-`mu_i * basis(point) / (2*t)`. The constant-term component must be read in
-this chain-rule sense, not as a derivative under an arbitrary independent
-change to a packed constant. It assumes a non-degenerate input, at least two
-indices in `active_set`, multipliers supported on `active_set`, and an exact
-weighted linear solve. Convergence or a small residual alone is not a
+`mu_i * basis(point) / (2*t)`. It assumes a non-degenerate input, at least
+two indices in `active_set`, multipliers supported on `active_set`, and an
+exact weighted linear solve. Convergence or a small residual alone is not a
 derivative certificate, and the gradient is undefined at `t == 0`.
 For far-translated inputs, the uncentred packed basis used by this derivative
 can be poorly conditioned.
-
-Support for general independent constants inside the minimax solve is planned
-engine work; it is not part of this wrapper contract.
