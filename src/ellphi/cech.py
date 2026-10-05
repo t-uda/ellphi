@@ -41,9 +41,11 @@ class CechResult(NamedTuple):
 
     ``support`` is the thresholded weight support ``{i: mu[i] > weight_tol}``.
     ``active_set`` is the tight-constraint set at the returned point,
-    ``I = {i : t**2 - f_i(point) <= active_tol * max(1, t**2)}``.  Up to
-    numerical tolerance, ``support`` is a subset of ``active_set``; under
-    strict complementarity (ND1), they coincide.  In the degenerate example
+    ``I = {i : t**2 - f_i(point) <= active_tol * max(1, t**2)}``; when
+    ``alpha`` is clipped at zero, the actual shift ``t**2 - alpha`` is added
+    to this threshold.  Up to numerical tolerance, ``support`` is a subset of
+    ``active_set``; under strict complementarity (ND1), they coincide.  In the
+    degenerate example
     of unit balls centred at ``(0, 0)``, ``(2, 0)``, and ``(0, 2)``, support
     has two indices while ``active_set`` has three.
 
@@ -141,8 +143,9 @@ def _validate_solver_parameters(
         raise ValueError("weight_tol must satisfy 0 <= weight_tol < 1/k")
 
 
-def _validate_quadratic_matrices(matrices: np.ndarray) -> None:
+def _validate_quadratic_matrices(matrices: np.ndarray) -> np.ndarray:
     """Validate symmetry and positive definiteness before solving centers."""
+    lambda_minima = np.empty(matrices.shape[0], dtype=float)
     for row, matrix in enumerate(matrices):
         if not np.all(np.isfinite(matrix)):
             raise ValueError(f"coefficient row {row} has a non-finite quadratic matrix")
@@ -163,58 +166,69 @@ def _validate_quadratic_matrices(matrices: np.ndarray) -> None:
             )
 
         try:
-            np.linalg.cholesky(matrix)
+            eigenvalues = np.linalg.eigvalsh(matrix)
         except np.linalg.LinAlgError as exc:
             raise ValueError(
                 f"coefficient row {row} has a non-positive definite quadratic matrix"
             ) from exc
+        lambda_min = float(eigenvalues[0])
+        if not np.isfinite(lambda_min) or lambda_min <= 0.0:
+            raise ValueError(
+                f"coefficient row {row} has a non-positive definite quadratic matrix"
+            )
+        lambda_minima[row] = lambda_min
+    return lambda_minima
 
 
 def _prepare_coefs(
     coefs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Reconstruct centers and preserve exact completed-square offsets.
+    """Reconstruct centers and estimate completed-square roundoff.
 
     A packed row encodes the constant as
     ``c = xbar.T @ A @ xbar + delta``. Computing ``delta`` from a
     far-translated row can therefore lose precision in the centered quadratic
-    term and its subtraction from ``c``. The returned per-row bounds are based
-    on those computed terms and the actual linear solve; the minimax value is a
-    convex combination of row offsets.
+    term and its subtraction from ``c``. The returned per-row rounding
+    estimates use the computed solve residual and the dot-product/subtraction
+    dimension; the minimax value is a convex combination of row offsets.
     Callers needing exact normalization at large translations should center
     their data first.
     """
     matrices, linear, constants = unpack_conic(coefs)
-    _validate_quadratic_matrices(matrices)
+    lambda_minima = _validate_quadratic_matrices(matrices)
     centers = np.empty_like(linear)
     offsets = np.empty_like(constants)
-    row_roundoff_bounds = np.empty_like(constants)
+    row_roundoff_estimates = np.empty_like(constants)
     for row, (matrix, vector, constant) in enumerate(zip(matrices, linear, constants)):
         try:
-            inverse_times_linear = np.linalg.solve(matrix, vector)
+            y_hat = np.linalg.solve(matrix, vector)
         except np.linalg.LinAlgError as exc:
             raise ValueError(
                 f"coefficient row {row} has a singular quadratic matrix"
             ) from exc
 
-        centered_constant = float(vector @ inverse_times_linear)
+        residual = vector - matrix @ y_hat
+        centered_constant = float(vector @ y_hat)
         delta = float(constant) - centered_constant
-        solve_scale = float(
-            np.linalg.norm(vector, ord=2) * np.linalg.norm(inverse_times_linear, ord=2)
+        solve_estimate = float(
+            np.linalg.norm(vector, ord=2)
+            * np.linalg.norm(residual, ord=2)
+            / lambda_minima[row]
         )
-        row_roundoff = _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * float(
-            np.linalg.cond(matrix, 2)
-        ) * solve_scale + _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * (
-            abs(float(constant)) + abs(centered_constant)
+        rounding_estimate = (
+            (matrix.shape[0] + 2)
+            * _MACHINE_EPSILON
+            * (abs(float(constant)) + abs(centered_constant))
         )
+        row_roundoff = solve_estimate + rounding_estimate
         if not np.isfinite(delta) or not np.isfinite(row_roundoff):
             raise ValueError(
                 f"coefficient row {row} has a non-finite normalization residual"
             )
-        centers[row] = -inverse_times_linear
+        centers[row] = -y_hat
         offsets[row] = delta
-        row_roundoff_bounds[row] = row_roundoff
-    return matrices, centers, offsets, row_roundoff_bounds
+        row_roundoff_estimates[row] = row_roundoff
+    return matrices, centers, offsets, row_roundoff_estimates
 
 
 def _centered_constraint_values(
@@ -256,10 +270,13 @@ def cech(
         tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
             value|).
         max_iter: Maximum Frank-Wolfe iterations.
-        weight_tol: Threshold defining ``support``.
-        active_tol: Relative tolerance defining ``active_set`` as the
-            tight-constraint set at the returned point.
-        newton_tol: Newton-polishing residual tolerance.
+        weight_tol: Threshold defining the public ``support``; it does not
+            remove positive-weight rows from the normalization estimate.
+        active_tol: Relative tolerance for the public ``active_set`` tightness
+            test, with only the actual zero-clipping shift added when clipping
+            occurs.
+        newton_tol: Residual tolerance for Newton's own polishing iterations;
+            it does not alter the shared accepted-result gap test.
         newton_max_iter: Maximum Newton-polishing iterations.
 
     Stabilized solves are available only through the private minimax engine;
@@ -299,7 +316,7 @@ def cech(
         newton_tol=newton_tol,
         newton_max_iter=newton_max_iter,
     )
-    matrices, centers, offsets, row_roundoff_bounds = _prepare_coefs(coefs)
+    matrices, centers, offsets, row_roundoff_estimates = _prepare_coefs(coefs)
 
     result = solve_minimax(
         matrices,
@@ -346,19 +363,25 @@ def cech(
     support = tuple(int(i) for i in support_indices)
     support_scale = float(np.max(np.abs(values[support_indices])))
     scale = max(abs(alpha), support_scale)
-    # The accepted allowance is the mu-weighted sum of per-row bounds over support.
-    support_roundoff = float(
-        np.dot(result.weights[support_indices], row_roundoff_bounds[support_indices])
+    positive_indices = np.flatnonzero(result.weights > 0.0)
+    # The accepted allowance is weighted over every row with a positive multiplier;
+    # the public support remains thresholded by weight_tol.
+    roundoff_estimate = float(
+        np.dot(
+            result.weights[positive_indices],
+            row_roundoff_estimates[positive_indices],
+        )
     )
     negative_tolerance = max(
         _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * max(1.0, scale),
-        support_roundoff,
+        roundoff_estimate,
     )
     if alpha < -negative_tolerance:
         raise ValueError("packed quadrics have no common non-negative filtration scale")
     t_squared = float(max(alpha, 0.0))
     t = float(np.sqrt(max(0.0, t_squared)))
-    active_threshold = active_tol * max(1.0, t_squared) + negative_tolerance
+    clipping_shift = t_squared - alpha
+    active_threshold = active_tol * max(1.0, t_squared) + clipping_shift
     active_set = tuple(
         int(i) for i in np.flatnonzero(t_squared - values <= active_threshold)
     )
@@ -417,9 +440,13 @@ def cech_grad(
         tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
             value|).
         max_iter: Maximum Frank-Wolfe iterations.
-        weight_tol: Threshold defining ``support``.
-        active_tol: Relative tolerance defining ``active_set``.
-        newton_tol: Newton-polishing residual tolerance.
+        weight_tol: Threshold defining the public ``support``; it does not
+            remove positive-weight rows from the normalization estimate.
+        active_tol: Relative tolerance for the public ``active_set`` tightness
+            test, with only the actual zero-clipping shift added when clipping
+            occurs.
+        newton_tol: Residual tolerance for Newton's own polishing iterations;
+            it does not alter the shared accepted-result gap test.
         newton_max_iter: Maximum Newton-polishing iterations.
 
     Returns:

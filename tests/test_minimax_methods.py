@@ -15,6 +15,7 @@ from typing import get_args
 
 import numpy as np
 import pytest
+import scipy.optimize
 
 from ellphi._minimax_python import MethodName, MinimaxResult, solve_minimax
 
@@ -259,6 +260,25 @@ class TestFwBrentq:
         assert "line_search_evals" in res.metadata
         assert res.metadata["line_search_evals"] > 0
 
+    def test_brentq_bisection_safeguard_is_recorded(self, monkeypatch):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
+        centers = np.array([[2.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
+
+        def reject_brentq(*args, **kwargs):
+            raise ValueError("test bracket rejection")
+
+        monkeypatch.setattr(scipy.optimize, "brentq", reject_brentq)
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+brentq",
+            max_iter=2,
+            tol=1e-30,
+        )
+
+        assert result.metadata is not None
+        assert result.metadata["line_search_bisection_safeguards"] > 0
+
     def test_relative_gap_is_scale_invariant(self):
         matrices, centers = _random_simplex(4, 2, seed=0)
         scaled_matrices = matrices * 1e-8
@@ -331,6 +351,7 @@ class TestNewtonCold:
         matrices, centers = _random_simplex(2, 2, seed=seed)
         res = solve_minimax(matrices, centers, method="newton-cold")
         ref = solve_minimax(matrices, centers, method="fw+bisect", tol=1e-12)
+        assert res.converged
         assert res.alpha == pytest.approx(
             ref.alpha, rel=1e-4
         ), f"seed={seed}: cold={res.alpha}, ref={ref.alpha}"
@@ -369,6 +390,7 @@ class TestDampedNewton:
         matrices, centers = _random_simplex(4, 3, seed=seed)
         res = solve_minimax(matrices, centers, method="fw+bisect+damped-newton")
         ref = solve_minimax(matrices, centers, method="fw+bisect", tol=1e-12)
+        assert res.converged
         assert res.alpha == pytest.approx(ref.alpha, rel=1e-7)
 
     def test_metadata_has_hessian_cond(self):
@@ -470,6 +492,7 @@ class TestScipySlsqp:
             centers,
             method="scipy-slsqp",
             tol=1e-20,
+            newton_tol=1e-20,
         )
 
         assert result.converged

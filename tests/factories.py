@@ -88,7 +88,7 @@ def minimax_public_surrogate() -> tuple[np.ndarray, np.ndarray]:
     all-index Frank-Wolfe gap must become much smaller than that slack, so the
     near-tight zero-weight vertex 4 keeps re-entering as the pairwise swap
     target and the all-index gap stalls. Newton polishing on the resulting
-    face is rank-deficient, whereas primal SLSQP is unaffected.
+    face is rank-deficient, whereas the dual-weight SLSQP solver is unaffected.
     """
     matrices = np.array(
         [

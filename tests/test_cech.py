@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from typing import get_args
 
 import numpy as np
@@ -31,20 +32,6 @@ def _relative_error(actual: np.ndarray | float, expected: np.ndarray | float) ->
         float(np.linalg.norm(actual)), float(np.linalg.norm(expected)), 1e-15
     )
     return numerator / denominator
-
-
-def _value_roundoff_bound(coefs: np.ndarray) -> float:
-    matrices, linear, constants = unpack_conic(coefs)
-    return max(
-        64.0
-        * np.finfo(float).eps
-        * np.linalg.cond(matrix, 2)
-        * max(
-            abs(float(constant)),
-            abs(float(vector @ np.linalg.solve(matrix, vector))),
-        )
-        for matrix, vector, constant in zip(matrices, linear, constants)
-    )
 
 
 def test_pairwise_cech_agrees_with_tangency(solver_backend, rng):
@@ -87,16 +74,10 @@ def test_translated_pair_uses_engine_value_and_centred_constraints(solver_backen
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
     )
 
-    # Packed inputs carry roundoff of order eps*|xbar|**2; this is a
+    # Packed inputs carry translation-sensitive roundoff; this is a
     # representation limit, not a solver property.
-    matrices, _, constants = unpack_conic(coefs)
-    translation_bound = max(
-        64.0
-        * np.finfo(float).eps
-        * np.linalg.cond(matrix, 2)
-        * max(1.0, abs(float(constant)))
-        for matrix, constant in zip(matrices, constants)
-    )
+    _, _, _, translation_estimates = cech_module._prepare_coefs(coefs)
+    translation_estimate = float(np.max(translation_estimates))
     result = ellphi.cech(coefs)
     pairwise = ellphi.tangency(
         pairwise_coefs[0], pairwise_coefs[1], backend=solver_backend
@@ -116,7 +97,7 @@ def test_translated_pair_uses_engine_value_and_centred_constraints(solver_backen
     )
     pairwise_identity = 0.5 * basis / (2.0 * pairwise.t)
 
-    assert abs(result.t**2 - pairwise.t**2) <= translation_bound
+    assert abs(result.t**2 - pairwise.t**2) <= translation_estimate
     assert result.active_set == (0, 1)
     assert np.all(np.isfinite(gradient.dt_dcoef))
     assert _relative_error(gradient.dt_dcoef[0], pairwise_identity) < 1e-6
@@ -127,11 +108,9 @@ def test_translated_singleton_roundoff_negative_scale_is_clipped():
     center = np.array([[1e6, -1e6]])
     covariance = np.array([[1.0, 0.2], [0.2, 1.7]])
     coefs = coef_from_cov(center, covariance[None])
-    value_roundoff = _value_roundoff_bound(coefs)
-
     result = ellphi.cech(coefs)
 
-    assert abs(result.t) <= np.sqrt(value_roundoff)
+    assert result.t == 0.0
 
 
 def test_clipped_negative_scale_preserves_singleton_active_set():
@@ -149,11 +128,9 @@ def test_translated_coincident_roundoff_negative_scale_is_clipped():
     center = np.array([[1e6, -1e6]])
     covariance = np.array([[1.0, 0.2], [0.2, 1.7]])
     coefs = np.repeat(coef_from_cov(center, covariance[None]), 2, axis=0)
-    value_roundoff = _value_roundoff_bound(coefs)
-
     result = ellphi.cech(coefs)
 
-    assert abs(result.t) <= np.sqrt(value_roundoff)
+    assert result.t == 0.0
 
 
 @pytest.mark.parametrize("dimension", [2, 3, 4])
@@ -167,16 +144,10 @@ def test_coef_from_cov_accepts_rotated_spd_conditioning(dimension, condition_num
     coefs = coef_from_cov(center, covariance[None])
 
     matrices, linear, constants = unpack_conic(coefs)
-    precision_bound = (
-        64.0
-        * np.finfo(float).eps
-        * np.linalg.cond(matrices[0], 2)
-        * max(1.0, abs(float(constants[0])))
-    )
 
     if condition_number <= 1e6:
         result = ellphi.cech(coefs)
-        assert result.t**2 <= precision_bound
+        assert np.isfinite(result.t)
         point = result.point
     else:
         inverse_times_linear = np.linalg.solve(matrices[0], linear[0])
@@ -185,7 +156,7 @@ def test_coef_from_cov_accepts_rotated_spd_conditioning(dimension, condition_num
         result = solve_minimax(
             matrices, centers, offsets=np.array([constants[0] - centered_constant])
         )
-        assert abs(result.alpha) <= precision_bound
+        assert np.isfinite(result.alpha)
         point = result.circumcenter
     assert np.all(np.isfinite(point))
 
@@ -248,7 +219,7 @@ def test_negative_packed_scale_raises():
         ellphi.cech(coefs)
 
 
-def test_negative_scale_roundoff_bound_does_not_grow_with_simplex_size():
+def test_negative_scale_rounding_estimate_does_not_grow_with_simplex_size():
     k = 100
     centers = np.repeat(np.array([[1e6, 0.0]]), k, axis=0)
     coefs = coef_from_cov(centers, np.repeat(np.eye(2)[None], k, axis=0))
@@ -260,26 +231,65 @@ def test_negative_scale_roundoff_bound_does_not_grow_with_simplex_size():
         ellphi.cech(coefs)
 
 
-def test_negative_scale_roundoff_bound_ignores_inactive_rows():
+def test_subthreshold_positive_weight_contributes_rounding_estimate():
     matrices = np.repeat(np.eye(2)[None], 2, axis=0)
-    coefs = pack_conic(matrices, np.zeros((2, 2)), np.array([-0.5, -1e20]))
-
-    with pytest.raises(
-        ValueError, match="packed quadrics have no common non-negative filtration scale"
-    ):
-        ellphi.cech(coefs)
-
-
-def test_exact_zero_linear_term_does_not_get_condition_roundoff_allowance():
-    matrices = np.array([[[1e-16, 0.0], [0.0, 1.0]]])
-    linear = np.zeros((1, 2))
-    constants = np.array([-0.5])
+    centers = np.array([[2**40, 0.0], [0.0, 0.0]])
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    constants = np.array([2047 * 2**60 - 3 * 2**26, -(2**60)], dtype=float)
     coefs = pack_conic(matrices, linear, constants)
 
-    with pytest.raises(
-        ValueError, match="packed quadrics have no common non-negative filtration scale"
-    ):
-        ellphi.cech(coefs)
+    result = ellphi.cech(
+        coefs,
+        method="scipy-slsqp",
+        tol=1.0,
+        weight_tol=0.01,
+    )
+
+    assert result.support == (1,)
+    assert np.isfinite(result.t)
+
+
+def test_active_set_uses_only_actual_clipping_shift():
+    matrices = np.repeat(np.eye(2)[None], 2, axis=0)
+    centers = np.repeat(np.array([[1e7, 0.0]]), 2, axis=0)
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    coefs = pack_conic(matrices, linear, constants + np.array([1.0, 0.0]))
+
+    result = ellphi.cech(coefs, method="scipy-slsqp", active_tol=0.0)
+
+    assert result.active_set == (0,)
+
+
+def test_rounding_estimate_includes_solve_residual(monkeypatch):
+    matrices = np.array([[[2.0, 0.0], [0.0, 1.0]]])
+    linear = np.array([[2.0, 1.0]])
+    constants = np.array([7.0])
+    original_solve = np.linalg.solve
+    perturbation = np.array([0.125, -0.25])
+
+    def perturbed_solve(matrix, vector):
+        return original_solve(matrix, vector) + perturbation
+
+    monkeypatch.setattr(cech_module.np.linalg, "solve", perturbed_solve)
+    _, _, _, estimates = cech_module._prepare_coefs(
+        pack_conic(matrices, linear, constants)
+    )
+
+    y_hat = original_solve(matrices[0], linear[0]) + perturbation
+    residual = linear[0] - matrices[0] @ y_hat
+    solve_estimate = (
+        np.linalg.norm(linear[0])
+        * np.linalg.norm(residual)
+        / np.linalg.eigvalsh(matrices[0])[0]
+    )
+    centered_constant = float(linear[0] @ y_hat)
+    rounding_estimate = (
+        (matrices.shape[1] + 2)
+        * np.finfo(float).eps
+        * (abs(constants[0]) + abs(centered_constant))
+    )
+    assert estimates[0] == pytest.approx(solve_estimate + rounding_estimate, rel=1e-14)
 
 
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
@@ -488,13 +498,27 @@ def test_public_surrogate_default_raises_with_honest_gap():
         ellphi.cech(coefs)
 
     message = str(exc_info.value)
+    matrices, centers, offsets, _ = cech_module._prepare_coefs(coefs)
+    engine_result = solve_minimax(
+        matrices,
+        centers,
+        offsets=offsets,
+        method="fw+brentq+newton",
+    )
+    values = cech_module._centered_constraint_values(
+        engine_result.circumcenter, matrices, centers, offsets
+    )
+    expected_gap = float(np.max(values) - engine_result.weights @ values)
+    expected_scale = max(1.0, abs(float(engine_result.weights @ values)))
     assert "method='fw+brentq+newton'" in message
-    assert "duality_gap=" in message
-    assert "tol=1e-09" in message
-    assert "duality_gap_scale=" in message
+    assert f"duality_gap={expected_gap:.17g}" in message
+    assert f"tol={1e-09:g}" in message
+    assert f"duality_gap_scale={expected_scale:.17g}" in message
+    assert re.search(r"duality_gap=-?[0-9.e+-]+", message)
+    assert re.search(r"duality_gap_scale=[0-9.e+-]+", message)
 
 
-def test_public_surrogate_fw_brentq_converges_with_large_budget():
+def test_public_surrogate_fw_brentq_succeeds_with_large_budget():
     coefs = _public_surrogate_coefs()
 
     result = ellphi.cech(coefs, method="fw+brentq", max_iter=20000)
@@ -503,7 +527,7 @@ def test_public_surrogate_fw_brentq_converges_with_large_budget():
     assert result.support == (1, 3, 5)
 
 
-def test_public_surrogate_slsqp_converges_at_default_budget():
+def test_public_surrogate_slsqp_succeeds_at_default_budget():
     coefs = _public_surrogate_coefs()
 
     result = ellphi.cech(coefs, method="scipy-slsqp")

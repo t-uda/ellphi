@@ -1,4 +1,4 @@
-"""Many-body minimax solver for anisotropic filtration values (provisional).
+"""Many-body minimax solver for anisotropic filtration values.
 
 Provenance
 ----------
@@ -41,14 +41,19 @@ from ellcech 82d13e3 in the following ways:
   ellcech 82d13e3 preserved the prior convergence flag in this case.
 * Direct ``scipy-slsqp`` is gap-enforced and Newton-polished when its initial
   result misses the requested global gap.
-* Frank-Wolfe gap convergence uses ``gap <= tol * max(1, abs(g_hat))``, where
-  ``gap = max_i gradient_i - g_hat`` and ``g_hat = dot(mu, gradient)``;
+* The default method is ``fw+brentq+newton``; the source uses a different
+  default dispatch.
+* Frank-Wolfe gap convergence uses ``gap <= tol * max(1, abs(dual_value))``;
+  ``gap = max_i gradient_i - dot(mu, gradient)`` and ``dual_value`` is the
+  stabilized dual value when conditioning or regularization is active;
   ellcech uses an absolute gap instead.
+* The ``fw+brentq`` line search uses Brent with a bisection safeguard when the
+  bracket is rejected, and records each safeguard in its metadata.
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
 ``unpack_conic`` and type annotations) or documentation. Distributed as part
-of EllPHi under its MIT license; the ellcech source is MIT by owner decision
-(uda-lab/project-ellphi#26, 2026-10-04), aligned with EllPHi.
+of EllPHi under its MIT license; the ellcech source is also distributed under
+its MIT license.
 
 This numerical engine is internal.  The public interface is :mod:`ellphi.cech`.
 
@@ -162,8 +167,6 @@ _NEWTON_HESSIAN_COND_LIMIT = 1e12
 
 # Brentq line search constants (analogous to ellphi _DEFAULT_HYBRID_BRACKET_MAXITER)
 _DEFAULT_BRENTQ_MAXITER = 28
-# Retained unused for fidelity with the ellcech source.
-_BRENTQ_FAILSAFE_MAXITER = 64
 _BRENTQ_XTOL = 1e-12
 _BRENTQ_RTOL = 4.0 * np.finfo(float).eps
 
@@ -211,7 +214,8 @@ class MinimaxResult(NamedTuple):
         n_iter: Number of iterations performed.
         method: Canonical solver method used (e.g. ``"fw+bisect"``).
         metadata: Optional dict with method-specific diagnostics
-            (``fw_iters``, ``newton_iters``, ``hessian_cond``, ...).
+            (``fw_iters``, ``newton_iters``, ``hessian_cond``, and line-search
+            safeguard counts where applicable).
     """
 
     alpha: float
@@ -358,11 +362,8 @@ def _cholesky_solve(
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    try:
-        chol = linalg.cho_factor(A, check_finite=False)
-        return linalg.cho_solve(chol, b, check_finite=False)
-    except linalg.LinAlgError:
-        return np.linalg.lstsq(A, b, rcond=None)[0]
+    chol = linalg.cho_factor(A, check_finite=False)
+    return linalg.cho_solve(chol, b, check_finite=False)
 
 
 def _exact_linear_solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -371,10 +372,7 @@ def _exact_linear_solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
         chol = linalg.cho_factor(A, check_finite=False)
         return linalg.cho_solve(chol, b, check_finite=False)
     except linalg.LinAlgError:
-        try:
-            return np.linalg.solve(A, b)
-        except np.linalg.LinAlgError:
-            return np.linalg.lstsq(A, b, rcond=None)[0]
+        return np.linalg.solve(A, b)
 
 
 def _eval_f(
@@ -390,7 +388,8 @@ def _eval_f(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute circumcenter x*(mu) and f_i(x*(mu)) for all i.
 
-    Also note: g(mu) = sum_i mu_i f_i(x*(mu)) = np.dot(mu, f).
+    For an unadjusted solve, ``g(mu) = sum_i mu_i f_i(x*(mu))``. Stabilized
+    solves use the regularized dual value for the scale in the gap test.
     """
     A_mu = np.einsum("k,kij->ij", mu, matrices)
     b_mu = np.einsum("k,ki->i", mu, Ax)
@@ -575,7 +574,7 @@ def _brentq_line_search(
     regularization: float,
     condition_number_limit: float | None,
     max_conditioning_steps: int,
-) -> tuple[float, int]:
+) -> tuple[float, int, bool]:
     """Brentq line search for a dual-simplex pairwise Frank-Wolfe swap.
 
     The direction is ``e_s - e_v``, with ``s`` the best vertex (largest
@@ -584,10 +583,11 @@ def _brentq_line_search(
     ``0 <= gamma <= gamma_max <= mu[v]``.
 
     Returns:
-        (gamma, n_fevals): Optimal step and number of function evaluations.
+        (gamma, n_fevals, used_bisection): Optimal step, function evaluations,
+        and whether the declared bisection safeguard was used.
     """
     if gamma_max <= 0.0:
-        return 0.0, 0
+        return 0.0, 0, False
 
     n_fevals = [0]
 
@@ -622,11 +622,11 @@ def _brentq_line_search(
 
     h0 = h(0.0)
     if h0 <= 0.0:
-        return 0.0, n_fevals[0]
+        return 0.0, n_fevals[0], False
 
     h_max = h(gamma_max)
     if h_max >= 0.0:
-        return gamma_max, n_fevals[0]
+        return gamma_max, n_fevals[0], False
 
     try:
         from scipy.optimize import brentq
@@ -639,9 +639,9 @@ def _brentq_line_search(
             rtol=_BRENTQ_RTOL,
             maxiter=_DEFAULT_BRENTQ_MAXITER,
         )
-        return float(gamma), n_fevals[0]
+        return float(gamma), n_fevals[0], False
     except (ValueError, RuntimeError):
-        # Fallback to fixed bisection
+        # Declared safeguard for a rejected Brent bracket.
         lo, hi = 0.0, gamma_max
         for _ in range(_N_BISECT):
             mid = 0.5 * (lo + hi)
@@ -649,7 +649,7 @@ def _brentq_line_search(
                 lo = mid
             else:
                 hi = mid
-        return 0.5 * (lo + hi), n_fevals[0]
+        return 0.5 * (lo + hi), n_fevals[0], True
 
 
 # ---------------------------------------------------------------------------
@@ -810,6 +810,7 @@ def _run_fw_brentq(
     n_iter = 0
     total_line_search_evals = 0
     total_fevals = 0
+    line_search_bisection_safeguards = 0
 
     for n_iter in range(1, max_iter + 1):
         xstar, f = _eval_f(
@@ -859,7 +860,7 @@ def _run_fw_brentq(
             break
 
         gamma_max = float(mu[v])
-        gamma, ls_evals = _brentq_line_search(
+        gamma, ls_evals, used_bisection = _brentq_line_search(
             s,
             v,
             mu,
@@ -873,6 +874,7 @@ def _run_fw_brentq(
             max_conditioning_steps=max_conditioning_steps,
         )
         total_line_search_evals += ls_evals
+        line_search_bisection_safeguards += int(used_bisection)
 
         mu = mu.copy()
         mu[s] += gamma
@@ -914,6 +916,7 @@ def _run_fw_brentq(
         "fw_iters": n_iter,
         "n_fevals": total_fevals + total_line_search_evals,
         "line_search_evals": total_line_search_evals,
+        "line_search_bisection_safeguards": line_search_bisection_safeguards,
     }
     return mu, converged, n_iter, metadata
 
@@ -1412,7 +1415,6 @@ def _run_scipy_slsqp(
     offsets: np.ndarray | None,
     k: int,
     *,
-    initial_weights: np.ndarray | None = None,
     tol: float,
     regularization: float,
     condition_number_limit: float | None,
@@ -1440,11 +1442,7 @@ def _run_scipy_slsqp(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-    x0 = (
-        np.full(k, 1.0 / k)
-        if initial_weights is None
-        else np.asarray(initial_weights, dtype=float).copy()
-    )
+    x0 = np.full(k, 1.0 / k)
     bounds = [(0.0, None)] * k
 
     res = minimize(
@@ -1502,13 +1500,10 @@ def _run_scipy_slsqp(
 
 def _check_newton_convergence(
     mu: np.ndarray,
-    active_set: list[int],
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
     offsets: np.ndarray | None,
-    converged: bool,
-    newton_tol: float,
     newton_status: str,
     *,
     tol: float,
@@ -1516,7 +1511,12 @@ def _check_newton_convergence(
     condition_number_limit: float | None = None,
     max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
 ) -> bool:
-    """Recheck convergence after Newton polishing."""
+    """Apply the shared gap contract after Newton polishing.
+
+    Newton's residual tolerance controls its own iterations; it is not an
+    additional accepted-result criterion. Fatal Newton statuses remain
+    non-convergent even when the final global gap can be evaluated.
+    """
     failure_statuses = {
         "empty_face",
         "armijo_rejected",
@@ -1565,15 +1565,12 @@ def _check_newton_convergence(
         )
         if not _fw_gap_converged(mu, gradient_check, tol, dual_value=dual_value):
             return False
-        if len(active_set) <= 1:
-            return True
-        r_check = gradient_check[active_set[:-1]] - gradient_check[active_set[-1]]
-        return float(np.max(np.abs(r_check))) < newton_tol * 1e4
+        return True
     except linalg.LinAlgError:
         return False
 
 
-def solve_minimax(
+def _solve_minimax(
     matrices: np.ndarray,
     centers: np.ndarray,
     *,
@@ -1606,8 +1603,8 @@ def solve_minimax(
     * ``"fw+bisect+newton"``: Pairwise FW(bisect) warm-start + Newton polishing.
     * ``"fw+brentq+newton"``: Pairwise FW(brentq) warm-start + damped Newton polishing.
     * ``"fw+bisect+damped-newton"``: Pairwise FW(bisect) + Armijo-damped Newton.
-    * ``"scipy-slsqp"``: Direct SLSQP solve via scipy, with Newton accuracy
-      polishing if SLSQP's result misses the requested global gap.
+    * ``"scipy-slsqp"``: Direct dual-weight SLSQP solve via scipy, with Newton
+      accuracy polishing if SLSQP's result misses the requested global gap.
     * ``"newton-cold"``: Newton from uniform mu=1/k (stability baseline).
 
     The legacy name ``"fw+newton"`` is accepted as an alias for
@@ -1621,11 +1618,13 @@ def solve_minimax(
         offsets: Optional additive constants ``delta_i``, shape ``(k,)``.
             ``None`` is the original zero-offset problem.
         method: One of the seven canonical method names above.
-        tol: Pairwise Frank-Wolfe gap tolerance for the FW-based methods,
-            relative to max(1, |dual value|).
+        tol: Shared accepted-result duality-gap tolerance for every method,
+            relative to ``max(1, abs(dual value))``; it is not Newton's
+            residual tolerance.
         max_iter: Maximum number of Frank-Wolfe iterations.
-        weight_tol: Threshold defining the weight support ``active_set``. It
-            also selects the face used by Newton polishing.
+        weight_tol: Threshold defining the weight support ``active_set`` and
+            the face selected by Newton polishing; it does not change the
+            global gap acceptance test.
         regularization: Non-negative diagonal shift applied to ``A(mu)`` in
             Frank-Wolfe evaluations and line searches, SLSQP evaluations,
             Newton polishing, and the final evaluation.
@@ -1635,7 +1634,9 @@ def solve_minimax(
             not guaranteed after the cap.
         max_conditioning_steps: Maximum number of attempted conditioning
             escalations.
-        newton_tol: Residual tolerance for Newton polishing.
+        newton_tol: Residual tolerance for Newton's own polishing iterations,
+            including SLSQP's Newton polish; it does not add an acceptance
+            criterion after polishing.
         newton_max_iter: Maximum number of Newton steps.
 
     Returns:
@@ -1770,16 +1771,12 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
-        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_newton,
             matrices,
             Ax,
             centers,
             offsets,
-            converged,
-            newton_tol,
             meta_newton["newton_status"],
             tol=tol,
             regularization=regularization,
@@ -1809,16 +1806,12 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
-        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_newton,
             matrices,
             Ax,
             centers,
             offsets,
-            converged,
-            newton_tol,
             meta_newton["newton_status"],
             tol=tol,
             regularization=regularization,
@@ -1848,16 +1841,12 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_fw + n_iter_newton
-        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_newton,
             matrices,
             Ax,
             centers,
             offsets,
-            converged,
-            newton_tol,
             meta_newton["newton_status"],
             tol=tol,
             regularization=regularization,
@@ -1886,16 +1875,12 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         n_iter = n_iter_cold
-        active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
-            active_set_newton,
             matrices,
             Ax,
             centers,
             offsets,
-            True,
-            newton_tol,
             meta_cold["newton_status"],
             tol=tol,
             regularization=regularization,
@@ -1928,22 +1913,18 @@ def solve_minimax(
                 offsets,
                 weight_tol=weight_tol,
                 max_iter=newton_max_iter,
-                tol=tol,
+                tol=newton_tol,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
             )
             n_iter += n_iter_newton
-            active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
             converged = _check_newton_convergence(
                 mu,
-                active_set_newton,
                 matrices,
                 Ax,
                 centers,
                 offsets,
-                converged,
-                tol,
                 meta_newton["newton_status"],
                 tol=tol,
                 regularization=regularization,
@@ -1979,6 +1960,59 @@ def solve_minimax(
         method=method,
         metadata=metadata or None,
     )
+
+
+def solve_minimax(
+    matrices: np.ndarray,
+    centers: np.ndarray,
+    *,
+    offsets: np.ndarray | None = None,
+    method: MethodName | str = "fw+brentq+newton",
+    tol: float = _DEFAULT_TOL,
+    max_iter: int = _DEFAULT_MAX_ITER,
+    weight_tol: float = _DEFAULT_WEIGHT_TOL,
+    regularization: float = 0.0,
+    condition_number_limit: float | None = None,
+    max_conditioning_steps: int = _DEFAULT_MAX_COND_STEPS,
+    newton_tol: float = _NEWTON_TOL,
+    newton_max_iter: int = _NEWTON_MAX_ITER,
+) -> MinimaxResult:
+    """Compute a minimax result, reporting factorization failure as non-convergence."""
+    try:
+        return _solve_minimax(
+            matrices,
+            centers,
+            offsets=offsets,
+            method=method,
+            tol=tol,
+            max_iter=max_iter,
+            weight_tol=weight_tol,
+            regularization=regularization,
+            condition_number_limit=condition_number_limit,
+            max_conditioning_steps=max_conditioning_steps,
+            newton_tol=newton_tol,
+            newton_max_iter=newton_max_iter,
+        )
+    except linalg.LinAlgError:
+        centers_array = np.asarray(centers, dtype=float)
+        if centers_array.ndim == 1:
+            centers_array = centers_array[np.newaxis]
+        k, d = centers_array.shape
+        canonical_method = _METHOD_ALIASES.get(str(method), str(method))
+        weights = np.full(k, 1.0 / k) if k else np.empty(0, dtype=float)
+        return MinimaxResult(
+            alpha=float("nan"),
+            circumcenter=np.full(d, np.nan),
+            weights=weights,
+            active_set=list(range(k)),
+            converged=False,
+            n_iter=0,
+            method=canonical_method,
+            metadata={"solver_status": "factorization_failed"},
+        )
+
+
+solve_minimax.__doc__ = _solve_minimax.__doc__
 
 
 def solve_minimax_from_coefs(

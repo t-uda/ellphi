@@ -20,7 +20,9 @@ ordered as `(t, point, mu, dt_dcoef, support, active_set)`.
 - `support`: the thresholded weight support
   `{i : mu_i > weight_tol}`.
 - `active_set`: the tight-constraint set at the returned point,
-  `I = {i : t^2 - f_i(point) <= active_tol * max(1, t^2)}`.
+  `I = {i : t^2 - f_i(point) <= active_tol * max(1, t^2)}`; if `alpha` is
+  clipped at zero, the actual clipping shift `t^2 - alpha` is added to this
+  threshold.
 
 The public `cech` and `cech_grad` signatures intentionally do not expose
 matrix stabilization controls such as `regularization`,
@@ -58,17 +60,19 @@ The private engine's internal field named `active_set` is the weight support
 
 If `unpack_conic` returns `(A_i, b_i, c_i)`, the center is
 `xbar_i = -A_i^{-1} b_i` and the completed-square constant is
-`delta_i = c_i - b_i^T A_i^{-1} b_i`. The public API passes this exactly
-computed `delta_i` to the many-body engine, including when it is small, so
+`delta_i = c_i - b_i^T A_i^{-1} b_i`. The public API passes this computed
+`delta_i` to the many-body engine, including when it is small, so
 general independent constants are supported.
 
 A packed row encodes its constant as
-`c_i = xbar_i^T A_i xbar_i + delta_i`. For `|xbar_i|^2 >> 1` or
-ill-conditioned `A_i`, the representable `delta_i` carries roundoff of order
-`eps * |xbar_i|^2`, with a `cond2(A_i)` factor for ill-conditioned matrices.
-Callers needing exact normalization at large translations should center their
-data first. Packed input requires `d >= 2`; d=1 packed conics are not
-supported and raise `ValueError`.
+`c_i = xbar_i^T A_i xbar_i + delta_i`. For `|xbar_i|^2 >> 1`, the computed
+`delta_i` can lose precision in the centered quadratic term and its
+subtraction from `c_i`. The implementation reports a per-row rounding
+estimate based on the solve residual and the dot-product/subtraction
+dimension; this is an estimate, not a rigorous bound. Callers needing exact
+normalization at large translations should center their data first. Packed
+input requires `d >= 2`; d=1 packed conics are not supported and raise
+`ValueError`.
 
 The many-body engine uses the completed-square offsets above. Thus
 `cech_grad(coefs)` returns `dt_dcoef`, the gradient for arbitrary

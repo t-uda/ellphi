@@ -686,13 +686,10 @@ class TestNumericalStabilityControls:
 
         converged = minimax_mod._check_newton_convergence(
             weights,
-            [0, 1],
             matrices,
             Ax,
             centers,
             None,
-            True,
-            1e-14,
             "converged",
             tol=1e-3,
             regularization=0.0,
@@ -701,6 +698,40 @@ class TestNumericalStabilityControls:
         )
 
         assert converged is False
+
+    def test_newton_acceptance_uses_relative_gap_without_extra_residual_factor(self):
+        matrices = np.repeat(np.eye(1)[np.newaxis], 2, axis=0)
+        centers = np.array([[0.0], [1.0]])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
+        weights = np.array([0.999, 0.001])
+
+        converged = minimax_mod._check_newton_convergence(
+            weights,
+            matrices,
+            Ax,
+            centers,
+            np.array([1.0, 0.0]),
+            "converged",
+            tol=0.01,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
+        )
+
+        assert converged is True
+
+    def test_factorization_failure_is_reported_as_nonconvergence(self, monkeypatch):
+        matrices = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+        centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+
+        def fail_factorization(*args, **kwargs):
+            raise np.linalg.LinAlgError("test factorization failure")
+
+        monkeypatch.setattr(minimax_mod.linalg, "cho_factor", fail_factorization)
+        result = solve_minimax(matrices, centers, method="fw+bisect")
+
+        assert not result.converged
+        assert result.metadata == {"solver_status": "factorization_failed"}
 
     def test_hybrid_rechecks_fw_optimum_hit_on_last_iteration(self):
         matrices = np.array([np.eye(2), 4.0 * np.eye(2)])

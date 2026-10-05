@@ -1,4 +1,4 @@
-"""Gradient of the many-body minimax filtration value (provisional).
+"""Gradient of the many-body minimax filtration value.
 
 Provenance
 ----------
@@ -10,10 +10,8 @@ docstring is written for EllPHi rather than copied from either revision: it
 adopts the ebe63a4 remark that zero weights give zero gradient blocks, but
 not its characterization of differentiability. EllPHi adds the offset
 gradient ``d alpha / d delta_i = mu_i``; the original center and matrix
-gradient code is unchanged.
-Distributed as part of EllPHi under its MIT license; the ellcech source is
-MIT by owner decision (uda-lab/project-ellphi#26, 2026-10-04), aligned with
-EllPHi.
+gradient code is unchanged. Distributed as part of EllPHi under its MIT
+license; the ellcech source is also distributed under its MIT license.
 
 This numerical engine is internal.  The public interface is :mod:`ellphi.cech`.
 

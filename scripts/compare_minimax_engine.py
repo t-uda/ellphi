@@ -17,11 +17,14 @@ compare them::
         compare /tmp/legacy.json /tmp/candidate.json
 
 Only cases for which the legacy engine reports ``converged=True`` are fidelity
-requirements. The alpha comparison uses the declared method tolerance; FW-family
-methods use the relative duality-gap contract for records with
-``alpha_legacy > 1``. Records with ``alpha_legacy <= 1`` remain strict checks
-against their declared tolerance. Circumcenter and weight deviations remain
-reported diagnostics, and the candidate must also report convergence.
+requirements. ``METHOD_TOLERANCES`` are empirical comparison thresholds, not
+solver settings; each method has a rationale recorded in ``METHOD_REASONS``.
+For every method, records with ``alpha_legacy <= 1`` use the strict empirical
+threshold, while records with larger alpha use a scale-aware threshold based on
+``max(1, abs(alpha_legacy))``. That scale keeps the comparison proportional to
+the magnitude of the legacy value while avoiding a division by a small value.
+Circumcenter and weight deviations remain reported diagnostics, and the
+candidate must also report convergence.
 """
 
 from __future__ import annotations
@@ -57,15 +60,15 @@ METHOD_TOLERANCES = {
     "scipy-slsqp": 1e-6,
     "newton-cold": 1e-12,
 }
-RELATIVE_GAP_METHODS = frozenset(METHODS) - {"scipy-slsqp"}
 METHOD_REASONS = {
-    method: "relative duality-gap contract, module deviation list item 11"
-    for method in RELATIVE_GAP_METHODS
+    "fw+bisect": "52-step bisection line search and relative-gap contract",
+    "fw+brentq": "Brent line search and relative-gap contract",
+    "fw+bisect+newton": "bisection warm start with Newton polishing",
+    "fw+brentq+newton": "Brent warm start with damped Newton polishing",
+    "fw+bisect+damped-newton": "bisection warm start with damped Newton polishing",
+    "scipy-slsqp": "dual-weight SLSQP with shared gap enforcement and polishing",
+    "newton-cold": "uniform-start Newton stability baseline",
 }
-METHOD_REASONS["scipy-slsqp"] = (
-    "direct SLSQP is gap-enforced and Newton-polished in this port, "
-    "deviation list item 10"
-)
 
 
 def _solver(engine: str, source_root: Path | None) -> Callable[..., Any]:
@@ -159,6 +162,7 @@ def generate(
                 "k": [1, 6],
                 "d": [1, 4],
                 "instances_per_shape": INSTANCES_PER_SHAPE,
+                "comparison_thresholds": METHOD_TOLERANCES,
             },
             "random_seed": BASE_SEED,
             "input_identity": {
@@ -188,12 +192,58 @@ def _record_key(record: dict[str, Any]) -> tuple[int, int, int, str]:
     )
 
 
+def _expected_keys(payload: dict[str, Any]) -> set[tuple[int, int, int, str]]:
+    """Return the complete deterministic grid declared by a payload manifest."""
+    try:
+        configuration = payload["manifest"]["configuration"]
+        methods = tuple(configuration["methods"])
+        k_min, k_max = configuration["k"]
+        d_min, d_max = configuration["d"]
+        instances_per_shape = configuration["instances_per_shape"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("payload manifest does not declare a complete grid") from exc
+    return {
+        (k, d, instance, method)
+        for k in range(k_min, k_max + 1)
+        for d in range(d_min, d_max + 1)
+        for instance in range(instances_per_shape)
+        for method in methods
+    }
+
+
+def _records_by_key(
+    payload: dict[str, Any], label: str
+) -> dict[tuple[int, int, int, str], dict[str, Any]]:
+    """Validate uniqueness and completeness before indexing records."""
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise ValueError(f"{label} payload has no records list")
+    indexed: dict[tuple[int, int, int, str], dict[str, Any]] = {}
+    duplicates = []
+    for record in records:
+        key = _record_key(record)
+        if key in indexed:
+            duplicates.append(key)
+        indexed[key] = record
+    if duplicates:
+        raise ValueError(f"{label} payload has duplicate record keys: {duplicates[:3]}")
+    expected = _expected_keys(payload)
+    missing = sorted(expected - indexed.keys())
+    extra = sorted(indexed.keys() - expected)
+    if missing or extra:
+        raise ValueError(
+            f"{label} payload has incomplete grid: "
+            f"missing={missing[:3]}, extra={extra[:3]}"
+        )
+    return indexed
+
+
 def compare(legacy_path: Path, candidate_path: Path) -> int:
     """Compare candidate outputs where the legacy engine converged."""
     legacy_payload = json.loads(legacy_path.read_text())
     candidate_payload = json.loads(candidate_path.read_text())
-    legacy = {_record_key(record): record for record in legacy_payload["records"]}
-    candidate = {_record_key(record): record for record in candidate_payload["records"]}
+    legacy = _records_by_key(legacy_payload, "legacy")
+    candidate = _records_by_key(candidate_payload, "candidate")
     if legacy.keys() != candidate.keys():
         missing = sorted(legacy.keys() - candidate.keys())
         extra = sorted(candidate.keys() - legacy.keys())
@@ -277,8 +327,7 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
         else:
             partition = stats["alpha_gt_one"]
             tolerance = METHOD_TOLERANCES[method]
-            if method in RELATIVE_GAP_METHODS:
-                tolerance = max(tolerance, 1e-9 * alpha_scale)
+            tolerance = max(tolerance, 1e-9 * alpha_scale)
             partition["max_relative_deviation"] = max(
                 partition["max_relative_deviation"], deviation / alpha_scale
             )
@@ -297,7 +346,10 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
             mismatches.append(key)
 
     summary = {
-        "records_compared": len(legacy),
+        "records_total": len(legacy),
+        "records_checked": converged,
+        "records_skipped": len(legacy) - converged,
+        "records_compared": converged,
         "legacy_converged": converged,
         "legacy_converged_by_method": converged_by_method,
         "mismatches": len(mismatches),
@@ -306,12 +358,12 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
         "per_method": per_method,
         "status": (
             "complete"
-            if not mismatches and not strict_tolerance_violations
+            if converged and not mismatches and not strict_tolerance_violations
             else "failed"
         ),
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
-    return 1 if mismatches or strict_tolerance_violations else 0
+    return 1 if not converged or mismatches or strict_tolerance_violations else 0
 
 
 def main() -> int:
