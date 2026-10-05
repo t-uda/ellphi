@@ -66,7 +66,7 @@ def cech(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechResult:
-    """Compute Čech time using pairwise FW swaps on the dual simplex."""
+    """Compute Čech time using the selected solver method."""
     ...
 
 def cech_grad(
@@ -80,5 +80,5 @@ def cech_grad(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechGrad:
-    """Compute Čech time and its gradient using pairwise FW swaps."""
+    """Compute Čech time and its gradient using the selected solver method."""
     ...

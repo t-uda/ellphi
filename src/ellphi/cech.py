@@ -105,6 +105,8 @@ class CechResult(NamedTuple):
     The private engine's internal field named ``active_set`` is the weight
     support (historical ellcech naming) and is not part of the public API.
 
+    The fields are ordered as ``t, point, mu, support, active_set, info``.
+
     Attributes:
         t: Čech filtration time; ``t**2 = alpha(sigma)``.
         point: Common intersection point ``x*`` at the critical scale, shape
@@ -130,6 +132,9 @@ class CechGrad(NamedTuple):
 
     ``support`` and ``active_set`` have the definitions documented for
     :class:`CechResult`.
+
+    The fields are ordered as
+    ``t, point, mu, dt_dcoef, support, active_set, info``.
 
     Attributes:
         t: Čech filtration time; ``t**2 = alpha(sigma)``.
@@ -321,12 +326,15 @@ def _stage_status(
     """Return a stable public status for one engine result."""
     if accepted:
         return "converged"
-    if not finite or not finite_values:
-        return "nonfinite"
     if result.metadata is not None:
+        solver_status = result.metadata.get("solver_status")
+        if isinstance(solver_status, str) and solver_status != "converged":
+            return solver_status
         newton_status = result.metadata.get("newton_status")
         if isinstance(newton_status, str) and newton_status != "converged":
             return newton_status
+    if not finite or not finite_values:
+        return "nonfinite"
     return "gap_not_met"
 
 
@@ -529,8 +537,9 @@ def cech(
             ``max_iter``, and ``newton_tol``. If that stage does not converge,
             it runs gap-enforced ``"scipy-slsqp"`` from uniform dual weights
             with the same ``tol``. A named method never falls back.
-        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
-            value|).
+        tol: Shared accepted-result duality-gap tolerance for every method,
+            relative to ``max(1, abs(dual value))``. It is not Newton's
+            residual tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining the public ``support``; it does not
             remove positive-weight rows from the normalization estimate.
@@ -661,8 +670,9 @@ def cech_grad(
             ``max_iter``, and ``newton_tol``. If that stage does not converge,
             it runs gap-enforced ``"scipy-slsqp"`` from uniform dual weights
             with the same ``tol``. A named method never falls back.
-        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
-            value|).
+        tol: Shared accepted-result duality-gap tolerance for every method,
+            relative to ``max(1, abs(dual value))``. It is not Newton's
+            residual tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining the public ``support``; it does not
             remove positive-weight rows from the normalization estimate.

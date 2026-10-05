@@ -12,8 +12,7 @@ is the least squared scale at which all bodies share a common point.
 
 The result fields are ordered as
 `(t, point, mu, support, active_set, info)`. The gradient result fields are
-ordered as `(t, point, mu, dt_dcoef, support, active_set, info)`. The first
-five fields of `CechResult` retain their historical positional order.
+ordered as `(t, point, mu, dt_dcoef, support, active_set, info)`.
 
 - `t`: the Čech filtration time, with `t^2 = alpha(sigma)`.
 - `point`: the common intersection point `x*` at the critical scale.
@@ -46,9 +45,19 @@ computed by `tangency()`, and `cech()` agrees with it.
 Up to numerical tolerance, `support` is a subset of `active_set`; under
 strict complementarity (ND1), they coincide. For three unit balls centred at
 `(0, 0)`, `(2, 0)`, and `(0, 2)`, the point is `(1, 1)`, support has
-two indices, and `active_set` has three. A solver that does not converge or
-produces non-finite output raises `RuntimeError` naming its method, iterations,
-final duality gap, `tol`, and the scale used for the relative gap test.
+two indices, and `active_set` has three.
+
+Every solver method uses the same accepted-result gap contract:
+`gap <= tol * max(1, abs(dual value))`. Thus `tol` is an all-method relative
+duality-gap tolerance, not a pairwise-FW-only control or a Newton residual
+tolerance. The Frank-Wolfe description below refers only to the first stage
+of the default route.
+
+Failure diagnostics depend on the route. A named method runs one stage and
+raises `RuntimeError` with that stage's method, status, iteration count, final
+gap, `tol`, and relative-gap scale. The `auto` route lists both attempted
+stages, including each method, status, final gap, and iteration or evaluation
+count; it does not collapse them into a single named-method diagnostic.
 
 ## Default route
 

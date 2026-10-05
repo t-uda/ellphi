@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import ellphi
+import ellphi._minimax_python as minimax_module
 from ellphi._minimax_python import MethodName, solve_minimax
 from ellphi.geometry import coef_from_cov, pack_conic, unpack_conic
 
@@ -393,6 +394,28 @@ def test_non_convergence_raises_with_gap_and_retry_guidance():
     assert "duality_gap=" in message
     assert "tol=1e-15" in message
     assert "larger max_iter or a different method" in message
+
+
+@pytest.mark.parametrize("method", ["fw+bisect", "auto"])
+def test_factorization_failure_status_is_preserved_in_public_diagnostics(
+    monkeypatch, method
+):
+    coefs = _random_coefs(2, 2, seed=102)
+
+    def fail_factorization(*args, **kwargs):
+        raise np.linalg.LinAlgError("test factorization failure")
+
+    monkeypatch.setattr(minimax_module.linalg, "cho_factor", fail_factorization)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ellphi.cech(coefs, method=method)
+
+    message = str(exc_info.value)
+    assert "factorization_failed" in message
+    assert "nonfinite" not in message
+    if method == "auto":
+        assert "stage 1" in message
+        assert "stage 2" in message
 
 
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])

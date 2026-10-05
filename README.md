@@ -14,6 +14,13 @@ Starting from an ordinary point cloud, it estimates local covariance, inflates *
 - **N-Dimensional Support**: Works with n-dimensional ellipsoids, allowing for analysis in higher-dimensional spaces.
 - **Visualization**: Comes with helper functions to quickly visualize ellipse clouds using Matplotlib.
 
+For simplex-level anisotropic filtrations, `ellphi.cech(coefs)` computes the
+Čech time for several ellipsoids, while `ellphi.cech_grad(coefs)` also returns
+the gradient with respect to the packed coefficients. The default `method="auto"`
+tries the robust many-body route and records the selected method, convergence
+status, gap, iteration count, and any fallback stages in the result's `info`
+field.
+
 ## Installation
 
 Install from PyPI:
