@@ -172,15 +172,15 @@ def _validate_quadratic_matrices(matrices: np.ndarray) -> None:
 
 def _prepare_coefs(
     coefs: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Reconstruct centers and preserve exact completed-square offsets.
 
     A packed row encodes the constant as
     ``c = xbar.T @ A @ xbar + delta``. Computing ``delta`` from a
     far-translated row can therefore lose precision in the centered quadratic
-    term and its subtraction from ``c``. The returned ``value_roundoff`` is
-    the maximum of per-row bounds based on those computed terms and the actual
-    linear solve; the minimax value is a convex combination of row offsets.
+    term and its subtraction from ``c``. The returned per-row bounds are based
+    on those computed terms and the actual linear solve; the minimax value is a
+    convex combination of row offsets.
     Callers needing exact normalization at large translations should center
     their data first.
     """
@@ -188,7 +188,7 @@ def _prepare_coefs(
     _validate_quadratic_matrices(matrices)
     centers = np.empty_like(linear)
     offsets = np.empty_like(constants)
-    value_roundoff = 0.0
+    row_roundoff_bounds = np.empty_like(constants)
     for row, (matrix, vector, constant) in enumerate(zip(matrices, linear, constants)):
         try:
             inverse_times_linear = np.linalg.solve(matrix, vector)
@@ -213,8 +213,8 @@ def _prepare_coefs(
             )
         centers[row] = -inverse_times_linear
         offsets[row] = delta
-        value_roundoff = max(value_roundoff, row_roundoff)
-    return matrices, centers, offsets, float(value_roundoff)
+        row_roundoff_bounds[row] = row_roundoff
+    return matrices, centers, offsets, row_roundoff_bounds
 
 
 def _centered_constraint_values(
@@ -299,7 +299,7 @@ def cech(
         newton_tol=newton_tol,
         newton_max_iter=newton_max_iter,
     )
-    matrices, centers, offsets, value_roundoff = _prepare_coefs(coefs)
+    matrices, centers, offsets, row_roundoff_bounds = _prepare_coefs(coefs)
 
     result = solve_minimax(
         matrices,
@@ -342,17 +342,22 @@ def cech(
             "a larger max_iter or a different method may be chosen"
         )
     alpha = float(result.alpha)
-    constraint_scale = float(np.max(np.abs(values)))
-    scale = max(abs(alpha), constraint_scale)
+    support_indices = np.flatnonzero(result.weights > weight_tol)
+    support = tuple(int(i) for i in support_indices)
+    support_scale = float(np.max(np.abs(values[support_indices])))
+    scale = max(abs(alpha), support_scale)
+    # The accepted allowance is the mu-weighted sum of per-row bounds over support.
+    support_roundoff = float(
+        np.dot(result.weights[support_indices], row_roundoff_bounds[support_indices])
+    )
     negative_tolerance = max(
         _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * max(1.0, scale),
-        value_roundoff,
+        support_roundoff,
     )
     if alpha < -negative_tolerance:
         raise ValueError("packed quadrics have no common non-negative filtration scale")
     t_squared = float(max(alpha, 0.0))
     t = float(np.sqrt(max(0.0, t_squared)))
-    support = tuple(int(i) for i in np.flatnonzero(result.weights > weight_tol))
     active_threshold = active_tol * max(1.0, t_squared) + negative_tolerance
     active_set = tuple(
         int(i) for i in np.flatnonzero(t_squared - values <= active_threshold)
