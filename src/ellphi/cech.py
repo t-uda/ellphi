@@ -179,9 +179,9 @@ def _prepare_coefs(
     ``c = xbar.T @ A @ xbar + delta``. Computing ``delta`` from a
     far-translated or ill-conditioned row can therefore lose precision of
     order ``eps * cond2(A) * max(abs(c), abs(xbar.T @ A @ xbar))``. The
-    returned ``value_roundoff`` is the sum of these per-row bounds; callers
-    needing exact normalization at large translations should center their data
-    first.
+    returned ``value_roundoff`` is the maximum of these per-row bounds; the
+    minimax value is a convex combination of row offsets. Callers needing
+    exact normalization at large translations should center their data first.
     """
     matrices, linear, constants = unpack_conic(coefs)
     _validate_quadratic_matrices(matrices)
@@ -210,7 +210,7 @@ def _prepare_coefs(
             )
         centers[row] = -inverse_times_linear
         offsets[row] = delta
-        value_roundoff += row_roundoff
+        value_roundoff = max(value_roundoff, row_roundoff)
     return matrices, centers, offsets, float(value_roundoff)
 
 

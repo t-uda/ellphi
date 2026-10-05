@@ -35,7 +35,7 @@ def _relative_error(actual: np.ndarray | float, expected: np.ndarray | float) ->
 
 def _value_roundoff_bound(coefs: np.ndarray) -> float:
     matrices, linear, constants = unpack_conic(coefs)
-    return sum(
+    return max(
         64.0
         * np.finfo(float).eps
         * np.linalg.cond(matrix, 2)
@@ -241,6 +241,18 @@ def test_negative_packed_scale_raises():
         np.array([[0.0, 0.0], [2.0, 0.0]]), np.repeat(np.eye(2)[None], 2, axis=0)
     )
     coefs[:, -1] -= 2.0
+
+    with pytest.raises(
+        ValueError, match="packed quadrics have no common non-negative filtration scale"
+    ):
+        ellphi.cech(coefs)
+
+
+def test_negative_scale_roundoff_bound_does_not_grow_with_simplex_size():
+    k = 100
+    centers = np.repeat(np.array([[1e6, 0.0]]), k, axis=0)
+    coefs = coef_from_cov(centers, np.repeat(np.eye(2)[None], k, axis=0))
+    coefs[:, -1] = 1e12 - 0.5
 
     with pytest.raises(
         ValueError, match="packed quadrics have no common non-negative filtration scale"
