@@ -274,12 +274,21 @@ class TestFwBrentq:
 
     def test_large_alpha_uses_relative_gap(self):
         matrices, centers = _random_simplex(4, 2, seed=0)
-        scaled = solve_minimax(matrices * 1e-8, centers * 1e8, method="fw+brentq")
+        scaled_matrices = matrices * 1e-8
+        scaled_centers = centers * 1e8
+        scaled = solve_minimax(scaled_matrices, scaled_centers, method="fw+brentq")
 
-        gap = _constraint_gap(scaled, matrices * 1e-8, centers * 1e8)
-        assert gap <= 1e-9 * scaled.alpha
-        if gap > 1e-9:
-            assert gap > 1e-9
+        gap = _constraint_gap(scaled, scaled_matrices, scaled_centers)
+        assert scaled.converged
+        assert gap <= 1e-9 * max(1.0, abs(scaled.alpha))
+
+        old_absolute_accuracy = solve_minimax(
+            scaled_matrices,
+            scaled_centers,
+            method="fw+brentq",
+            tol=1e-9 / scaled.alpha,
+        )
+        assert not old_absolute_accuracy.converged
 
 
 # ---------------------------------------------------------------------------

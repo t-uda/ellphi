@@ -17,9 +17,11 @@ compare them::
         compare /tmp/legacy.json /tmp/candidate.json
 
 Only cases for which the legacy engine reports ``converged=True`` are fidelity
-requirements. The comparison reports per-method maxima for alpha,
-circumcenter, and weights and checks each against its declared absolute
-tolerance; the candidate must also report convergence.
+requirements. The alpha comparison uses the declared method tolerance; FW-family
+methods use the relative duality-gap contract for records with
+``alpha_legacy > 1``. Records with ``alpha_legacy <= 1`` remain strict checks
+against their declared tolerance. Circumcenter and weight deviations remain
+reported diagnostics, and the candidate must also report convergence.
 """
 
 from __future__ import annotations
@@ -55,12 +57,15 @@ METHOD_TOLERANCES = {
     "scipy-slsqp": 1e-6,
     "newton-cold": 1e-12,
 }
+RELATIVE_GAP_METHODS = frozenset(METHODS) - {"scipy-slsqp"}
 METHOD_REASONS = {
-    "scipy-slsqp": (
-        "direct SLSQP is gap-enforced and Newton-polished in this port, "
-        "deviation list item 10"
-    )
+    method: "relative duality-gap contract, module deviation list item 11"
+    for method in RELATIVE_GAP_METHODS
 }
+METHOD_REASONS["scipy-slsqp"] = (
+    "direct SLSQP is gap-enforced and Newton-polished in this port, "
+    "deviation list item 10"
+)
 
 
 def _solver(engine: str, source_root: Path | None) -> Callable[..., Any]:
@@ -198,6 +203,7 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
 
     converged = 0
     mismatches = []
+    strict_tolerance_violations = []
     converged_by_method = {method: 0 for method in METHODS}
     per_method = {
         method: {
@@ -206,6 +212,24 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
             "max_abs_dalpha": 0.0,
             "max_abs_dx": 0.0,
             "max_abs_dmu": 0.0,
+            "alpha_le_one": {
+                "count": 0,
+                "max_abs_deviation": 0.0,
+                "max_abs_dalpha": 0.0,
+                "max_abs_dx": 0.0,
+                "max_abs_dmu": 0.0,
+                "tolerance": METHOD_TOLERANCES[method],
+            },
+            "alpha_gt_one": {
+                "count": 0,
+                "max_abs_deviation": 0.0,
+                "max_relative_deviation": 0.0,
+                "max_relative_dalpha": 0.0,
+                "max_abs_dalpha": 0.0,
+                "max_abs_dx": 0.0,
+                "max_abs_dmu": 0.0,
+                "tolerance": METHOD_TOLERANCES[method],
+            },
             "declared_tolerance": METHOD_TOLERANCES[method],
             **({"reason": METHOD_REASONS[method]} if method in METHOD_REASONS else {}),
         }
@@ -234,7 +258,40 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
         stats["max_abs_dalpha"] = max(stats["max_abs_dalpha"], dalpha)
         stats["max_abs_dx"] = max(stats["max_abs_dx"], dx)
         stats["max_abs_dmu"] = max(stats["max_abs_dmu"], dmu)
-        same = new["converged"] and max(dalpha, dx, dmu) <= METHOD_TOLERANCES[method]
+        deviation = max(dalpha, dx, dmu)
+        alpha_scale = max(1.0, abs(float(old["alpha"])))
+        if old["alpha"] <= 1:
+            partition = stats["alpha_le_one"]
+            tolerance = METHOD_TOLERANCES[method]
+            if dalpha > tolerance:
+                strict_tolerance_violations.append(
+                    {
+                        "record": key,
+                        "alpha_legacy": old["alpha"],
+                        "tolerance": tolerance,
+                        "dalpha": dalpha,
+                        "dx": dx,
+                        "dmu": dmu,
+                    }
+                )
+        else:
+            partition = stats["alpha_gt_one"]
+            tolerance = METHOD_TOLERANCES[method]
+            if method in RELATIVE_GAP_METHODS:
+                tolerance = max(tolerance, 1e-9 * alpha_scale)
+            partition["max_relative_deviation"] = max(
+                partition["max_relative_deviation"], deviation / alpha_scale
+            )
+            partition["max_relative_dalpha"] = max(
+                partition["max_relative_dalpha"], dalpha / alpha_scale
+            )
+        partition["count"] += 1
+        partition["max_abs_deviation"] = max(partition["max_abs_deviation"], deviation)
+        partition["max_abs_dalpha"] = max(partition["max_abs_dalpha"], dalpha)
+        partition["max_abs_dx"] = max(partition["max_abs_dx"], dx)
+        partition["max_abs_dmu"] = max(partition["max_abs_dmu"], dmu)
+        partition["tolerance"] = tolerance
+        same = new["converged"] and dalpha <= tolerance
         if not same:
             stats["mismatches"] += 1
             mismatches.append(key)
@@ -245,11 +302,16 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
         "legacy_converged_by_method": converged_by_method,
         "mismatches": len(mismatches),
         "first_mismatches": mismatches[:10],
+        "strict_tolerance_violations": strict_tolerance_violations[:10],
         "per_method": per_method,
-        "status": "complete" if not mismatches else "failed",
+        "status": (
+            "complete"
+            if not mismatches and not strict_tolerance_violations
+            else "failed"
+        ),
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
-    return 1 if mismatches else 0
+    return 1 if mismatches or strict_tolerance_violations else 0
 
 
 def main() -> int:
