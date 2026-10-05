@@ -54,6 +54,12 @@ def _surrogate_diagnostics(result, matrices, centers):
     return gap, residual
 
 
+def _constraint_gap(result, matrices, centers):
+    diff = result.circumcenter[np.newaxis, :] - centers
+    values = np.einsum("ki,kij,kj->k", diff, matrices, diff)
+    return float(np.max(values) - result.weights @ values)
+
+
 @pytest.fixture(scope="module")
 def public_surrogate_results():
     matrices, centers = minimax_public_surrogate()
@@ -110,12 +116,12 @@ class TestPublicSurrogate:
         assert result.metadata is not None
         assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
 
-    def test_default_budget_reports_pairwise_fw_nonconvergence(self):
+    def test_default_budget_reports_pairwise_fw_newton_nonconvergence(self):
         matrices, centers = minimax_public_surrogate()
         result = solve_minimax(matrices, centers)
 
         assert not result.converged
-        assert result.method == "fw+brentq"
+        assert result.method == "fw+brentq+newton"
         assert result.metadata is not None
 
     def test_pairwise_fw_swaps_only_best_and_worst_weights(self):
@@ -172,10 +178,10 @@ class TestMethodDispatch:
         with pytest.raises(ValueError, match="k=0"):
             solve_minimax(np.zeros((0, 2, 2)), np.zeros((0, 2)), method=method)
 
-    def test_default_method_is_fw_brentq(self):
+    def test_default_method_is_fw_brentq_newton(self):
         matrices, centers = _random_simplex(2, 2)
         res = solve_minimax(matrices, centers)
-        assert res.method == "fw+brentq"
+        assert res.method == "fw+brentq+newton"
 
     @pytest.mark.parametrize("newton_tol", [np.nan, 0.0])
     def test_non_positive_or_non_finite_newton_tol_raises(self, newton_tol):
@@ -252,6 +258,28 @@ class TestFwBrentq:
         assert res.metadata is not None
         assert "line_search_evals" in res.metadata
         assert res.metadata["line_search_evals"] > 0
+
+    def test_relative_gap_is_scale_invariant(self):
+        matrices, centers = _random_simplex(4, 2, seed=0)
+        scaled_matrices = matrices * 1e-8
+        scaled_centers = centers * 1e8
+
+        result = solve_minimax(matrices, centers, method="fw+brentq")
+        scaled = solve_minimax(scaled_matrices, scaled_centers, method="fw+brentq")
+
+        assert result.converged
+        assert scaled.converged
+        assert result.active_set == scaled.active_set
+        assert scaled.alpha == pytest.approx(result.alpha * 1e8, rel=1e-9)
+
+    def test_large_alpha_uses_relative_gap(self):
+        matrices, centers = _random_simplex(4, 2, seed=0)
+        scaled = solve_minimax(matrices * 1e-8, centers * 1e8, method="fw+brentq")
+
+        gap = _constraint_gap(scaled, matrices * 1e-8, centers * 1e8)
+        assert gap <= 1e-9 * scaled.alpha
+        if gap > 1e-9:
+            assert gap > 1e-9
 
 
 # ---------------------------------------------------------------------------

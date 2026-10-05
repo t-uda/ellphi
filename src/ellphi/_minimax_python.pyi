@@ -34,7 +34,7 @@ def solve_minimax(
     centers: np.ndarray,
     *,
     offsets: np.ndarray | None = None,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = 1e-09,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,

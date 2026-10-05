@@ -29,7 +29,7 @@ class CechGrad(NamedTuple):
 def cech(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -43,7 +43,7 @@ def cech(
 def cech_grad(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,

@@ -41,6 +41,9 @@ from ellcech 82d13e3 in the following ways:
   ellcech 82d13e3 preserved the prior convergence flag in this case.
 * Direct ``scipy-slsqp`` is gap-enforced and Newton-polished when its initial
   result misses the requested global gap.
+* Frank-Wolfe gap convergence uses ``gap <= tol * max(1, abs(g_hat))``, where
+  ``gap = max_i gradient_i - g_hat`` and ``g_hat = dot(mu, gradient)``;
+  ellcech uses an absolute gap instead.
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
 ``unpack_conic`` and type annotations) or documentation. Distributed as part
@@ -434,6 +437,22 @@ def _dual_gradient(
     return f + shift_gradient * float(np.dot(xstar, xstar))
 
 
+def _fw_gap_and_scale(mu: np.ndarray, gradient: np.ndarray) -> tuple[float, float]:
+    """Return the Frank-Wolfe gap and its relative dual-value scale."""
+    dual_value = float(np.dot(mu, gradient))
+    gap = float(np.max(gradient) - dual_value)
+    scale = (
+        float(max(1.0, abs(dual_value))) if np.isfinite(dual_value) else float("nan")
+    )
+    return gap, scale
+
+
+def _fw_gap_converged(mu: np.ndarray, gradient: np.ndarray, tol: float) -> bool:
+    """Return whether the relative Frank-Wolfe gap meets ``tol``."""
+    gap, scale = _fw_gap_and_scale(mu, gradient)
+    return bool(np.isfinite(gap) and np.isfinite(scale) and gap <= tol * scale)
+
+
 def _regularized_dual_value(
     mu: np.ndarray,
     matrices: np.ndarray,
@@ -688,8 +707,7 @@ def _run_fw_bisect(
             if np.any(positive_mask):
                 v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
-        if fw_gap < tol:
+        if _fw_gap_converged(mu, gradient, tol):
             converged = True
             break
 
@@ -737,7 +755,7 @@ def _run_fw_bisect(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        converged = float(np.max(gradient) - np.dot(mu, gradient)) < tol
+        converged = _fw_gap_converged(mu, gradient, tol)
 
     return mu, converged, n_iter
 
@@ -808,8 +826,7 @@ def _run_fw_brentq(
             if np.any(positive_mask):
                 v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
-        if fw_gap < tol:
+        if _fw_gap_converged(mu, gradient, tol):
             converged = True
             break
 
@@ -858,7 +875,7 @@ def _run_fw_brentq(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        converged = float(np.max(gradient) - np.dot(mu, gradient)) < tol
+        converged = _fw_gap_converged(mu, gradient, tol)
 
     metadata = {
         "fw_iters": n_iter,
@@ -1434,8 +1451,7 @@ def _run_scipy_slsqp(
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
-    converged = bool(res.success) and np.isfinite(fw_gap) and fw_gap < tol
+    converged = bool(res.success) and _fw_gap_converged(mu, gradient, tol)
     return mu, converged, n_eval[0]
 
 
@@ -1500,8 +1516,7 @@ def _check_newton_convergence(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        fw_gap = float(np.max(gradient_check) - np.dot(mu, gradient_check))
-        if not np.isfinite(fw_gap) or fw_gap >= tol:
+        if not _fw_gap_converged(mu, gradient_check, tol):
             return False
         if len(active_set) <= 1:
             return True
@@ -1516,7 +1531,7 @@ def solve_minimax(
     centers: np.ndarray,
     *,
     offsets: np.ndarray | None = None,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = _DEFAULT_TOL,
     max_iter: int = _DEFAULT_MAX_ITER,
     weight_tol: float = _DEFAULT_WEIGHT_TOL,
@@ -1540,7 +1555,7 @@ def solve_minimax(
     Seven solver back-ends are available via ``method``:
 
     * ``"fw+bisect"``: Pairwise FW with 52-step bisection line search.
-    * ``"fw+brentq"`` (default): Pairwise FW with adaptive brentq line search.
+    * ``"fw+brentq"``: Pairwise FW with adaptive brentq line search.
     * ``"fw+bisect+newton"``: Pairwise FW(bisect) warm-start + Newton polishing.
     * ``"fw+brentq+newton"``: Pairwise FW(brentq) warm-start + damped Newton polishing.
     * ``"fw+bisect+damped-newton"``: Pairwise FW(bisect) + Armijo-damped Newton.
@@ -1559,7 +1574,8 @@ def solve_minimax(
         offsets: Optional additive constants ``delta_i``, shape ``(k,)``.
             ``None`` is the original zero-offset problem.
         method: One of the seven canonical method names above.
-        tol: Pairwise Frank-Wolfe gap tolerance for the FW-based methods.
+        tol: Pairwise Frank-Wolfe gap tolerance for the FW-based methods,
+            relative to max(1, |dual value|).
         max_iter: Maximum number of Frank-Wolfe iterations.
         weight_tol: Threshold defining the weight support ``active_set``. It
             also selects the face used by Newton polishing.

@@ -41,18 +41,17 @@ strict complementarity (ND1), they coincide. For three unit balls centred at
 `(0, 0)`, `(2, 0)`, and `(0, 2)`, the point is `(1, 1)`, support has
 two indices, and `active_set` has three. A solver that does not converge or
 produces non-finite output raises `RuntimeError` naming its method, iterations,
-final duality gap, and `tol`.
+final duality gap, `tol`, and the scale used for the relative gap test.
 
-The default solver is `fw+brentq`, pairwise Frank-Wolfe on the dual simplex
-with an adaptive Brent line search. Each step selects the best vertex (largest
-constraint value) and the worst active vertex (smallest constraint value), then
-swaps mass along `e_s - e_v` with step at most `mu[v]`; this is ellcech's
-original step. On the bundled surrogate, the near-tight zero-weight vertex 4
-keeps re-entering as the swap target, so the all-index gap can stall; this is
-recorded in the test factory because it explains why pairwise FW may not
-converge within the default budget. A non-converged
-public solve raises `RuntimeError` with the method, iterations, final duality
-gap, and `tol`; callers may choose a larger `max_iter` or a different `method`.
+The default solver is `fw+brentq+newton`, pairwise Frank-Wolfe on the dual
+simplex with an adaptive Brent line search followed by Newton polishing. Each
+Frank-Wolfe step selects the best vertex (largest constraint value) and the
+worst active vertex (smallest constraint value), then swaps mass along
+`e_s - e_v` with step at most `mu[v]`. Its gap tolerance is relative to
+`max(1, |dual value|)`. On the bundled surrogate, the near-tight zero-weight
+vertex 4 keeps re-entering as the swap target, so the all-index gap can stall;
+the default `fw+brentq+newton` therefore remains non-convergent within the
+default budget. Callers may choose a larger `max_iter` or a different `method`.
 
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.

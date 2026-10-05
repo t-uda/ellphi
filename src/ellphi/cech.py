@@ -229,7 +229,7 @@ def _centered_constraint_values(
 def cech(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -248,11 +248,10 @@ def cech(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default is
-            ``"fw+brentq"``, pairwise Frank-Wolfe on the dual simplex: each
-            step swaps mass from the worst active vertex to the best vertex
-            along ``e_s - e_v``, with step at most ``mu[v]``, using adaptive
-            Brent line search. This is ellcech's original step.
-        tol: Pairwise Frank-Wolfe gap tolerance.
+            ``"fw+brentq+newton"``, pairwise Frank-Wolfe with adaptive Brent
+            line search followed by Newton polishing.
+        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
+            value|).
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set`` as the
@@ -324,12 +323,19 @@ def cech(
         if finite and finite_values
         else float("nan")
     )
+    dual_value = (
+        float(np.dot(result.weights, values))
+        if finite and finite_values
+        else float("nan")
+    )
+    gap_scale = max(1.0, abs(dual_value)) if np.isfinite(dual_value) else float("nan")
     if not result.converged or not finite or not finite_values:
         reason = "did not converge" if not result.converged else "was non-finite"
         raise RuntimeError(
             "cech "
             f"{reason}: method={result.method!r}, iterations={result.n_iter}, "
-            f"duality_gap={final_gap:.17g}, tol={tol:g}; "
+            f"duality_gap={final_gap:.17g}, tol={tol:g}, "
+            f"duality_gap_scale={gap_scale:.17g}; "
             "a larger max_iter or a different method may be chosen"
         )
     alpha = float(result.alpha)
@@ -361,7 +367,7 @@ def cech(
 def cech_grad(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+brentq",
+    method: MethodName | str = "fw+brentq+newton",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -399,11 +405,10 @@ def cech_grad(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default is
-            ``"fw+brentq"``, pairwise Frank-Wolfe on the dual simplex: each
-            step swaps mass from the worst active vertex to the best vertex
-            along ``e_s - e_v``, with step at most ``mu[v]``, using adaptive
-            Brent line search. This is ellcech's original step.
-        tol: Pairwise Frank-Wolfe gap tolerance.
+            ``"fw+brentq+newton"``, pairwise Frank-Wolfe with adaptive Brent
+            line search followed by Newton polishing.
+        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
+            value|).
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set``.

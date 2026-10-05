@@ -535,6 +535,8 @@ class TestNumericalStabilityControls:
         )
         raw_gap = float(np.max(f) - np.dot(mu, f))
         stabilized_gap = float(np.max(gradient) - np.dot(mu, gradient))
+        stabilized_dual = float(np.dot(mu, gradient))
+        relative_tol = stabilized_gap / (100.0 * max(1.0, abs(stabilized_dual)))
 
         assert raw_gap < 1.0
         assert stabilized_gap > 1.0
@@ -550,7 +552,7 @@ class TestNumericalStabilityControls:
                 centers,
                 offsets,
                 mu.copy(),
-                tol=stabilized_gap / 100.0,
+                tol=relative_tol,
                 max_iter=1,
                 weight_tol=1e-10,
                 **kwargs,

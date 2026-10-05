@@ -199,7 +199,7 @@ def test_scaled_centres_from_cov_are_accepted():
         ]
     )
 
-    result = ellphi.cech(coef_from_cov(centers, covariances))
+    result = ellphi.cech(coef_from_cov(centers, covariances), method="fw+brentq")
 
     assert np.isfinite(result.t)
     assert result.active_set == (0, 1)
@@ -466,9 +466,10 @@ def test_public_surrogate_default_raises_with_honest_gap():
         ellphi.cech(coefs)
 
     message = str(exc_info.value)
-    assert "method='fw+brentq'" in message
+    assert "method='fw+brentq+newton'" in message
     assert "duality_gap=" in message
     assert "tol=1e-09" in message
+    assert "duality_gap_scale=" in message
 
 
 def test_public_surrogate_fw_brentq_converges_with_large_budget():
