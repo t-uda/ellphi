@@ -44,7 +44,7 @@ def solve_minimax(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> MinimaxResult:
-    """Solve the dual with plain FW and a robust SLSQP/Newton fallback."""
+    """Solve the dual with the selected minimax method."""
     ...
 
 def solve_minimax_from_coefs(

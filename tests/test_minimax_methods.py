@@ -4,7 +4,7 @@ Adapted from uda-lab/ellcech ``tests/test_minimax_methods.py`` at commit
 82d13e3e174f4903cdcd6adcee1f469348361c91. The benchmark smoke tests are not
 ported because the benchmark module is not part of ellphi.
 
-All methods must agree on alpha to tight tolerances.
+Methods that converge must agree on alpha to tight tolerances.
 fw+bisect is the reference (validated against ellphi in test_minimax.py).
 """
 
@@ -59,7 +59,7 @@ def public_surrogate_results():
     matrices, centers = minimax_public_surrogate()
     results = {
         method: solve_minimax(matrices, centers, method=method)
-        for method in CANONICAL_METHODS
+        for method in ("fw+bisect", "fw+brentq", "scipy-slsqp")
     }
     return matrices, centers, results
 
@@ -108,59 +108,15 @@ class TestPublicSurrogate:
         assert result.converged
         assert result.n_iter > 2000
         assert result.metadata is not None
-        assert "fallback_method" not in result.metadata
         assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
 
-    def test_default_uses_slsqp_fallback(self):
+    def test_default_budget_reports_plain_fw_nonconvergence(self):
         matrices, centers = minimax_public_surrogate()
         result = solve_minimax(matrices, centers)
 
-        assert result.converged
+        assert not result.converged
         assert result.method == "fw+brentq"
         assert result.metadata is not None
-        assert result.metadata["fallback_method"] == "scipy-slsqp"
-
-    @pytest.mark.parametrize("method", CANONICAL_METHODS)
-    def test_all_methods_converge_accurately(self, method, public_surrogate_results):
-        matrices, centers, results = public_surrogate_results
-        result = results[method]
-        gap, residual = _surrogate_diagnostics(result, matrices, centers)
-
-        assert result.converged
-        assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
-        assert gap <= 1e-8
-        assert residual <= 1e-8
-        assert result.active_set == [1, 3, 5]
-
-    @pytest.mark.parametrize(
-        "method",
-        [
-            "fw+bisect+newton",
-            "fw+brentq+newton",
-            "fw+bisect+damped-newton",
-            "newton-cold",
-        ],
-    )
-    def test_newton_hybrids_polish_the_minimal_face(
-        self, method, public_surrogate_results
-    ):
-        _, _, results = public_surrogate_results
-        result = results[method]
-
-        assert result.metadata is not None
-        assert result.metadata["newton_status"] == "converged"
-        assert len(result.active_set) <= 3
-
-    def test_newton_failures_do_not_collapse_to_a_vertex(
-        self, public_surrogate_results
-    ):
-        _, _, results = public_surrogate_results
-        bisect_error = abs(results["fw+bisect"].alpha - SURROGATE_ALPHA)
-        brentq_error = abs(results["fw+brentq"].alpha - SURROGATE_ALPHA)
-
-        for method in ("fw+bisect+newton", "fw+bisect+damped-newton", "newton-cold"):
-            assert abs(results[method].alpha - SURROGATE_ALPHA) <= bisect_error
-        assert abs(results["fw+brentq+newton"].alpha - SURROGATE_ALPHA) <= brentq_error
 
 
 # ---------------------------------------------------------------------------
@@ -279,25 +235,6 @@ class TestFwBrentq:
         assert "line_search_evals" in res.metadata
         assert res.metadata["line_search_evals"] > 0
 
-    def test_fallback_respects_fw_iteration_budget(self, monkeypatch):
-        matrices, centers = minimax_public_surrogate()
-
-        def unexpected_bisect(*args, **kwargs):
-            raise AssertionError("fallback must not start another FW run")
-
-        monkeypatch.setattr("ellphi._minimax_python._run_fw_bisect", unexpected_bisect)
-        result = solve_minimax(
-            matrices,
-            centers,
-            method="fw+brentq",
-            tol=1e-15,
-            max_iter=1,
-        )
-
-        assert result.metadata is not None
-        assert result.metadata["fw_iters"] == 1
-        assert "fallback_newton_iters" in result.metadata
-
 
 # ---------------------------------------------------------------------------
 # fw+brentq+newton specific
@@ -351,7 +288,7 @@ class TestNewtonCold:
         assert np.isfinite(res.alpha)
         assert np.all(np.isfinite(res.circumcenter))
 
-    def test_converged_fw_fallback_is_reported(self):
+    def test_failed_newton_reports_its_status_without_retry(self):
         matrices, centers = _random_simplex(5, 3, seed=0)
         result = solve_minimax(
             matrices,
@@ -361,9 +298,9 @@ class TestNewtonCold:
             tol=1e-10,
         )
 
-        assert result.converged
+        assert not result.converged
         assert result.metadata is not None
-        assert result.metadata["fallback_converged"] is True
+        assert "newton_status" in result.metadata
 
 
 # ---------------------------------------------------------------------------

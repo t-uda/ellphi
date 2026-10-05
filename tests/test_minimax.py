@@ -839,7 +839,7 @@ def test_unnormalized_pairwise_coefs_match_tangency(solver_backend, rng, dim):
         coefs[:, -1] += rng.uniform(0.1, 1.0, size=2)
 
         pairwise = ellphi.tangency(coefs[0], coefs[1], backend=solver_backend)
-        res = solve_minimax_from_coefs(coefs, tol=1e-11)
+        res = solve_minimax_from_coefs(coefs, method="scipy-slsqp", tol=1e-11)
 
         assert res.converged
         assert res.alpha == pytest.approx(pairwise.t**2, rel=1e-9)

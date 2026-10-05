@@ -336,19 +336,17 @@ def test_singleton_and_empty_cech_input():
         ellphi.cech(np.empty((0, coefs.shape[1])))
 
 
-def test_non_convergence_raises_with_diagnostics(monkeypatch):
+def test_non_convergence_raises_with_gap_and_retry_guidance():
     coefs = _random_coefs(5, 3, seed=101)
-    monkeypatch.setattr(
-        "ellphi._minimax_python._run_slsqp_fallback",
-        lambda mu, *args, **kwargs: (mu, False, 0, 0),
-    )
     with pytest.raises(RuntimeError) as exc_info:
         ellphi.cech(coefs, method="fw+bisect", max_iter=1, tol=1e-15)
 
     message = str(exc_info.value)
     assert "method='fw+bisect'" in message
-    assert "n_iter=1" in message
-    assert "diagnostics=" in message
+    assert "iterations=1" in message
+    assert "duality_gap=" in message
+    assert "tol=1e-15" in message
+    assert "larger max_iter or a different method" in message
 
 
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
@@ -367,18 +365,19 @@ def test_public_api_rejects_private_stabilization_controls(api, name, value):
         api(coefs, **{name: value})
 
 
-def test_public_newton_cold_returns_a_successful_fw_fallback():
-    coefs = _random_coefs(5, 3, seed=0)
+def test_public_newton_cold_reports_nonconvergence_without_retry():
+    matrices, centers = minimax_public_surrogate()
+    linear = -np.einsum("kij,kj->ki", matrices, centers)
+    constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
+    coefs = pack_conic(matrices, linear, constants)
 
-    result = ellphi.cech(
-        coefs,
-        method="newton-cold",
-        newton_max_iter=1,
-        tol=1e-10,
-    )
+    engine_result = solve_minimax(matrices, centers, method="newton-cold")
+    assert not engine_result.converged
+    assert engine_result.metadata is not None
+    assert "newton_status" in engine_result.metadata
 
-    assert np.isfinite(result.t)
-    assert result.active_set
+    with pytest.raises(RuntimeError, match="duality_gap="):
+        ellphi.cech(coefs, method="newton-cold")
 
 
 @pytest.mark.parametrize("k,d,seed", [(3, 2, 201), (4, 2, 203)])
@@ -441,16 +440,40 @@ def test_unnormalized_constant_agrees_with_expected(api):
     assert result.active_set == (0, 1)
 
 
-@pytest.mark.parametrize("method", list(get_args(MethodName)))
-def test_public_surrogate_methods(method):
+def _public_surrogate_coefs():
     matrices, centers = minimax_public_surrogate()
     linear = -np.einsum("kij,kj->ki", matrices, centers)
     constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
-    coefs = pack_conic(matrices, linear, constants)
+    return pack_conic(matrices, linear, constants)
 
-    result = ellphi.cech(coefs, method=method)
 
-    assert result.t**2 == pytest.approx(0.9024444260258915, rel=1e-8)
+def test_public_surrogate_default_raises_with_honest_gap():
+    coefs = _public_surrogate_coefs()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ellphi.cech(coefs)
+
+    message = str(exc_info.value)
+    assert "method='fw+brentq'" in message
+    assert "duality_gap=" in message
+    assert "tol=1e-09" in message
+
+
+def test_public_surrogate_fw_brentq_converges_with_large_budget():
+    coefs = _public_surrogate_coefs()
+
+    result = ellphi.cech(coefs, method="fw+brentq", max_iter=20000)
+
+    assert result.t**2 == pytest.approx(0.9024444260, abs=1e-8)
+    assert result.support == (1, 3, 5)
+
+
+def test_public_surrogate_slsqp_converges_at_default_budget():
+    coefs = _public_surrogate_coefs()
+
+    result = ellphi.cech(coefs, method="scipy-slsqp")
+
+    assert result.t**2 == pytest.approx(0.9024444260, abs=1e-8)
     assert result.support == (1, 3, 5)
 
 

@@ -247,9 +247,8 @@ def cech(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method. The default uses plain
-            Frank-Wolfe with an SLSQP/Newton fallback if that phase exhausts
-            its budget.
+        method: Internal many-body solver method. The default is
+            ``"fw+brentq"``, plain Frank-Wolfe with adaptive Brent line search.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
@@ -273,7 +272,8 @@ def cech(
             Packed input requires
             ``d >= 2``, as for :func:`ellphi.tangency`.
         RuntimeError: If the internal solver does not converge or produces a
-            non-finite output.  Solver diagnostics are included in the error.
+            non-finite output. The error names the method, iterations, final
+            duality gap, and ``tol`` and gives retry guidance.
     """
     coefs = np.asarray(coefs, dtype=float)
     if coefs.ndim != 2:
@@ -312,22 +312,22 @@ def cech(
         and np.all(np.isfinite(result.circumcenter))
         and np.all(np.isfinite(result.weights))
     )
-    if not result.converged or not finite:
-        reason = "did not converge" if not result.converged else "was non-finite"
-        raise RuntimeError(
-            "cech "
-            f"{reason}: method={result.method!r}, n_iter={result.n_iter}, "
-            f"diagnostics={result.metadata!r}"
-        )
-
     values = _centered_constraint_values(
         result.circumcenter, matrices, centers, offsets
     )
-    if not np.all(np.isfinite(values)):
+    finite_values = np.all(np.isfinite(values))
+    final_gap = (
+        float(np.max(values) - np.dot(result.weights, values))
+        if finite and finite_values
+        else float("nan")
+    )
+    if not result.converged or not finite or not finite_values:
+        reason = "did not converge" if not result.converged else "was non-finite"
         raise RuntimeError(
-            "cech was non-finite: "
-            f"method={result.method!r}, n_iter={result.n_iter}, "
-            f"diagnostics={result.metadata!r}"
+            "cech "
+            f"{reason}: method={result.method!r}, iterations={result.n_iter}, "
+            f"duality_gap={final_gap:.17g}, tol={tol:g}; "
+            "a larger max_iter or a different method may be chosen"
         )
     alpha = float(result.alpha)
     constraint_scale = float(np.max(np.abs(values)))
@@ -395,9 +395,8 @@ def cech_grad(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method. The default uses plain
-            Frank-Wolfe with an SLSQP/Newton fallback if that phase exhausts
-            its budget.
+        method: Internal many-body solver method. The default is
+            ``"fw+brentq"``, plain Frank-Wolfe with adaptive Brent line search.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.

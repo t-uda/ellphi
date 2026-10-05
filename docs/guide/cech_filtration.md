@@ -40,17 +40,16 @@ Up to numerical tolerance, `support` is a subset of `active_set`; under
 strict complementarity (ND1), they coincide. For three unit balls centred at
 `(0, 0)`, `(2, 0)`, and `(0, 2)`, the point is `(1, 1)`, support has
 two indices, and `active_set` has three. A solver that does not converge or
-produces non-finite output raises `RuntimeError` with its diagnostics.
+produces non-finite output raises `RuntimeError` naming its method, iterations,
+final duality gap, and `tol`.
 
-The default solver uses plain Frank-Wolfe on the dual simplex with an adaptive
-Brent line search. On the bundled surrogate, a zero-weight constraint is
-nearly tight, so the all-index gap can stall while weight leaks onto that
-vertex; the rank-deficient face is better handled by the primal fallback. An
-exhausted FW phase therefore starts SLSQP from its current weights. If SLSQP
-still misses the requested gap, Newton polishes the thresholded face without
-consuming additional FW iterations. Newton-bearing method variants
-subsequently apply their requested polish. Every accepted result is checked
-against the all-index stabilised FW gap.
+The default solver is `fw+brentq`, plain Frank-Wolfe on the dual simplex with
+an adaptive Brent line search. On the bundled surrogate, a zero-weight
+constraint is nearly tight, so the all-index gap can stall while weight leaks
+onto that vertex; this is recorded in the test factory because it explains
+why plain FW may not converge within the default budget. A non-converged
+public solve raises `RuntimeError` with the method, iterations, final duality
+gap, and `tol`; callers may choose a larger `max_iter` or a different `method`.
 
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.

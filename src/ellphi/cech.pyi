@@ -37,7 +37,7 @@ def cech(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechResult:
-    """Compute the Čech time with the robust FW/SLSQP/Newton default."""
+    """Compute the Čech time with the default ``fw+brentq`` method."""
     ...
 
 def cech_grad(
@@ -51,5 +51,5 @@ def cech_grad(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechGrad:
-    """Compute the Čech time and gradient with the robust default solver."""
+    """Compute the Čech time and gradient with the default ``fw+brentq`` method."""
     ...
