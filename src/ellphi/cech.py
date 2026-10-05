@@ -229,7 +229,7 @@ def _centered_constraint_values(
 def cech(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -247,7 +247,9 @@ def cech(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method.
+        method: Internal many-body solver method. The default uses adaptive
+            away-step Frank-Wolfe with an SLSQP fallback if that phase
+            exhausts its budget.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
@@ -356,7 +358,7 @@ def cech(
 def cech_grad(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -393,7 +395,9 @@ def cech_grad(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method.
+        method: Internal many-body solver method. The default uses adaptive
+            away-step Frank-Wolfe with an SLSQP fallback if that phase
+            exhausts its budget.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.

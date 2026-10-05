@@ -40,6 +40,15 @@ from ellcech 82d13e3 in the following ways:
   this can increase the step count without changing the accepted result.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
+* The Frank-Wolfe runners use the away-step Frank-Wolfe method of
+  Lacoste-Julien and Jaggi (2015) over the simplex, with exact drop steps,
+  instead of ellcech's plain Frank-Wolfe updates. This removes non-optimal
+  vertices from the active face and avoids the sublinear
+  support-identification bottleneck of the original method.
+* An exhausted away-step run falls back to SLSQP, starting from the AFW
+  iterate. Hybrid methods then polish the fallback's thresholded face. This
+  makes the default ``fw+brentq`` path robust when AFW has not identified the
+  optimal face within its iteration budget.
 
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
@@ -445,9 +454,8 @@ def _regularized_dual_value(
 
 
 def _exact_line_search(
-    s: int,
-    v: int,
     mu: np.ndarray,
+    direction: np.ndarray,
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
@@ -458,18 +466,16 @@ def _exact_line_search(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> float:
-    """Find gamma* in [0, gamma_max] that maximises g along the pairwise direction.
+    """Find gamma* in [0, gamma_max] that maximises g along ``direction``.
 
     Bisects on the stabilized dual directional derivative
-    ``h(gamma) = grad_s - grad_v``.
+    ``h(gamma) = dot(gradient(mu + gamma * direction), direction)``.
     """
     if gamma_max <= 0.0:
         return 0.0
 
     def h(gamma: float) -> float:
-        mu_g = mu.copy()
-        mu_g[s] += gamma
-        mu_g[v] -= gamma
+        mu_g = mu + gamma * direction
         x_g, f_g = _eval_f(
             mu_g,
             matrices,
@@ -492,7 +498,7 @@ def _exact_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(gradient_g[s] - gradient_g[v])
+        return float(np.dot(gradient_g, direction))
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -520,9 +526,8 @@ def _ensure_finite(value: float, label: str) -> float:
 
 
 def _brentq_line_search(
-    s: int,
-    v: int,
     mu: np.ndarray,
+    direction: np.ndarray,
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
@@ -545,9 +550,7 @@ def _brentq_line_search(
 
     def h(gamma: float) -> float:
         n_fevals[0] += 1
-        mu_g = mu.copy()
-        mu_g[s] += gamma
-        mu_g[v] -= gamma
+        mu_g = mu + gamma * direction
         x_g, f_g = _eval_f(
             mu_g,
             matrices,
@@ -570,7 +573,7 @@ def _brentq_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(gradient_g[s] - gradient_g[v])
+        return float(np.dot(gradient_g, direction))
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -609,6 +612,44 @@ def _brentq_line_search(
 # ---------------------------------------------------------------------------
 
 
+def _afw_direction(
+    mu: np.ndarray, gradient: np.ndarray
+) -> tuple[np.ndarray, float, int | None]:
+    """Return the away-step Frank-Wolfe direction and feasible step bound."""
+    s = int(np.argmax(gradient))
+    mean_gradient = float(np.dot(mu, gradient))
+    fw_gap = float(gradient[s] - mean_gradient)
+
+    positive = mu > 0.0
+    a = int(np.argmin(np.where(positive, gradient, np.inf)))
+    away_gap = float(mean_gradient - gradient[a])
+    if away_gap > fw_gap:
+        direction = mu.copy()
+        direction[a] -= 1.0
+        gamma_max = float(mu[a] / (1.0 - mu[a]))
+        return direction, gamma_max, a
+
+    direction = -mu.copy()
+    direction[s] += 1.0
+    return direction, 1.0, None
+
+
+def _take_afw_step(
+    mu: np.ndarray,
+    direction: np.ndarray,
+    gamma: float,
+    gamma_max: float,
+    away_index: int | None,
+) -> np.ndarray:
+    """Apply an AFW step, preserving an exact zero on an away drop step."""
+    updated = mu + gamma * direction
+    if away_index is not None and gamma == gamma_max:
+        updated[away_index] = 0.0
+    updated = np.clip(updated, 0.0, None)
+    updated /= updated.sum()
+    return updated
+
+
 def _run_fw_bisect(
     matrices: np.ndarray,
     Ax: np.ndarray,
@@ -623,7 +664,7 @@ def _run_fw_bisect(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int]:
-    """Pairwise Frank-Wolfe with exact bisection line search.
+    """Away-step Frank-Wolfe with exact bisection line search.
 
     Returns:
         (mu, converged, n_iter)
@@ -656,28 +697,15 @@ def _run_fw_bisect(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-        s = int(np.argmax(gradient))
-        active_mask = mu > weight_tol
-        if not np.any(active_mask):
-            active_mask = np.ones_like(mu, dtype=bool)
-        gradient_active = np.where(active_mask, gradient, np.inf)
-        v = int(np.argmin(gradient_active))
-        if s == v:
-            positive_mask = mu > 0.0
-            positive_mask[s] = False
-            if np.any(positive_mask):
-                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
-
         fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
 
-        gamma_max = float(mu[v])
+        direction, gamma_max, away_index = _afw_direction(mu, gradient)
         gamma = _exact_line_search(
-            s,
-            v,
             mu,
+            direction,
             matrices,
             Ax,
             centers,
@@ -688,11 +716,7 @@ def _run_fw_bisect(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-        mu = mu.copy()
-        mu[s] += gamma
-        mu[v] -= gamma
-        mu = np.clip(mu, 0.0, None)
-        mu /= mu.sum()
+        mu = _take_afw_step(mu, direction, gamma, gamma_max, away_index)
 
     if not converged:
         xstar, f = _eval_f(
@@ -736,7 +760,7 @@ def _run_fw_brentq(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int, dict]:
-    """Pairwise Frank-Wolfe with brentq line search.
+    """Away-step Frank-Wolfe with brentq line search.
 
     Returns:
         (mu, converged, n_iter, metadata)
@@ -772,28 +796,15 @@ def _run_fw_brentq(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-        s = int(np.argmax(gradient))
-        active_mask = mu > weight_tol
-        if not np.any(active_mask):
-            active_mask = np.ones_like(mu, dtype=bool)
-        gradient_active = np.where(active_mask, gradient, np.inf)
-        v = int(np.argmin(gradient_active))
-        if s == v:
-            positive_mask = mu > 0.0
-            positive_mask[s] = False
-            if np.any(positive_mask):
-                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
-
         fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
 
-        gamma_max = float(mu[v])
+        direction, gamma_max, away_index = _afw_direction(mu, gradient)
         gamma, ls_evals = _brentq_line_search(
-            s,
-            v,
             mu,
+            direction,
             matrices,
             Ax,
             centers,
@@ -805,11 +816,7 @@ def _run_fw_brentq(
         )
         total_line_search_evals += ls_evals
 
-        mu = mu.copy()
-        mu[s] += gamma
-        mu[v] -= gamma
-        mu = np.clip(mu, 0.0, None)
-        mu /= mu.sum()
+        mu = _take_afw_step(mu, direction, gamma, gamma_max, away_index)
 
     if not converged:
         xstar, f = _eval_f(
@@ -1338,6 +1345,7 @@ def _run_scipy_slsqp(
     offsets: np.ndarray | None,
     k: int,
     *,
+    initial_weights: np.ndarray | None = None,
     regularization: float,
     condition_number_limit: float | None,
     max_conditioning_steps: int,
@@ -1364,7 +1372,11 @@ def _run_scipy_slsqp(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-    x0 = np.full(k, 1.0 / k)
+    x0 = (
+        np.full(k, 1.0 / k)
+        if initial_weights is None
+        else np.asarray(initial_weights, dtype=float).copy()
+    )
     bounds = [(0.0, None)] * k
 
     res = minimize(
@@ -1383,6 +1395,73 @@ def _run_scipy_slsqp(
         mu /= s
 
     return mu, bool(res.success), n_eval[0]
+
+
+def _run_slsqp_fallback(
+    mu: np.ndarray,
+    matrices: np.ndarray,
+    Ax: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray | None,
+    *,
+    tol: float,
+    regularization: float,
+    condition_number_limit: float | None,
+    max_conditioning_steps: int,
+) -> tuple[np.ndarray, bool, int, int]:
+    """Run SLSQP from an exhausted AFW iterate and enforce the global gap."""
+    fallback_mu, slsqp_converged, n_eval = _run_scipy_slsqp(
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        len(mu),
+        initial_weights=mu,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    xstar, f = _eval_f(
+        fallback_mu,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    gradient = _dual_gradient(
+        fallback_mu,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        xstar,
+        f,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    fw_gap = float(np.max(gradient) - np.dot(fallback_mu, gradient))
+    converged = slsqp_converged and np.isfinite(fw_gap) and fw_gap < tol
+    if converged:
+        return fallback_mu, True, n_eval, 0
+
+    fallback_mu, converged, n_refine = _run_fw_bisect(
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        fallback_mu,
+        tol=tol,
+        max_iter=_DEFAULT_MAX_ITER,
+        weight_tol=0.0,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    return fallback_mu, converged, n_eval, n_refine
 
 
 # ---------------------------------------------------------------------------
@@ -1462,7 +1541,7 @@ def solve_minimax(
     centers: np.ndarray,
     *,
     offsets: np.ndarray | None = None,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = _DEFAULT_TOL,
     max_iter: int = _DEFAULT_MAX_ITER,
     weight_tol: float = _DEFAULT_WEIGHT_TOL,
@@ -1485,8 +1564,8 @@ def solve_minimax(
 
     Seven solver back-ends are available via ``method``:
 
-    * ``"fw+bisect"`` (default): Pairwise FW with 52-step bisection line search.
-    * ``"fw+brentq"``: Pairwise FW with adaptive brentq line search.
+    * ``"fw+bisect"``: Away-step FW with 52-step bisection line search.
+    * ``"fw+brentq"`` (default): Away-step FW with adaptive brentq line search.
     * ``"fw+bisect+newton"``: FW(bisect) warm-start + Newton polishing.
     * ``"fw+brentq+newton"``: FW(brentq) warm-start + damped Newton polishing.
     * ``"fw+bisect+damped-newton"``: FW(bisect) + Armijo-damped Newton.
@@ -1495,6 +1574,11 @@ def solve_minimax(
 
     The legacy name ``"fw+newton"`` is accepted as an alias for
     ``"fw+bisect+newton"`` with a deprecation warning.
+
+    If an AFW phase exhausts ``max_iter``, it falls back to SLSQP from the
+    current weights. Newton hybrids polish the fallback's thresholded face.
+    The all-index stabilised FW gap is rechecked before fallback convergence
+    is accepted.
 
     Args:
         matrices: SPD matrices ``A_i``, shape ``(k, d, d)``, or ``(d, d)`` for
@@ -1625,17 +1709,73 @@ def solve_minimax(
             matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         metadata["fw_iters"] = n_iter
+        if not converged:
+            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            n_iter += n_eval + n_refine
+            metadata["fallback_method"] = "scipy-slsqp"
+            metadata["fallback_n_fevals"] = n_eval
+            metadata["fallback_refinement_fw_iters"] = n_refine
+            metadata["fallback_converged"] = converged
 
     elif method == "fw+brentq":
         mu, converged, n_iter, meta_fw = _run_fw_brentq(
             matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
         metadata.update(meta_fw)
+        if not converged:
+            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            n_iter += n_eval + n_refine
+            metadata["fallback_method"] = "scipy-slsqp"
+            metadata["fallback_n_fevals"] = n_eval
+            metadata["fallback_refinement_fw_iters"] = n_refine
+            metadata["fallback_converged"] = converged
 
     elif method == "fw+bisect+newton":
         mu, converged, n_iter_fw = _run_fw_bisect(
             matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
+        fallback_meta: dict[str, Any] = {}
+        if not converged:
+            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            fallback_meta = {
+                "fallback_method": "scipy-slsqp",
+                "fallback_n_fevals": n_eval,
+                "fallback_refinement_fw_iters": n_refine,
+                "fallback_converged": converged,
+            }
+        else:
+            n_eval = 0
+            n_refine = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _newton_polish(
             mu,
@@ -1651,7 +1791,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1669,12 +1809,35 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         metadata["fw_iters"] = n_iter_fw
+        metadata.update(fallback_meta)
         metadata.update(meta_newton)
 
     elif method == "fw+brentq+newton":
         mu, converged, n_iter_fw, meta_fw = _run_fw_brentq(
             matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
+        fallback_meta = {}
+        if not converged:
+            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            fallback_meta = {
+                "fallback_method": "scipy-slsqp",
+                "fallback_n_fevals": n_eval,
+                "fallback_refinement_fw_iters": n_refine,
+                "fallback_converged": converged,
+            }
+        else:
+            n_eval = 0
+            n_refine = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
             mu,
@@ -1690,7 +1853,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1708,12 +1871,35 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         metadata.update(meta_fw)
+        metadata.update(fallback_meta)
         metadata.update(meta_newton)
 
     elif method == "fw+bisect+damped-newton":
         mu, converged, n_iter_fw = _run_fw_bisect(
             matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
         )
+        fallback_meta = {}
+        if not converged:
+            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+                mu,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            fallback_meta = {
+                "fallback_method": "scipy-slsqp",
+                "fallback_n_fevals": n_eval,
+                "fallback_refinement_fw_iters": n_refine,
+                "fallback_converged": converged,
+            }
+        else:
+            n_eval = 0
+            n_refine = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
             mu,
@@ -1729,7 +1915,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1747,12 +1933,13 @@ def solve_minimax(
             max_conditioning_steps=max_conditioning_steps,
         )
         metadata["fw_iters"] = n_iter_fw
+        metadata.update(fallback_meta)
         metadata.update(meta_newton)
 
     elif method == "newton-cold":
         # Newton from uniform start (no FW warm-up)
         active_set_cold = list(range(k))
-        mu, n_iter_newton, meta_newton = _damped_newton_polish(
+        mu, n_iter_cold, meta_cold = _damped_newton_polish(
             mu_init.copy(),
             active_set_cold,
             matrices,
@@ -1767,7 +1954,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_newton
+        n_iter = n_iter_cold
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1778,7 +1965,7 @@ def solve_minimax(
             offsets,
             True,
             newton_tol,
-            meta_newton["newton_status"],
+            meta_cold["newton_status"],
             tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
@@ -1788,13 +1975,63 @@ def solve_minimax(
             mu, fallback_converged, n_iter_fw = _run_fw_bisect(
                 matrices, Ax, centers, offsets, mu_init, **_fw_kwargs
             )
-            converged = fallback_converged
             n_iter += n_iter_fw
-            meta_newton["fallback_method"] = "fw+bisect"
-            meta_newton["fallback_fw_iters"] = n_iter_fw
-            meta_newton["fallback_converged"] = fallback_converged
-            meta_newton["newton_status"] = "fw_fallback"
-        metadata.update(meta_newton)
+            metadata.update({f"cold_{key}": value for key, value in meta_cold.items()})
+            metadata["fallback_method"] = "fw+bisect"
+            metadata["fallback_fw_iters"] = n_iter_fw
+            if not fallback_converged:
+                mu, fallback_converged, n_eval, n_refine = _run_slsqp_fallback(
+                    mu,
+                    matrices,
+                    Ax,
+                    centers,
+                    offsets,
+                    tol=tol,
+                    regularization=regularization,
+                    condition_number_limit=condition_number_limit,
+                    max_conditioning_steps=max_conditioning_steps,
+                )
+                n_iter += n_eval + n_refine
+                metadata["secondary_fallback_method"] = "scipy-slsqp"
+                metadata["fallback_n_fevals"] = n_eval
+                metadata["fallback_refinement_fw_iters"] = n_refine
+
+            active_set_fallback = [i for i in range(k) if mu[i] > weight_tol]
+            mu, n_iter_newton, meta_newton = _damped_newton_polish(
+                mu,
+                active_set_fallback,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                weight_tol=weight_tol,
+                max_iter=newton_max_iter,
+                tol=newton_tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            n_iter += n_iter_newton
+            active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
+            converged = _check_newton_convergence(
+                mu,
+                active_set_newton,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                fallback_converged,
+                newton_tol,
+                meta_newton["newton_status"],
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            metadata["fallback_converged"] = fallback_converged
+            metadata.update(meta_newton)
+        else:
+            metadata.update(meta_cold)
 
     elif method == "scipy-slsqp":
         mu, converged, n_iter = _run_scipy_slsqp(

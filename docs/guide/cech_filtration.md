@@ -42,6 +42,17 @@ strict complementarity (ND1), they coincide. For three unit balls centred at
 two indices, and `active_set` has three. A solver that does not converge or
 produces non-finite output raises `RuntimeError` with its diagnostics.
 
+The default solver uses the away-step Frank-Wolfe (AFW) method of
+Lacoste-Julien and Jaggi (2015) on the dual simplex with an adaptive Brent
+line search. At each iteration it compares the ordinary FW direction with an
+away direction from the least useful positive-weight vertex; a capped away
+step removes that vertex exactly. AFW can still require more than the default
+iteration budget before identifying a minimal face on rank-deficient
+many-body problems. An exhausted AFW phase therefore starts SLSQP from its
+current weights. Newton-bearing method variants subsequently polish the
+thresholded fallback face. Every accepted result is checked against the
+all-index stabilised FW gap.
+
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.
 

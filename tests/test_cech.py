@@ -325,8 +325,12 @@ def test_singleton_and_empty_cech_input():
         ellphi.cech(np.empty((0, coefs.shape[1])))
 
 
-def test_non_convergence_raises_with_diagnostics():
+def test_non_convergence_raises_with_diagnostics(monkeypatch):
     coefs = _random_coefs(5, 3, seed=101)
+    monkeypatch.setattr(
+        "ellphi._minimax_python._run_slsqp_fallback",
+        lambda mu, *args, **kwargs: (mu, False, 0, 0),
+    )
     with pytest.raises(RuntimeError) as exc_info:
         ellphi.cech(coefs, method="fw+bisect", max_iter=1, tol=1e-15)
 
@@ -433,12 +437,10 @@ def test_public_surrogate_methods(method):
     constants = np.einsum("ki,kij,kj->k", centers, matrices, centers)
     coefs = pack_conic(matrices, linear, constants)
 
-    if method == "scipy-slsqp":
-        result = ellphi.cech(coefs, method=method)
-        assert result.t == pytest.approx(np.sqrt(0.9024444260258915), abs=1e-8)
-    else:
-        with pytest.raises(RuntimeError):
-            ellphi.cech(coefs, method=method)
+    result = ellphi.cech(coefs, method=method)
+
+    assert result.t**2 == pytest.approx(0.9024444260258915, rel=1e-8)
+    assert result.support == (1, 3, 5)
 
 
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])

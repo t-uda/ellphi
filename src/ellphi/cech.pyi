@@ -29,22 +29,27 @@ class CechGrad(NamedTuple):
 def cech(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
-) -> CechResult: ...
+) -> CechResult:
+    """Compute the Čech time with the robust AFW/SLSQP default."""
+    ...
+
 def cech_grad(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
     active_tol: float = 1e-9,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
-) -> CechGrad: ...
+) -> CechGrad:
+    """Compute the Čech time and gradient with the robust default solver."""
+    ...

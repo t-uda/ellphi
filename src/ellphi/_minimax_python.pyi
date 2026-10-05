@@ -34,7 +34,7 @@ def solve_minimax(
     centers: np.ndarray,
     *,
     offsets: np.ndarray | None = None,
-    method: MethodName | str = "fw+bisect",
+    method: MethodName | str = "fw+brentq",
     tol: float = 1e-09,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -43,7 +43,10 @@ def solve_minimax(
     max_conditioning_steps: int = 8,
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
-) -> MinimaxResult: ...
+) -> MinimaxResult:
+    """Solve the dual with AFW and an SLSQP fallback for exhausted AFW paths."""
+    ...
+
 def solve_minimax_from_coefs(
     coefs: np.ndarray,
     **kwargs: Any,

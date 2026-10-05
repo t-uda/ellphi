@@ -96,6 +96,26 @@ class TestTrivialCases:
             )
 
 
+@pytest.mark.parametrize("method", ["fw+bisect", "fw+brentq"])
+def test_afw_drops_spurious_interior_weight_exactly(method):
+    matrices = np.repeat(np.eye(2)[np.newaxis], 4, axis=0)
+    centers = np.array(
+        [
+            [1.0, 0.0],
+            [-0.5, np.sqrt(3.0) / 2.0],
+            [-0.5, -np.sqrt(3.0) / 2.0],
+            [0.0, 0.0],
+        ]
+    )
+
+    result = solve_minimax(matrices, centers, method=method, tol=1e-12, max_iter=10)
+
+    assert result.converged
+    assert result.weights[3] == 0.0
+    np.testing.assert_allclose(result.weights[:3], 1.0 / 3.0, atol=1e-15)
+    assert result.active_set == [0, 1, 2]
+
+
 # ---------------------------------------------------------------------------
 # Isotropic (A_i = I) special cases
 # ---------------------------------------------------------------------------
@@ -539,17 +559,25 @@ class TestNumericalStabilityControls:
         assert raw_gap < 1.0
         assert stabilized_gap > 1.0
         for method in ("fw+bisect", "fw+brentq"):
-            result = solve_minimax(
+            runner = (
+                minimax_mod._run_fw_bisect
+                if method == "fw+bisect"
+                else minimax_mod._run_fw_brentq
+            )
+            runner_result = runner(
                 matrices,
+                Ax,
                 centers,
-                offsets=offsets,
-                method=method,
+                offsets,
+                mu.copy(),
                 tol=stabilized_gap / 100.0,
                 max_iter=1,
+                weight_tol=1e-10,
                 **kwargs,
             )
-            assert result.n_iter == 1
-            assert not result.converged
+            _, converged, n_iter = runner_result[:3]
+            assert n_iter == 1
+            assert not converged
 
     def test_newton_polishing_uses_stabilized_stationarity(self):
         matrices = np.array([np.eye(2), 4.0 * np.eye(2)])
@@ -627,13 +655,13 @@ class TestNumericalStabilityControls:
         assert metadata["newton_status"] == "converged"
         assert abs(float(gradient[0] - gradient[1])) < newton_tol
 
-    def test_fw_gap_ignores_subthreshold_positive_weights(self):
+    def test_afw_keeps_subthreshold_positive_weights_in_away_set(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
         centers = np.array([[2.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
         Ax = np.einsum("kij,kj->ki", matrices, centers)
         mu = np.array([0.405, 0.405, 0.19])
 
-        _, converged, n_iter = minimax_mod._run_fw_bisect(
+        updated, converged, n_iter = minimax_mod._run_fw_bisect(
             matrices,
             Ax,
             centers,
@@ -648,30 +676,32 @@ class TestNumericalStabilityControls:
         )
 
         assert n_iter == 1
-        assert not converged
+        assert converged
+        assert updated[2] == 0.0
 
     def test_newton_rechecks_global_gap_beyond_weight_face(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
-        centers = np.array(
-            [
-                [3.7476304, -3.7246354],
-                [0.8495570, -1.0704745],
-                [0.1480270, -3.5617054],
-            ]
-        )
+        centers = np.array([[-1.0, 0.0], [1.0, 0.0], [0.0, 3.0]])
+        weights = np.array([0.5, 0.5, 0.0])
+        Ax = np.einsum("kij,kj->ki", matrices, centers)
 
-        result = solve_minimax(
+        converged = minimax_mod._check_newton_convergence(
+            weights,
+            [0, 1],
             matrices,
+            Ax,
             centers,
-            method="fw+bisect+newton",
-            weight_tol=0.2,
+            None,
+            True,
+            1e-14,
+            "converged",
             tol=1e-3,
+            regularization=0.0,
+            condition_number_limit=None,
+            max_conditioning_steps=8,
         )
 
-        assert result.weights[2] > 0.0
-        assert result.weights[2] < 0.2
-        assert result.active_set == [0, 1]
-        assert result.converged is False
+        assert converged is False
 
     def test_hybrid_rechecks_fw_optimum_hit_on_last_iteration(self):
         matrices = np.array([np.eye(2), 4.0 * np.eye(2)])

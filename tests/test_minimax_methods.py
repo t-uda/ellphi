@@ -96,22 +96,36 @@ class TestPublicSurrogate:
         assert gap <= 1e-8
         assert residual <= 1e-8
 
-    @pytest.mark.parametrize(
-        "method", [method for method in CANONICAL_METHODS if method != "scipy-slsqp"]
-    )
-    def test_other_methods_are_accurate_or_report_failure(
-        self, method, public_surrogate_results
-    ):
+    @pytest.mark.parametrize("method", CANONICAL_METHODS)
+    def test_all_methods_converge_accurately(self, method, public_surrogate_results):
         matrices, centers, results = public_surrogate_results
         result = results[method]
         gap, residual = _surrogate_diagnostics(result, matrices, centers)
 
-        if result.converged:
-            assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
-            assert gap <= 1e-8
-            assert residual <= 1e-8
-        else:
-            assert result.converged is False
+        assert result.converged
+        assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
+        assert gap <= 1e-8
+        assert residual <= 1e-8
+        assert result.active_set == [1, 3, 5]
+
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "fw+bisect+newton",
+            "fw+brentq+newton",
+            "fw+bisect+damped-newton",
+            "newton-cold",
+        ],
+    )
+    def test_newton_hybrids_polish_the_minimal_face(
+        self, method, public_surrogate_results
+    ):
+        _, _, results = public_surrogate_results
+        result = results[method]
+
+        assert result.metadata is not None
+        assert result.metadata["newton_status"] == "converged"
+        assert len(result.active_set) <= 3
 
     def test_newton_failures_do_not_collapse_to_a_vertex(
         self, public_surrogate_results
@@ -160,10 +174,10 @@ class TestMethodDispatch:
         with pytest.raises(ValueError, match="k=0"):
             solve_minimax(np.zeros((0, 2, 2)), np.zeros((0, 2)), method=method)
 
-    def test_default_method_is_fw_bisect(self):
+    def test_default_method_is_fw_brentq(self):
         matrices, centers = _random_simplex(2, 2)
         res = solve_minimax(matrices, centers)
-        assert res.method == "fw+bisect"
+        assert res.method == "fw+brentq"
 
     @pytest.mark.parametrize("newton_tol", [np.nan, 0.0])
     def test_non_positive_or_non_finite_newton_tol_raises(self, newton_tol):
@@ -306,7 +320,7 @@ class TestNewtonCold:
 
         assert result.converged
         assert result.metadata is not None
-        assert result.metadata["newton_status"] == "fw_fallback"
+        assert result.metadata["newton_status"] == "converged"
         assert result.metadata["fallback_converged"] is True
 
 
