@@ -255,6 +255,25 @@ class TestFwBrentq:
         assert "line_search_evals" in res.metadata
         assert res.metadata["line_search_evals"] > 0
 
+    def test_fallback_respects_fw_iteration_budget(self, monkeypatch):
+        matrices, centers = minimax_public_surrogate()
+
+        def unexpected_bisect(*args, **kwargs):
+            raise AssertionError("fallback must not start another FW run")
+
+        monkeypatch.setattr("ellphi._minimax_python._run_fw_bisect", unexpected_bisect)
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+brentq",
+            tol=1e-15,
+            max_iter=1,
+        )
+
+        assert result.metadata is not None
+        assert result.metadata["fw_iters"] == 1
+        assert "fallback_newton_iters" in result.metadata
+
 
 # ---------------------------------------------------------------------------
 # fw+brentq+newton specific

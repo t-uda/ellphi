@@ -46,9 +46,11 @@ from ellcech 82d13e3 in the following ways:
   vertices from the active face and avoids the sublinear
   support-identification bottleneck of the original method.
 * An exhausted away-step run falls back to SLSQP, starting from the AFW
-  iterate. Hybrid methods then polish the fallback's thresholded face. This
-  makes the default ``fw+brentq`` path robust when AFW has not identified the
-  optimal face within its iteration budget.
+  iterate. If SLSQP still misses the all-index gap, Newton polishes its
+  thresholded face without spending additional FW iterations. Hybrid methods
+  also apply their requested Newton polish. This makes the default
+  ``fw+brentq`` path robust when AFW has not identified the optimal face within
+  its iteration budget.
 
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
@@ -1405,6 +1407,8 @@ def _run_slsqp_fallback(
     offsets: np.ndarray | None,
     *,
     tol: float,
+    weight_tol: float,
+    newton_max_iter: int,
     regularization: float,
     condition_number_limit: float | None,
     max_conditioning_steps: int,
@@ -1448,20 +1452,38 @@ def _run_slsqp_fallback(
     if converged:
         return fallback_mu, True, n_eval, 0
 
-    fallback_mu, converged, n_refine = _run_fw_bisect(
+    active_set = [i for i in range(len(fallback_mu)) if fallback_mu[i] > weight_tol]
+    fallback_mu, n_polish, meta_newton = _newton_polish(
+        fallback_mu,
+        active_set,
         matrices,
         Ax,
         centers,
         offsets,
-        fallback_mu,
+        weight_tol=weight_tol,
+        max_iter=newton_max_iter,
         tol=tol,
-        max_iter=_DEFAULT_MAX_ITER,
-        weight_tol=0.0,
         regularization=regularization,
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    return fallback_mu, converged, n_eval, n_refine
+    active_set = [i for i in range(len(fallback_mu)) if fallback_mu[i] > weight_tol]
+    converged = _check_newton_convergence(
+        fallback_mu,
+        active_set,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        slsqp_converged,
+        tol,
+        meta_newton["newton_status"],
+        tol=tol,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    return fallback_mu, converged, n_eval, n_polish
 
 
 # ---------------------------------------------------------------------------
@@ -1576,9 +1598,10 @@ def solve_minimax(
     ``"fw+bisect+newton"`` with a deprecation warning.
 
     If an AFW phase exhausts ``max_iter``, it falls back to SLSQP from the
-    current weights. Newton hybrids polish the fallback's thresholded face.
-    The all-index stabilised FW gap is rechecked before fallback convergence
-    is accepted.
+    current weights. If needed, Newton polishes the fallback's thresholded
+    face without spending additional FW iterations; Newton hybrids then apply
+    their requested polish. The all-index stabilised FW gap is rechecked
+    before fallback convergence is accepted.
 
     Args:
         matrices: SPD matrices ``A_i``, shape ``(k, d, d)``, or ``(d, d)`` for
@@ -1710,21 +1733,23 @@ def solve_minimax(
         )
         metadata["fw_iters"] = n_iter
         if not converged:
-            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+            mu, converged, n_eval, n_fallback_newton = _run_slsqp_fallback(
                 mu,
                 matrices,
                 Ax,
                 centers,
                 offsets,
                 tol=tol,
+                weight_tol=weight_tol,
+                newton_max_iter=newton_max_iter,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
             )
-            n_iter += n_eval + n_refine
+            n_iter += n_eval + n_fallback_newton
             metadata["fallback_method"] = "scipy-slsqp"
             metadata["fallback_n_fevals"] = n_eval
-            metadata["fallback_refinement_fw_iters"] = n_refine
+            metadata["fallback_newton_iters"] = n_fallback_newton
             metadata["fallback_converged"] = converged
 
     elif method == "fw+brentq":
@@ -1733,21 +1758,23 @@ def solve_minimax(
         )
         metadata.update(meta_fw)
         if not converged:
-            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+            mu, converged, n_eval, n_fallback_newton = _run_slsqp_fallback(
                 mu,
                 matrices,
                 Ax,
                 centers,
                 offsets,
                 tol=tol,
+                weight_tol=weight_tol,
+                newton_max_iter=newton_max_iter,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
             )
-            n_iter += n_eval + n_refine
+            n_iter += n_eval + n_fallback_newton
             metadata["fallback_method"] = "scipy-slsqp"
             metadata["fallback_n_fevals"] = n_eval
-            metadata["fallback_refinement_fw_iters"] = n_refine
+            metadata["fallback_newton_iters"] = n_fallback_newton
             metadata["fallback_converged"] = converged
 
     elif method == "fw+bisect+newton":
@@ -1756,13 +1783,15 @@ def solve_minimax(
         )
         fallback_meta: dict[str, Any] = {}
         if not converged:
-            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+            mu, converged, n_eval, n_fallback_newton = _run_slsqp_fallback(
                 mu,
                 matrices,
                 Ax,
                 centers,
                 offsets,
                 tol=tol,
+                weight_tol=weight_tol,
+                newton_max_iter=newton_max_iter,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
@@ -1770,12 +1799,12 @@ def solve_minimax(
             fallback_meta = {
                 "fallback_method": "scipy-slsqp",
                 "fallback_n_fevals": n_eval,
-                "fallback_refinement_fw_iters": n_refine,
+                "fallback_newton_iters": n_fallback_newton,
                 "fallback_converged": converged,
             }
         else:
             n_eval = 0
-            n_refine = 0
+            n_fallback_newton = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _newton_polish(
             mu,
@@ -1791,7 +1820,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_fallback_newton + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1818,13 +1847,15 @@ def solve_minimax(
         )
         fallback_meta = {}
         if not converged:
-            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+            mu, converged, n_eval, n_fallback_newton = _run_slsqp_fallback(
                 mu,
                 matrices,
                 Ax,
                 centers,
                 offsets,
                 tol=tol,
+                weight_tol=weight_tol,
+                newton_max_iter=newton_max_iter,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
@@ -1832,12 +1863,12 @@ def solve_minimax(
             fallback_meta = {
                 "fallback_method": "scipy-slsqp",
                 "fallback_n_fevals": n_eval,
-                "fallback_refinement_fw_iters": n_refine,
+                "fallback_newton_iters": n_fallback_newton,
                 "fallback_converged": converged,
             }
         else:
             n_eval = 0
-            n_refine = 0
+            n_fallback_newton = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
             mu,
@@ -1853,7 +1884,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_fallback_newton + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1880,13 +1911,15 @@ def solve_minimax(
         )
         fallback_meta = {}
         if not converged:
-            mu, converged, n_eval, n_refine = _run_slsqp_fallback(
+            mu, converged, n_eval, n_fallback_newton = _run_slsqp_fallback(
                 mu,
                 matrices,
                 Ax,
                 centers,
                 offsets,
                 tol=tol,
+                weight_tol=weight_tol,
+                newton_max_iter=newton_max_iter,
                 regularization=regularization,
                 condition_number_limit=condition_number_limit,
                 max_conditioning_steps=max_conditioning_steps,
@@ -1894,12 +1927,12 @@ def solve_minimax(
             fallback_meta = {
                 "fallback_method": "scipy-slsqp",
                 "fallback_n_fevals": n_eval,
-                "fallback_refinement_fw_iters": n_refine,
+                "fallback_newton_iters": n_fallback_newton,
                 "fallback_converged": converged,
             }
         else:
             n_eval = 0
-            n_refine = 0
+            n_fallback_newton = 0
         active_set_fw = [i for i in range(k) if mu[i] > weight_tol]
         mu, n_iter_newton, meta_newton = _damped_newton_polish(
             mu,
@@ -1915,7 +1948,7 @@ def solve_minimax(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        n_iter = n_iter_fw + n_eval + n_refine + n_iter_newton
+        n_iter = n_iter_fw + n_eval + n_fallback_newton + n_iter_newton
         active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
         converged = _check_newton_convergence(
             mu,
@@ -1980,21 +2013,28 @@ def solve_minimax(
             metadata["fallback_method"] = "fw+bisect"
             metadata["fallback_fw_iters"] = n_iter_fw
             if not fallback_converged:
-                mu, fallback_converged, n_eval, n_refine = _run_slsqp_fallback(
+                (
+                    mu,
+                    fallback_converged,
+                    n_eval,
+                    n_fallback_newton,
+                ) = _run_slsqp_fallback(
                     mu,
                     matrices,
                     Ax,
                     centers,
                     offsets,
                     tol=tol,
+                    weight_tol=weight_tol,
+                    newton_max_iter=newton_max_iter,
                     regularization=regularization,
                     condition_number_limit=condition_number_limit,
                     max_conditioning_steps=max_conditioning_steps,
                 )
-                n_iter += n_eval + n_refine
+                n_iter += n_eval + n_fallback_newton
                 metadata["secondary_fallback_method"] = "scipy-slsqp"
                 metadata["fallback_n_fevals"] = n_eval
-                metadata["fallback_refinement_fw_iters"] = n_refine
+                metadata["fallback_newton_iters"] = n_fallback_newton
 
             active_set_fallback = [i for i in range(k) if mu[i] > weight_tol]
             mu, n_iter_newton, meta_newton = _damped_newton_polish(

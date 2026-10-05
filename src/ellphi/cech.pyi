@@ -37,7 +37,7 @@ def cech(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> CechResult:
-    """Compute the Čech time with the robust AFW/SLSQP default."""
+    """Compute the Čech time with the robust AFW/SLSQP/Newton default."""
     ...
 
 def cech_grad(

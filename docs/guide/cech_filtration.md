@@ -49,9 +49,10 @@ away direction from the least useful positive-weight vertex; a capped away
 step removes that vertex exactly. AFW can still require more than the default
 iteration budget before identifying a minimal face on rank-deficient
 many-body problems. An exhausted AFW phase therefore starts SLSQP from its
-current weights. Newton-bearing method variants subsequently polish the
-thresholded fallback face. Every accepted result is checked against the
-all-index stabilised FW gap.
+current weights. If SLSQP still misses the requested gap, Newton polishes the
+thresholded face without consuming additional FW iterations. Newton-bearing
+method variants subsequently apply their requested polish. Every accepted
+result is checked against the all-index stabilised FW gap.
 
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.

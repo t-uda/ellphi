@@ -248,7 +248,7 @@ def cech(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default uses adaptive
-            away-step Frank-Wolfe with an SLSQP fallback if that phase
+            away-step Frank-Wolfe with an SLSQP/Newton fallback if that phase
             exhausts its budget.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
@@ -396,7 +396,7 @@ def cech_grad(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default uses adaptive
-            away-step Frank-Wolfe with an SLSQP fallback if that phase
+            away-step Frank-Wolfe with an SLSQP/Newton fallback if that phase
             exhausts its budget.
         tol: Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
