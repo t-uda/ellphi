@@ -437,19 +437,32 @@ def _dual_gradient(
     return f + shift_gradient * float(np.dot(xstar, xstar))
 
 
-def _fw_gap_and_scale(mu: np.ndarray, gradient: np.ndarray) -> tuple[float, float]:
+def _fw_gap_and_scale(
+    mu: np.ndarray,
+    gradient: np.ndarray,
+    *,
+    dual_value: float | None = None,
+) -> tuple[float, float]:
     """Return the Frank-Wolfe gap and its relative dual-value scale."""
-    dual_value = float(np.dot(mu, gradient))
-    gap = float(np.max(gradient) - dual_value)
+    gradient_value = float(np.dot(mu, gradient))
+    if dual_value is None:
+        dual_value = gradient_value
+    gap = float(np.max(gradient) - gradient_value)
     scale = (
         float(max(1.0, abs(dual_value))) if np.isfinite(dual_value) else float("nan")
     )
     return gap, scale
 
 
-def _fw_gap_converged(mu: np.ndarray, gradient: np.ndarray, tol: float) -> bool:
+def _fw_gap_converged(
+    mu: np.ndarray,
+    gradient: np.ndarray,
+    tol: float,
+    *,
+    dual_value: float | None = None,
+) -> bool:
     """Return whether the relative Frank-Wolfe gap meets ``tol``."""
-    gap, scale = _fw_gap_and_scale(mu, gradient)
+    gap, scale = _fw_gap_and_scale(mu, gradient, dual_value=dual_value)
     return bool(np.isfinite(gap) and np.isfinite(scale) and gap <= tol * scale)
 
 
@@ -707,7 +720,12 @@ def _run_fw_bisect(
             if np.any(positive_mask):
                 v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        if _fw_gap_converged(mu, gradient, tol):
+        dual_value = (
+            float(np.dot(mu, f))
+            if regularization == 0.0 and condition_number_limit is None
+            else _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+        )
+        if _fw_gap_converged(mu, gradient, tol, dual_value=dual_value):
             converged = True
             break
 
@@ -755,7 +773,12 @@ def _run_fw_bisect(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        converged = _fw_gap_converged(mu, gradient, tol)
+        dual_value = (
+            float(np.dot(mu, f))
+            if regularization == 0.0 and condition_number_limit is None
+            else _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+        )
+        converged = _fw_gap_converged(mu, gradient, tol, dual_value=dual_value)
 
     return mu, converged, n_iter
 
@@ -826,7 +849,12 @@ def _run_fw_brentq(
             if np.any(positive_mask):
                 v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
 
-        if _fw_gap_converged(mu, gradient, tol):
+        dual_value = (
+            float(np.dot(mu, f))
+            if regularization == 0.0 and condition_number_limit is None
+            else _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+        )
+        if _fw_gap_converged(mu, gradient, tol, dual_value=dual_value):
             converged = True
             break
 
@@ -875,7 +903,12 @@ def _run_fw_brentq(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        converged = _fw_gap_converged(mu, gradient, tol)
+        dual_value = (
+            float(np.dot(mu, f))
+            if regularization == 0.0 and condition_number_limit is None
+            else _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+        )
+        converged = _fw_gap_converged(mu, gradient, tol, dual_value=dual_value)
 
     metadata = {
         "fw_iters": n_iter,
@@ -1451,7 +1484,14 @@ def _run_scipy_slsqp(
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
     )
-    converged = bool(res.success) and _fw_gap_converged(mu, gradient, tol)
+    dual_value = (
+        float(np.dot(mu, f))
+        if regularization == 0.0 and condition_number_limit is None
+        else _regularized_dual_value(mu, matrices, Ax, centers, offsets, xstar)
+    )
+    converged = bool(res.success) and _fw_gap_converged(
+        mu, gradient, tol, dual_value=dual_value
+    )
     return mu, converged, n_eval[0]
 
 
@@ -1516,7 +1556,14 @@ def _check_newton_convergence(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        if not _fw_gap_converged(mu, gradient_check, tol):
+        dual_value = (
+            float(np.dot(mu, f_check))
+            if regularization == 0.0 and condition_number_limit is None
+            else _regularized_dual_value(
+                mu, matrices, Ax, centers, offsets, xstar_check
+            )
+        )
+        if not _fw_gap_converged(mu, gradient_check, tol, dual_value=dual_value):
             return False
         if len(active_set) <= 1:
             return True

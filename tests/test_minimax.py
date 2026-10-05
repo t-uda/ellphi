@@ -561,6 +561,24 @@ class TestNumericalStabilityControls:
             assert n_iter == 1
             assert not converged
 
+    def test_regularized_fw_gap_uses_actual_dual_value_scale(self):
+        scale = 1e10
+        matrices = np.repeat(np.eye(2)[np.newaxis], 2, axis=0)
+        centers = np.array([[scale, 0.0], [scale + 2.0, 0.0]])
+        offsets = np.full(2, -(scale**2 + 2.0 * scale + 3.0) / 2.0)
+
+        result = solve_minimax(
+            matrices,
+            centers,
+            offsets=offsets,
+            method="fw+brentq",
+            regularization=1.0,
+            max_iter=1,
+        )
+
+        assert result.converged
+        np.testing.assert_allclose(result.weights, [0.0, 1.0])
+
     def test_newton_polishing_uses_stabilized_stationarity(self):
         matrices = np.array([np.eye(2), 4.0 * np.eye(2)])
         centers = np.array([[0.0, 0.0], [1.0, 0.0]])
