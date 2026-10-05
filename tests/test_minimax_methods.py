@@ -446,6 +446,22 @@ class TestBackwardCompat:
 
 
 class TestScipySlsqp:
+    def test_success_flag_does_not_override_requested_gap(self):
+        matrices = np.array([1e-16 * np.eye(2), 4e-16 * np.eye(2)])
+        centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="scipy-slsqp",
+            tol=1e-20,
+        )
+
+        assert result.converged
+        assert result.alpha == pytest.approx(4.4444444444444444e-17, rel=1e-6)
+        assert result.metadata is not None
+        assert result.metadata["accuracy_polish"] == "newton"
+
     @pytest.mark.parametrize("k", [2, 3, 5])
     def test_alpha_agrees_with_reference(self, k):
         matrices, centers = _random_simplex(k, 3, seed=k * 7)

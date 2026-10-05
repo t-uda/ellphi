@@ -1348,6 +1348,7 @@ def _run_scipy_slsqp(
     k: int,
     *,
     initial_weights: np.ndarray | None = None,
+    tol: float,
     regularization: float,
     condition_number_limit: float | None,
     max_conditioning_steps: int,
@@ -1396,7 +1397,31 @@ def _run_scipy_slsqp(
     if s > 0.0:
         mu /= s
 
-    return mu, bool(res.success), n_eval[0]
+    xstar, f = _eval_f(
+        mu,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    gradient = _dual_gradient(
+        mu,
+        matrices,
+        Ax,
+        centers,
+        offsets,
+        xstar,
+        f,
+        regularization=regularization,
+        condition_number_limit=condition_number_limit,
+        max_conditioning_steps=max_conditioning_steps,
+    )
+    fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
+    converged = bool(res.success) and np.isfinite(fw_gap) and fw_gap < tol
+    return mu, converged, n_eval[0]
 
 
 def _run_slsqp_fallback(
@@ -1421,6 +1446,7 @@ def _run_slsqp_fallback(
         offsets,
         len(mu),
         initial_weights=mu,
+        tol=tol,
         regularization=regularization,
         condition_number_limit=condition_number_limit,
         max_conditioning_steps=max_conditioning_steps,
@@ -1591,7 +1617,8 @@ def solve_minimax(
     * ``"fw+bisect+newton"``: FW(bisect) warm-start + Newton polishing.
     * ``"fw+brentq+newton"``: FW(brentq) warm-start + damped Newton polishing.
     * ``"fw+bisect+damped-newton"``: FW(bisect) + Armijo-damped Newton.
-    * ``"scipy-slsqp"``: Direct SLSQP solve via scipy.
+    * ``"scipy-slsqp"``: Direct SLSQP solve via scipy, with Newton accuracy
+      polishing if SLSQP's result misses the requested global gap.
     * ``"newton-cold"``: Newton from uniform mu=1/k (stability baseline).
 
     The legacy name ``"fw+newton"`` is accepted as an alias for
@@ -2080,11 +2107,47 @@ def solve_minimax(
             centers,
             offsets,
             k,
+            tol=tol,
             regularization=regularization,
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
         metadata["n_fevals"] = n_iter
+        if not converged:
+            active_set_slsqp = [i for i in range(k) if mu[i] > weight_tol]
+            mu, n_iter_newton, meta_newton = _newton_polish(
+                mu,
+                active_set_slsqp,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                weight_tol=weight_tol,
+                max_iter=newton_max_iter,
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            n_iter += n_iter_newton
+            active_set_newton = [i for i in range(k) if mu[i] > weight_tol]
+            converged = _check_newton_convergence(
+                mu,
+                active_set_newton,
+                matrices,
+                Ax,
+                centers,
+                offsets,
+                converged,
+                tol,
+                meta_newton["newton_status"],
+                tol=tol,
+                regularization=regularization,
+                condition_number_limit=condition_number_limit,
+                max_conditioning_steps=max_conditioning_steps,
+            )
+            metadata["accuracy_polish"] = "newton"
+            metadata.update(meta_newton)
 
     # --- Final evaluation ---
     xstar, f = _eval_f(
