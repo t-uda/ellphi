@@ -341,7 +341,7 @@ def cech(
     t_squared = float(max(alpha, 0.0))
     t = float(np.sqrt(max(0.0, t_squared)))
     support = tuple(int(i) for i in np.flatnonzero(result.weights > weight_tol))
-    active_threshold = active_tol * max(1.0, t_squared)
+    active_threshold = active_tol * max(1.0, t_squared) + negative_tolerance
     active_set = tuple(
         int(i) for i in np.flatnonzero(t_squared - values <= active_threshold)
     )

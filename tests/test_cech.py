@@ -134,6 +134,17 @@ def test_translated_singleton_roundoff_negative_scale_is_clipped():
     assert abs(result.t) <= np.sqrt(value_roundoff)
 
 
+def test_clipped_negative_scale_preserves_singleton_active_set():
+    coefs = coef_from_cov(np.array([[1e6, 0.0]]), np.eye(2)[None])
+    coefs[0, -1] = np.nextafter(1e12, -np.inf)
+
+    result = ellphi.cech(coefs)
+
+    assert result.t == 0.0
+    assert result.support == (0,)
+    assert result.active_set == (0,)
+
+
 def test_translated_coincident_roundoff_negative_scale_is_clipped():
     center = np.array([[1e6, -1e6]])
     covariance = np.array([[1.0, 0.2], [0.2, 1.7]])
