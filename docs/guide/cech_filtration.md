@@ -42,17 +42,15 @@ strict complementarity (ND1), they coincide. For three unit balls centred at
 two indices, and `active_set` has three. A solver that does not converge or
 produces non-finite output raises `RuntimeError` with its diagnostics.
 
-The default solver uses the away-step Frank-Wolfe (AFW) method of
-Lacoste-Julien and Jaggi (2015) on the dual simplex with an adaptive Brent
-line search. At each iteration it compares the ordinary FW direction with an
-away direction from the least useful positive-weight vertex; a capped away
-step removes that vertex exactly. AFW can still require more than the default
-iteration budget before identifying a minimal face on rank-deficient
-many-body problems. An exhausted AFW phase therefore starts SLSQP from its
-current weights. If SLSQP still misses the requested gap, Newton polishes the
-thresholded face without consuming additional FW iterations. Newton-bearing
-method variants subsequently apply their requested polish. Every accepted
-result is checked against the all-index stabilised FW gap.
+The default solver uses plain Frank-Wolfe on the dual simplex with an adaptive
+Brent line search. On the bundled surrogate, a zero-weight constraint is
+nearly tight, so the all-index gap can stall while weight leaks onto that
+vertex; the rank-deficient face is better handled by the primal fallback. An
+exhausted FW phase therefore starts SLSQP from its current weights. If SLSQP
+still misses the requested gap, Newton polishes the thresholded face without
+consuming additional FW iterations. Newton-bearing method variants
+subsequently apply their requested polish. Every accepted result is checked
+against the all-index stabilised FW gap.
 
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.

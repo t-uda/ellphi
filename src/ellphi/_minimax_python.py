@@ -40,17 +40,12 @@ from ellcech 82d13e3 in the following ways:
   this can increase the step count without changing the accepted result.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
-* The Frank-Wolfe runners use the away-step Frank-Wolfe method of
-  Lacoste-Julien and Jaggi (2015) over the simplex, with exact drop steps,
-  instead of ellcech's plain Frank-Wolfe updates. This removes non-optimal
-  vertices from the active face and avoids the sublinear
-  support-identification bottleneck of the original method.
-* An exhausted away-step run falls back to SLSQP, starting from the AFW
+* An exhausted Frank-Wolfe run falls back to SLSQP, starting from the FW
   iterate. If SLSQP still misses the all-index gap, Newton polishes its
   thresholded face without spending additional FW iterations. Hybrid methods
   also apply their requested Newton polish. This makes the default
-  ``fw+brentq`` path robust when AFW has not identified the optimal face within
-  its iteration budget.
+  ``fw+brentq`` path robust when plain FW has not identified the optimal face
+  within its iteration budget.
 
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
@@ -456,8 +451,9 @@ def _regularized_dual_value(
 
 
 def _exact_line_search(
+    s: int,
+    v: int,
     mu: np.ndarray,
-    direction: np.ndarray,
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
@@ -468,16 +464,18 @@ def _exact_line_search(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> float:
-    """Find gamma* in [0, gamma_max] that maximises g along ``direction``.
+    """Find gamma* in [0, gamma_max] that maximises g along the pairwise direction.
 
     Bisects on the stabilized dual directional derivative
-    ``h(gamma) = dot(gradient(mu + gamma * direction), direction)``.
+    ``h(gamma) = grad_s - grad_v``.
     """
     if gamma_max <= 0.0:
         return 0.0
 
     def h(gamma: float) -> float:
-        mu_g = mu + gamma * direction
+        mu_g = mu.copy()
+        mu_g[s] += gamma
+        mu_g[v] -= gamma
         x_g, f_g = _eval_f(
             mu_g,
             matrices,
@@ -500,7 +498,7 @@ def _exact_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(np.dot(gradient_g, direction))
+        return float(gradient_g[s] - gradient_g[v])
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -528,8 +526,9 @@ def _ensure_finite(value: float, label: str) -> float:
 
 
 def _brentq_line_search(
+    s: int,
+    v: int,
     mu: np.ndarray,
-    direction: np.ndarray,
     matrices: np.ndarray,
     Ax: np.ndarray,
     centers: np.ndarray,
@@ -552,7 +551,9 @@ def _brentq_line_search(
 
     def h(gamma: float) -> float:
         n_fevals[0] += 1
-        mu_g = mu + gamma * direction
+        mu_g = mu.copy()
+        mu_g[s] += gamma
+        mu_g[v] -= gamma
         x_g, f_g = _eval_f(
             mu_g,
             matrices,
@@ -575,7 +576,7 @@ def _brentq_line_search(
             condition_number_limit=condition_number_limit,
             max_conditioning_steps=max_conditioning_steps,
         )
-        return float(np.dot(gradient_g, direction))
+        return float(gradient_g[s] - gradient_g[v])
 
     h0 = h(0.0)
     if h0 <= 0.0:
@@ -614,44 +615,6 @@ def _brentq_line_search(
 # ---------------------------------------------------------------------------
 
 
-def _afw_direction(
-    mu: np.ndarray, gradient: np.ndarray
-) -> tuple[np.ndarray, float, int | None]:
-    """Return the away-step Frank-Wolfe direction and feasible step bound."""
-    s = int(np.argmax(gradient))
-    mean_gradient = float(np.dot(mu, gradient))
-    fw_gap = float(gradient[s] - mean_gradient)
-
-    positive = mu > 0.0
-    a = int(np.argmin(np.where(positive, gradient, np.inf)))
-    away_gap = float(mean_gradient - gradient[a])
-    if away_gap > fw_gap:
-        direction = mu.copy()
-        direction[a] -= 1.0
-        gamma_max = float(mu[a] / (1.0 - mu[a]))
-        return direction, gamma_max, a
-
-    direction = -mu.copy()
-    direction[s] += 1.0
-    return direction, 1.0, None
-
-
-def _take_afw_step(
-    mu: np.ndarray,
-    direction: np.ndarray,
-    gamma: float,
-    gamma_max: float,
-    away_index: int | None,
-) -> np.ndarray:
-    """Apply an AFW step, preserving an exact zero on an away drop step."""
-    updated = mu + gamma * direction
-    if away_index is not None and gamma == gamma_max:
-        updated[away_index] = 0.0
-    updated = np.clip(updated, 0.0, None)
-    updated /= updated.sum()
-    return updated
-
-
 def _run_fw_bisect(
     matrices: np.ndarray,
     Ax: np.ndarray,
@@ -666,7 +629,7 @@ def _run_fw_bisect(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int]:
-    """Away-step Frank-Wolfe with exact bisection line search.
+    """Plain Frank-Wolfe with exact bisection line search.
 
     Returns:
         (mu, converged, n_iter)
@@ -699,15 +662,28 @@ def _run_fw_bisect(
             max_conditioning_steps=max_conditioning_steps,
         )
 
+        s = int(np.argmax(gradient))
+        active_mask = mu > weight_tol
+        if not np.any(active_mask):
+            active_mask = np.ones_like(mu, dtype=bool)
+        gradient_active = np.where(active_mask, gradient, np.inf)
+        v = int(np.argmin(gradient_active))
+        if s == v:
+            positive_mask = mu > 0.0
+            positive_mask[s] = False
+            if np.any(positive_mask):
+                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
+
         fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
 
-        direction, gamma_max, away_index = _afw_direction(mu, gradient)
+        gamma_max = float(mu[v])
         gamma = _exact_line_search(
+            s,
+            v,
             mu,
-            direction,
             matrices,
             Ax,
             centers,
@@ -718,7 +694,11 @@ def _run_fw_bisect(
             max_conditioning_steps=max_conditioning_steps,
         )
 
-        mu = _take_afw_step(mu, direction, gamma, gamma_max, away_index)
+        mu = mu.copy()
+        mu[s] += gamma
+        mu[v] -= gamma
+        mu = np.clip(mu, 0.0, None)
+        mu /= mu.sum()
 
     if not converged:
         xstar, f = _eval_f(
@@ -762,7 +742,7 @@ def _run_fw_brentq(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int, dict]:
-    """Away-step Frank-Wolfe with brentq line search.
+    """Plain Frank-Wolfe with brentq line search.
 
     Returns:
         (mu, converged, n_iter, metadata)
@@ -798,15 +778,28 @@ def _run_fw_brentq(
             max_conditioning_steps=max_conditioning_steps,
         )
 
+        s = int(np.argmax(gradient))
+        active_mask = mu > weight_tol
+        if not np.any(active_mask):
+            active_mask = np.ones_like(mu, dtype=bool)
+        gradient_active = np.where(active_mask, gradient, np.inf)
+        v = int(np.argmin(gradient_active))
+        if s == v:
+            positive_mask = mu > 0.0
+            positive_mask[s] = False
+            if np.any(positive_mask):
+                v = int(np.argmin(np.where(positive_mask, gradient, np.inf)))
+
         fw_gap = float(np.max(gradient) - np.dot(mu, gradient))
         if fw_gap < tol:
             converged = True
             break
 
-        direction, gamma_max, away_index = _afw_direction(mu, gradient)
+        gamma_max = float(mu[v])
         gamma, ls_evals = _brentq_line_search(
+            s,
+            v,
             mu,
-            direction,
             matrices,
             Ax,
             centers,
@@ -818,7 +811,11 @@ def _run_fw_brentq(
         )
         total_line_search_evals += ls_evals
 
-        mu = _take_afw_step(mu, direction, gamma, gamma_max, away_index)
+        mu = mu.copy()
+        mu[s] += gamma
+        mu[v] -= gamma
+        mu = np.clip(mu, 0.0, None)
+        mu /= mu.sum()
 
     if not converged:
         xstar, f = _eval_f(
@@ -1438,7 +1435,7 @@ def _run_slsqp_fallback(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int, int]:
-    """Run SLSQP from an exhausted AFW iterate and enforce the global gap."""
+    """Run SLSQP from an exhausted FW iterate and enforce the global gap."""
     fallback_mu, slsqp_converged, n_eval = _run_scipy_slsqp(
         matrices,
         Ax,
@@ -1612,8 +1609,8 @@ def solve_minimax(
 
     Seven solver back-ends are available via ``method``:
 
-    * ``"fw+bisect"``: Away-step FW with 52-step bisection line search.
-    * ``"fw+brentq"`` (default): Away-step FW with adaptive brentq line search.
+    * ``"fw+bisect"``: Plain FW with 52-step bisection line search.
+    * ``"fw+brentq"`` (default): Plain FW with adaptive brentq line search.
     * ``"fw+bisect+newton"``: FW(bisect) warm-start + Newton polishing.
     * ``"fw+brentq+newton"``: FW(brentq) warm-start + damped Newton polishing.
     * ``"fw+bisect+damped-newton"``: FW(bisect) + Armijo-damped Newton.
@@ -1624,7 +1621,7 @@ def solve_minimax(
     The legacy name ``"fw+newton"`` is accepted as an alias for
     ``"fw+bisect+newton"`` with a deprecation warning.
 
-    If an AFW phase exhausts ``max_iter``, it falls back to SLSQP from the
+    If a FW phase exhausts ``max_iter``, it falls back to SLSQP from the
     current weights. If needed, Newton polishes the fallback's thresholded
     face without spending additional FW iterations; Newton hybrids then apply
     their requested polish. The all-index stabilised FW gap is rechecked

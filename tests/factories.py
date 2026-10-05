@@ -82,6 +82,12 @@ def minimax_public_surrogate() -> tuple[np.ndarray, np.ndarray]:
     ``centers = rng.standard_normal((6, 2))``. The returned literals are the
     matrices and centers from instance 12; this explicit matrix-first,
     row-major traversal is part of the fixture definition.
+
+    At the optimum, constraint ``f_4`` is nearly tight even though ``mu_4`` is
+    zero, placing the instance near a failure of strict complementarity. The
+    all-index Frank-Wolfe gap must become much smaller than that slack, so
+    plain FW can stall while weight leaks onto vertex 4. Newton polishing on
+    the resulting face is rank-deficient, whereas primal SLSQP is unaffected.
     """
     matrices = np.array(
         [

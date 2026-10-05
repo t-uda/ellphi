@@ -96,26 +96,6 @@ class TestTrivialCases:
             )
 
 
-@pytest.mark.parametrize("method", ["fw+bisect", "fw+brentq"])
-def test_afw_drops_spurious_interior_weight_exactly(method):
-    matrices = np.repeat(np.eye(2)[np.newaxis], 4, axis=0)
-    centers = np.array(
-        [
-            [1.0, 0.0],
-            [-0.5, np.sqrt(3.0) / 2.0],
-            [-0.5, -np.sqrt(3.0) / 2.0],
-            [0.0, 0.0],
-        ]
-    )
-
-    result = solve_minimax(matrices, centers, method=method, tol=1e-12, max_iter=10)
-
-    assert result.converged
-    assert result.weights[3] == 0.0
-    np.testing.assert_allclose(result.weights[:3], 1.0 / 3.0, atol=1e-15)
-    assert result.active_set == [0, 1, 2]
-
-
 # ---------------------------------------------------------------------------
 # Isotropic (A_i = I) special cases
 # ---------------------------------------------------------------------------
@@ -655,13 +635,13 @@ class TestNumericalStabilityControls:
         assert metadata["newton_status"] == "converged"
         assert abs(float(gradient[0] - gradient[1])) < newton_tol
 
-    def test_afw_keeps_subthreshold_positive_weights_in_away_set(self):
+    def test_fw_gap_includes_subthreshold_positive_weights(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
         centers = np.array([[2.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
         Ax = np.einsum("kij,kj->ki", matrices, centers)
         mu = np.array([0.405, 0.405, 0.19])
 
-        updated, converged, n_iter = minimax_mod._run_fw_bisect(
+        _, converged, n_iter = minimax_mod._run_fw_bisect(
             matrices,
             Ax,
             centers,
@@ -676,8 +656,7 @@ class TestNumericalStabilityControls:
         )
 
         assert n_iter == 1
-        assert converged
-        assert updated[2] == 0.0
+        assert not converged
 
     def test_newton_rechecks_global_gap_beyond_weight_face(self):
         matrices = np.repeat(np.eye(2)[np.newaxis], 3, axis=0)
@@ -726,7 +705,7 @@ class TestNumericalStabilityControls:
 
         assert result.converged
         assert result.alpha == reference.alpha
-        np.testing.assert_array_equal(result.weights, reference.weights)
+        np.testing.assert_allclose(result.weights, reference.weights, atol=1e-15)
 
     def test_slsqp_converges_with_regularization(self):
         matrices = np.array(

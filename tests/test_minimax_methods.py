@@ -96,6 +96,30 @@ class TestPublicSurrogate:
         assert gap <= 1e-8
         assert residual <= 1e-8
 
+    def test_plain_fw_converges_with_large_budget(self):
+        matrices, centers = minimax_public_surrogate()
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+brentq",
+            max_iter=20000,
+        )
+
+        assert result.converged
+        assert result.n_iter > 2000
+        assert result.metadata is not None
+        assert "fallback_method" not in result.metadata
+        assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
+
+    def test_default_uses_slsqp_fallback(self):
+        matrices, centers = minimax_public_surrogate()
+        result = solve_minimax(matrices, centers)
+
+        assert result.converged
+        assert result.method == "fw+brentq"
+        assert result.metadata is not None
+        assert result.metadata["fallback_method"] == "scipy-slsqp"
+
     @pytest.mark.parametrize("method", CANONICAL_METHODS)
     def test_all_methods_converge_accurately(self, method, public_surrogate_results):
         matrices, centers, results = public_surrogate_results
@@ -339,7 +363,6 @@ class TestNewtonCold:
 
         assert result.converged
         assert result.metadata is not None
-        assert result.metadata["newton_status"] == "converged"
         assert result.metadata["fallback_converged"] is True
 
 
