@@ -260,6 +260,18 @@ def test_negative_scale_roundoff_bound_does_not_grow_with_simplex_size():
         ellphi.cech(coefs)
 
 
+def test_exact_zero_linear_term_does_not_get_condition_roundoff_allowance():
+    matrices = np.array([[[1e-16, 0.0], [0.0, 1.0]]])
+    linear = np.zeros((1, 2))
+    constants = np.array([-0.5])
+    coefs = pack_conic(matrices, linear, constants)
+
+    with pytest.raises(
+        ValueError, match="packed quadrics have no common non-negative filtration scale"
+    ):
+        ellphi.cech(coefs)
+
+
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
 @pytest.mark.parametrize(
     "matrix",

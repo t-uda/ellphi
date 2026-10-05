@@ -177,11 +177,12 @@ def _prepare_coefs(
 
     A packed row encodes the constant as
     ``c = xbar.T @ A @ xbar + delta``. Computing ``delta`` from a
-    far-translated or ill-conditioned row can therefore lose precision of
-    order ``eps * cond2(A) * max(abs(c), abs(xbar.T @ A @ xbar))``. The
-    returned ``value_roundoff`` is the maximum of these per-row bounds; the
-    minimax value is a convex combination of row offsets. Callers needing
-    exact normalization at large translations should center their data first.
+    far-translated row can therefore lose precision in the centered quadratic
+    term and its subtraction from ``c``. The returned ``value_roundoff`` is
+    the maximum of per-row bounds based on those computed terms and the actual
+    linear solve; the minimax value is a convex combination of row offsets.
+    Callers needing exact normalization at large translations should center
+    their data first.
     """
     matrices, linear, constants = unpack_conic(coefs)
     _validate_quadratic_matrices(matrices)
@@ -198,11 +199,13 @@ def _prepare_coefs(
 
         centered_constant = float(vector @ inverse_times_linear)
         delta = float(constant) - centered_constant
-        row_roundoff = (
-            _NEGATIVE_ALPHA_ROUNDING_FACTOR
-            * _MACHINE_EPSILON
-            * float(np.linalg.cond(matrix, 2))
-            * max(abs(float(constant)), abs(centered_constant))
+        solve_scale = float(
+            np.linalg.norm(vector, ord=2) * np.linalg.norm(inverse_times_linear, ord=2)
+        )
+        row_roundoff = _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * float(
+            np.linalg.cond(matrix, 2)
+        ) * solve_scale + _NEGATIVE_ALPHA_ROUNDING_FACTOR * _MACHINE_EPSILON * (
+            abs(float(constant)) + abs(centered_constant)
         )
         if not np.isfinite(delta) or not np.isfinite(row_roundoff):
             raise ValueError(
@@ -390,10 +393,9 @@ def cech_grad(
 
     A packed row encodes ``c_i = xbar_i^T A_i xbar_i + delta_i``. For
     ``|xbar_i|**2 >> 1`` or ill-conditioned ``A_i``, the representable
-    ``delta_i`` carries roundoff of order
-    ``eps * cond2(A_i) * max(|c_i|, |xbar_i^T A_i xbar_i|)``. Callers
-    needing exact normalization at large translations should center their data
-    first.
+    ``delta_i`` carries roundoff from the computed centered quadratic term and
+    its subtraction from ``c_i``. Callers needing exact normalization at large
+    translations should center their data first.
 
     This is a gradient of ``t``, not ``t**2``.  Its hypotheses are a
     non-degenerate input, at least two indices in ``active_set``, multipliers
