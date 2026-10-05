@@ -96,7 +96,7 @@ class TestPublicSurrogate:
         assert gap <= 1e-8
         assert residual <= 1e-8
 
-    def test_plain_fw_converges_with_large_budget(self):
+    def test_pairwise_fw_converges_with_large_budget(self):
         matrices, centers = minimax_public_surrogate()
         result = solve_minimax(
             matrices,
@@ -110,13 +110,31 @@ class TestPublicSurrogate:
         assert result.metadata is not None
         assert abs(result.alpha - SURROGATE_ALPHA) <= 1e-8
 
-    def test_default_budget_reports_plain_fw_nonconvergence(self):
+    def test_default_budget_reports_pairwise_fw_nonconvergence(self):
         matrices, centers = minimax_public_surrogate()
         result = solve_minimax(matrices, centers)
 
         assert not result.converged
         assert result.method == "fw+brentq"
         assert result.metadata is not None
+
+    def test_pairwise_fw_swaps_only_best_and_worst_weights(self):
+        """One pairwise FW step changes two coordinates and preserves their mass."""
+        matrices = np.repeat(np.eye(1)[np.newaxis, :, :], 3, axis=0)
+        centers = np.array([[0.0], [1.0], [3.0]])
+        initial = np.full(3, 1.0 / 3.0)
+
+        result = solve_minimax(
+            matrices,
+            centers,
+            method="fw+bisect",
+            max_iter=1,
+            tol=1e-30,
+        )
+
+        changed = np.flatnonzero(result.weights != initial)
+        assert changed.size == 2
+        assert result.weights[changed].sum() == pytest.approx(initial[changed].sum())
 
 
 # ---------------------------------------------------------------------------

@@ -39,6 +39,8 @@ from ellcech 82d13e3 in the following ways:
   this can increase the step count without changing the accepted result.
 * A post-polish Cholesky factorization failure forces ``converged=False``;
   ellcech 82d13e3 preserved the prior convergence flag in this case.
+* Direct ``scipy-slsqp`` is gap-enforced and Newton-polished when its initial
+  result misses the requested global gap.
 The list above exhausts numerical and solver-behavior deviations from ellcech.
 The remaining differences are packaging-only (the intra-package import of
 ``unpack_conic`` and type annotations) or documentation. Distributed as part
@@ -79,6 +81,12 @@ where ``x*(mu) = A(mu)^{-1} b(mu)`` is the circumcenter. The dual gradient is
 These identities describe the unadjusted problem; with regularization or
 conditioning the solver works on a stabilised ``A(mu)`` and its outputs
 approximate that stabilised problem.
+
+The FW runners use ellcech's original pairwise Frank-Wolfe step on the dual
+simplex: ``s`` is the best vertex (largest constraint value), ``v`` is the
+worst active vertex (smallest constraint value), and mass is transferred along
+``e_s - e_v`` by ``0 <= gamma <= mu[v]``. This pairwise step is not a
+deviation from ellcech and is therefore not listed above.
 
 Weight support versus tight set
 -------------------------------
@@ -456,7 +464,12 @@ def _exact_line_search(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> float:
-    """Find gamma* in [0, gamma_max] that maximises g along the pairwise direction.
+    """Maximise ``g`` along a dual-simplex pairwise Frank-Wolfe swap.
+
+    The direction is ``e_s - e_v``, where ``s`` is the best vertex (largest
+    constraint value) and ``v`` is the worst active vertex (smallest
+    constraint value). The line search is restricted to
+    ``0 <= gamma <= gamma_max <= mu[v]``.
 
     Bisects on the stabilized dual directional derivative
     ``h(gamma) = grad_s - grad_v``.
@@ -531,7 +544,12 @@ def _brentq_line_search(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[float, int]:
-    """Brentq-based line search replacing fixed 52-step bisection.
+    """Brentq line search for a dual-simplex pairwise Frank-Wolfe swap.
+
+    The direction is ``e_s - e_v``, with ``s`` the best vertex (largest
+    constraint value) and ``v`` the worst active vertex (smallest constraint
+    value). The line search is restricted to
+    ``0 <= gamma <= gamma_max <= mu[v]``.
 
     Returns:
         (gamma, n_fevals): Optimal step and number of function evaluations.
@@ -621,7 +639,11 @@ def _run_fw_bisect(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int]:
-    """Plain Frank-Wolfe with exact bisection line search.
+    """Pairwise Frank-Wolfe with exact bisection line search.
+
+    Each swap chooses the best vertex (largest constraint value) and the
+    worst active vertex (smallest constraint value), then transfers mass along
+    ``e_s - e_v`` with step at most ``mu[v]``.
 
     Returns:
         (mu, converged, n_iter)
@@ -734,7 +756,11 @@ def _run_fw_brentq(
     condition_number_limit: float | None,
     max_conditioning_steps: int,
 ) -> tuple[np.ndarray, bool, int, dict]:
-    """Plain Frank-Wolfe with brentq line search.
+    """Pairwise Frank-Wolfe with brentq line search.
+
+    Each swap chooses the best vertex (largest constraint value) and the
+    worst active vertex (smallest constraint value), then transfers mass along
+    ``e_s - e_v`` with step at most ``mu[v]``.
 
     Returns:
         (mu, converged, n_iter, metadata)
@@ -1513,11 +1539,11 @@ def solve_minimax(
 
     Seven solver back-ends are available via ``method``:
 
-    * ``"fw+bisect"``: Plain FW with 52-step bisection line search.
-    * ``"fw+brentq"`` (default): Plain FW with adaptive brentq line search.
-    * ``"fw+bisect+newton"``: FW(bisect) warm-start + Newton polishing.
-    * ``"fw+brentq+newton"``: FW(brentq) warm-start + damped Newton polishing.
-    * ``"fw+bisect+damped-newton"``: FW(bisect) + Armijo-damped Newton.
+    * ``"fw+bisect"``: Pairwise FW with 52-step bisection line search.
+    * ``"fw+brentq"`` (default): Pairwise FW with adaptive brentq line search.
+    * ``"fw+bisect+newton"``: Pairwise FW(bisect) warm-start + Newton polishing.
+    * ``"fw+brentq+newton"``: Pairwise FW(brentq) warm-start + damped Newton polishing.
+    * ``"fw+bisect+damped-newton"``: Pairwise FW(bisect) + Armijo-damped Newton.
     * ``"scipy-slsqp"``: Direct SLSQP solve via scipy, with Newton accuracy
       polishing if SLSQP's result misses the requested global gap.
     * ``"newton-cold"``: Newton from uniform mu=1/k (stability baseline).
@@ -1533,7 +1559,7 @@ def solve_minimax(
         offsets: Optional additive constants ``delta_i``, shape ``(k,)``.
             ``None`` is the original zero-offset problem.
         method: One of the seven canonical method names above.
-        tol: Frank-Wolfe gap tolerance for the FW-based methods.
+        tol: Pairwise Frank-Wolfe gap tolerance for the FW-based methods.
         max_iter: Maximum number of Frank-Wolfe iterations.
         weight_tol: Threshold defining the weight support ``active_set``. It
             also selects the face used by Newton polishing.

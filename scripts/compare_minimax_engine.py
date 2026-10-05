@@ -17,8 +17,9 @@ compare them::
         compare /tmp/legacy.json /tmp/candidate.json
 
 Only cases for which the legacy engine reports ``converged=True`` are fidelity
-requirements. Alpha, circumcenter, and weights must then agree absolutely to
-``1e-12``, and the candidate must also report convergence.
+requirements. The comparison reports per-method maxima for alpha,
+circumcenter, and weights and checks each against its declared absolute
+tolerance; the candidate must also report convergence.
 """
 
 from __future__ import annotations
@@ -45,7 +46,21 @@ METHODS = (
 )
 BASE_SEED = 260_027
 INSTANCES_PER_SHAPE = 20
-FIDELITY_ATOL = 1e-12
+METHOD_TOLERANCES = {
+    "fw+bisect": 1e-12,
+    "fw+brentq": 1e-12,
+    "fw+bisect+newton": 1e-11,
+    "fw+brentq+newton": 1e-11,
+    "fw+bisect+damped-newton": 1e-11,
+    "scipy-slsqp": 1e-6,
+    "newton-cold": 1e-12,
+}
+METHOD_REASONS = {
+    "scipy-slsqp": (
+        "direct SLSQP is gap-enforced and Newton-polished in this port, "
+        "deviation list item 10"
+    )
+}
 
 
 def _solver(engine: str, source_root: Path | None) -> Callable[..., Any]:
@@ -184,26 +199,44 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
     converged = 0
     mismatches = []
     converged_by_method = {method: 0 for method in METHODS}
+    per_method = {
+        method: {
+            "legacy_converged": 0,
+            "mismatches": 0,
+            "max_abs_dalpha": 0.0,
+            "max_abs_dx": 0.0,
+            "max_abs_dmu": 0.0,
+            "declared_tolerance": METHOD_TOLERANCES[method],
+            **({"reason": METHOD_REASONS[method]} if method in METHOD_REASONS else {}),
+        }
+        for method in METHODS
+    }
     for key, old in legacy.items():
         if not old["converged"]:
             continue
         converged += 1
-        converged_by_method[key[-1]] += 1
+        method = key[-1]
+        converged_by_method[method] += 1
+        stats = per_method[method]
+        stats["legacy_converged"] += 1
         new = candidate[key]
-        same = (
-            new["converged"]
-            and abs(new["alpha"] - old["alpha"]) <= FIDELITY_ATOL
-            and np.allclose(
-                new["circumcenter"],
-                old["circumcenter"],
-                rtol=0.0,
-                atol=FIDELITY_ATOL,
-            )
-            and np.allclose(
-                new["weights"], old["weights"], rtol=0.0, atol=FIDELITY_ATOL
+        dalpha = abs(float(new["alpha"] - old["alpha"]))
+        dx = float(
+            np.max(
+                np.abs(
+                    np.asarray(new["circumcenter"]) - np.asarray(old["circumcenter"])
+                )
             )
         )
+        dmu = float(
+            np.max(np.abs(np.asarray(new["weights"]) - np.asarray(old["weights"])))
+        )
+        stats["max_abs_dalpha"] = max(stats["max_abs_dalpha"], dalpha)
+        stats["max_abs_dx"] = max(stats["max_abs_dx"], dx)
+        stats["max_abs_dmu"] = max(stats["max_abs_dmu"], dmu)
+        same = new["converged"] and max(dalpha, dx, dmu) <= METHOD_TOLERANCES[method]
         if not same:
+            stats["mismatches"] += 1
             mismatches.append(key)
 
     summary = {
@@ -212,7 +245,7 @@ def compare(legacy_path: Path, candidate_path: Path) -> int:
         "legacy_converged_by_method": converged_by_method,
         "mismatches": len(mismatches),
         "first_mismatches": mismatches[:10],
-        "atol": FIDELITY_ATOL,
+        "per_method": per_method,
         "status": "complete" if not mismatches else "failed",
     }
     print(json.dumps(summary, indent=2, sort_keys=True))

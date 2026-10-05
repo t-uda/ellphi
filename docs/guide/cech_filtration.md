@@ -43,11 +43,14 @@ two indices, and `active_set` has three. A solver that does not converge or
 produces non-finite output raises `RuntimeError` naming its method, iterations,
 final duality gap, and `tol`.
 
-The default solver is `fw+brentq`, plain Frank-Wolfe on the dual simplex with
-an adaptive Brent line search. On the bundled surrogate, a zero-weight
-constraint is nearly tight, so the all-index gap can stall while weight leaks
-onto that vertex; this is recorded in the test factory because it explains
-why plain FW may not converge within the default budget. A non-converged
+The default solver is `fw+brentq`, pairwise Frank-Wolfe on the dual simplex
+with an adaptive Brent line search. Each step selects the best vertex (largest
+constraint value) and the worst active vertex (smallest constraint value), then
+swaps mass along `e_s - e_v` with step at most `mu[v]`; this is ellcech's
+original step. On the bundled surrogate, the near-tight zero-weight vertex 4
+keeps re-entering as the swap target, so the all-index gap can stall; this is
+recorded in the test factory because it explains why pairwise FW may not
+converge within the default budget. A non-converged
 public solve raises `RuntimeError` with the method, iterations, final duality
 gap, and `tol`; callers may choose a larger `max_iter` or a different `method`.
 

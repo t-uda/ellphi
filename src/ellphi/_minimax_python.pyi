@@ -44,7 +44,7 @@ def solve_minimax(
     newton_tol: float = 1e-14,
     newton_max_iter: int = 20,
 ) -> MinimaxResult:
-    """Solve the dual with the selected minimax method."""
+    """Solve the dual; FW methods use pairwise swaps on the dual simplex."""
     ...
 
 def solve_minimax_from_coefs(

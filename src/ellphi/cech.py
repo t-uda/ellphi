@@ -248,8 +248,11 @@ def cech(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default is
-            ``"fw+brentq"``, plain Frank-Wolfe with adaptive Brent line search.
-        tol: Frank-Wolfe gap tolerance.
+            ``"fw+brentq"``, pairwise Frank-Wolfe on the dual simplex: each
+            step swaps mass from the worst active vertex to the best vertex
+            along ``e_s - e_v``, with step at most ``mu[v]``, using adaptive
+            Brent line search. This is ellcech's original step.
+        tol: Pairwise Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set`` as the
@@ -396,8 +399,11 @@ def cech_grad(
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
         method: Internal many-body solver method. The default is
-            ``"fw+brentq"``, plain Frank-Wolfe with adaptive Brent line search.
-        tol: Frank-Wolfe gap tolerance.
+            ``"fw+brentq"``, pairwise Frank-Wolfe on the dual simplex: each
+            step swaps mass from the worst active vertex to the best vertex
+            along ``e_s - e_v``, with step at most ``mu[v]``, using adaptive
+            Brent line search. This is ellcech's original step.
+        tol: Pairwise Frank-Wolfe gap tolerance.
         max_iter: Maximum Frank-Wolfe iterations.
         weight_tol: Threshold defining ``support``.
         active_tol: Relative tolerance defining ``active_set``.
