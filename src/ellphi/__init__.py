@@ -14,6 +14,7 @@ The library is organized into the following subpackages:
     two ellipses.
 - `ellphi.visualization`: Helper functions for visualizing ellipses and
     ellipse clouds.
+- `ellphi.cech`: Anisotropic Čech filtration values and gradients.
 """
 
 import numpy as np
@@ -46,6 +47,16 @@ from .solver import (
 
 from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_cov_grad
 
+# anisotropic Čech filtration
+from .cech import (
+    CechInfo,
+    CechResult,
+    CechStage,
+    CechGrad,
+    cech,
+    cech_grad,
+)
+
 FloatArray = NDArray[np.float64]
 
 
@@ -76,6 +87,13 @@ __all__ = [
     "tangency_grad",
     "pdist_tangency_grad",
     "coef_from_cov_grad",
+    # anisotropic Čech filtration
+    "CechStage",
+    "CechInfo",
+    "CechResult",
+    "CechGrad",
+    "cech",
+    "cech_grad",
     "__version__",
     "version_info",
 ]

@@ -1,1 +1,3 @@
 ellphi._solver_python.MethodName
+ellphi._minimax_python.MethodName
+ellphi.cech.MethodName

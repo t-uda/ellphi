@@ -90,6 +90,14 @@ This section documents the reasons for each entry in the `stubtest-allowlist.txt
 
 **Reason:** This entry is necessary because the `MethodName` type alias is defined as a `typing.Literal` in the implementation, but it is simplified to `str` in the corresponding stub file (`.pyi`). This simplification is intentional to avoid duplicating the literal values in the stub, which would make it harder to maintain. (An equivalent entry for the `ellphi.solver` re-export was needed with older mypy versions but is reported as unused since mypy 1.20.)
 
+*   `ellphi._minimax_python.MethodName`
+
+**Reason:** The stub declares the same seven-value `typing.Literal` alias as the implementation, but stubtest cannot verify multi-value `Literal` aliases: it expands the stub alias into a union of single-value literals and reports the runtime alias as "not a Union". Simplifying the stub to `str` does not avoid the report either, so the entry keeps the precise stub type.
+
+*   `ellphi.cech.MethodName`
+
+**Reason:** The stub declares the precise eight-value `typing.Literal` alias, including the public `"auto"` route, but stubtest cannot verify multi-value `Literal` aliases and reports the runtime alias as "not a Union". The precise alias is retained for type checking.
+
 #### Managing the Allowlist
 
 When adding a new entry to the `stubtest-allowlist.txt` file, you must also update the "Allowlist Justification" section in this document to include a clear and concise explanation for why the entry is needed. This ensures that the allowlist remains transparent and easy to manage.

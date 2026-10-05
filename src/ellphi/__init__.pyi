@@ -32,6 +32,14 @@ from .grad import (
     pdist_tangency_grad as pdist_tangency_grad,
     coef_from_cov_grad as coef_from_cov_grad,
 )
+from .cech import (
+    CechInfo as CechInfo,
+    CechGrad as CechGrad,
+    CechResult as CechResult,
+    CechStage as CechStage,
+    cech as cech,
+    cech_grad as cech_grad,
+)
 from ._version import __version__ as __version__
 
 def version_info() -> str: ...
@@ -59,6 +67,12 @@ __all__ = [
     "tangency_grad",
     "pdist_tangency_grad",
     "coef_from_cov_grad",
+    "CechResult",
+    "CechGrad",
+    "CechStage",
+    "CechInfo",
+    "cech",
+    "cech_grad",
     "FloatArray",
     "__version__",
     "version_info",
