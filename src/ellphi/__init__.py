@@ -49,7 +49,9 @@ from .grad import TangencyGrad, tangency_grad, pdist_tangency_grad, coef_from_co
 
 # anisotropic Čech filtration
 from .cech import (
+    CechInfo,
     CechResult,
+    CechStage,
     CechGrad,
     cech,
     cech_grad,
@@ -86,6 +88,8 @@ __all__ = [
     "pdist_tangency_grad",
     "coef_from_cov_grad",
     # anisotropic Čech filtration
+    "CechStage",
+    "CechInfo",
     "CechResult",
     "CechGrad",
     "cech",

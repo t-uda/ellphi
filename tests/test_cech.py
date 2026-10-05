@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-import re
+import time
 from typing import get_args
 
 import numpy as np
@@ -364,6 +364,8 @@ def test_right_triangle_distinguishes_support_and_active_set(method):
     assert result.support == (0, 1)
     assert set(result.support) <= set(result.active_set)
     assert result.active_set == (0, 1, 2)
+    assert len(result.info.stages) == 1
+    assert result.info.method_used == method
 
 
 def test_singleton_and_empty_cech_input():
@@ -491,31 +493,51 @@ def _public_surrogate_coefs():
     return pack_conic(matrices, linear, constants)
 
 
-def test_public_surrogate_default_raises_with_honest_gap():
+def test_auto_ordinary_simplex_uses_stage_one_only():
+    coefs = _random_coefs(4, 2, seed=113)
+
+    result = ellphi.cech(coefs, method="auto")
+
+    assert result.info.requested_method == "auto"
+    assert result.info.method_used == "fw+brentq+newton"
+    assert result.info.converged
+    assert len(result.info.stages) == 1
+    assert result.info.stages[0].method == "fw+brentq+newton"
+    assert result.info.stages[0].converged
+
+
+def test_public_surrogate_auto_falls_back_to_slsqp():
+    coefs = _public_surrogate_coefs()
+    started = time.perf_counter()
+    result = ellphi.cech(coefs, method="auto")
+    elapsed = time.perf_counter() - started
+
+    assert elapsed <= 5.0, f"informational auto route wall time: {elapsed:.3f}s"
+    assert result.t**2 == pytest.approx(0.9024444260, abs=1e-8)
+    assert result.info.requested_method == "auto"
+    assert result.info.method_used == "scipy-slsqp"
+    assert result.info.converged
+    assert len(result.info.stages) == 2
+    assert not result.info.stages[0].converged
+    assert result.info.stages[0].status == "armijo_rejected"
+    assert result.info.stages[1].converged
+    assert result.info.stages[1].method == "scipy-slsqp"
+
+
+def test_auto_reports_both_failed_stages():
     coefs = _public_surrogate_coefs()
 
     with pytest.raises(RuntimeError) as exc_info:
-        ellphi.cech(coefs)
+        ellphi.cech(coefs, method="auto", tol=1e-30, max_iter=1)
 
     message = str(exc_info.value)
-    matrices, centers, offsets, _ = cech_module._prepare_coefs(coefs)
-    engine_result = solve_minimax(
-        matrices,
-        centers,
-        offsets=offsets,
-        method="fw+brentq+newton",
-    )
-    values = cech_module._centered_constraint_values(
-        engine_result.circumcenter, matrices, centers, offsets
-    )
-    expected_gap = float(np.max(values) - engine_result.weights @ values)
-    expected_scale = max(1.0, abs(float(engine_result.weights @ values)))
-    assert "method='fw+brentq+newton'" in message
-    assert f"duality_gap={expected_gap:.17g}" in message
-    assert f"tol={1e-09:g}" in message
-    assert f"duality_gap_scale={expected_scale:.17g}" in message
-    assert re.search(r"duality_gap=-?[0-9.e+-]+", message)
-    assert re.search(r"duality_gap_scale=[0-9.e+-]+", message)
+    assert "stage 1" in message
+    assert "stage 2" in message
+    assert "fw+brentq+newton" in message
+    assert "scipy-slsqp" in message
+    assert "status=" in message
+    assert "final_gap=" in message
+    assert "n_iter=" in message
 
 
 def test_public_surrogate_fw_brentq_succeeds_with_large_budget():
@@ -525,6 +547,8 @@ def test_public_surrogate_fw_brentq_succeeds_with_large_budget():
 
     assert result.t**2 == pytest.approx(0.9024444260, abs=1e-8)
     assert result.support == (1, 3, 5)
+    assert result.info.method_used == "fw+brentq"
+    assert len(result.info.stages) == 1
 
 
 def test_public_surrogate_slsqp_succeeds_at_default_budget():
@@ -534,6 +558,19 @@ def test_public_surrogate_slsqp_succeeds_at_default_budget():
 
     assert result.t**2 == pytest.approx(0.9024444260, abs=1e-8)
     assert result.support == (1, 3, 5)
+    assert result.info.method_used == "scipy-slsqp"
+    assert len(result.info.stages) == 1
+
+
+def test_named_method_does_not_fall_back_on_surrogate():
+    coefs = _public_surrogate_coefs()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ellphi.cech(coefs, method="fw+brentq+newton")
+
+    message = str(exc_info.value)
+    assert "method='fw+brentq+newton'" in message
+    assert "scipy-slsqp" not in message
 
 
 @pytest.mark.parametrize("api", [ellphi.cech, ellphi.cech_grad])
@@ -575,6 +612,7 @@ def test_public_namedtuple_field_order():
         "mu",
         "support",
         "active_set",
+        "info",
     )
     assert ellphi.CechGrad._fields == (
         "t",
@@ -583,6 +621,7 @@ def test_public_namedtuple_field_order():
         "dt_dcoef",
         "support",
         "active_set",
+        "info",
     )
 
 
@@ -590,6 +629,8 @@ def test_public_exports_hide_internal_engine():
     expected = {
         "CechResult",
         "CechGrad",
+        "CechStage",
+        "CechInfo",
         "cech",
         "cech_grad",
     }

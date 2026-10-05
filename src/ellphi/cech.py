@@ -8,14 +8,18 @@ time computed by :func:`ellphi.tangency`, and ``cech`` agrees with it.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import Literal, NamedTuple, cast
 
 import numpy as np
 
-from ._minimax_python import MethodName, solve_minimax
+from ._minimax_python import MethodName as EngineMethodName
+from ._minimax_python import MinimaxResult, solve_minimax
 from .geometry import unpack_conic
 
 __all__ = [
+    "MethodName",
+    "CechStage",
+    "CechInfo",
     "CechResult",
     "CechGrad",
     "cech",
@@ -23,8 +27,57 @@ __all__ = [
 ]
 
 
+MethodName = Literal[
+    "fw+bisect",
+    "fw+brentq",
+    "fw+bisect+newton",
+    "fw+brentq+newton",
+    "fw+bisect+damped-newton",
+    "scipy-slsqp",
+    "newton-cold",
+    "auto",
+]
+
+_NAMED_METHODS = (
+    "fw+bisect",
+    "fw+brentq",
+    "fw+bisect+newton",
+    "fw+brentq+newton",
+    "fw+bisect+damped-newton",
+    "scipy-slsqp",
+    "newton-cold",
+    "fw+newton",
+)
+
+
 _NEGATIVE_ALPHA_ROUNDING_FACTOR = 64.0
 _MACHINE_EPSILON = np.finfo(float).eps
+
+
+class CechStage(NamedTuple):
+    """Diagnostics for one public Čech solver stage."""
+
+    method: str
+    converged: bool
+    status: str
+    gap: float
+    n_iter: int
+
+
+class CechInfo(NamedTuple):
+    """Traceability information for a public Čech solve.
+
+    ``n_iter`` is the iteration or evaluation count reported by the selected
+    stage.  The counts and outcomes for every attempted stage are in
+    ``stages``.
+    """
+
+    requested_method: str
+    method_used: str
+    converged: bool
+    gap: float
+    n_iter: int
+    stages: tuple[CechStage, ...]
 
 
 class CechResult(NamedTuple):
@@ -60,6 +113,8 @@ class CechResult(NamedTuple):
         support: Indices with multiplier greater than ``weight_tol``.
         active_set: Tight constraints satisfying the numerical active-set
             test with ``active_tol``.
+        info: Requested method, selected method, final gap and per-stage
+            convergence diagnostics.
     """
 
     t: float
@@ -67,6 +122,7 @@ class CechResult(NamedTuple):
     mu: np.ndarray
     support: tuple[int, ...]
     active_set: tuple[int, ...]
+    info: CechInfo
 
 
 class CechGrad(NamedTuple):
@@ -84,6 +140,8 @@ class CechGrad(NamedTuple):
             perturbations, shape ``(k, m)``.
         support: Indices with multiplier greater than ``weight_tol``.
         active_set: Tight constraints at ``point`` under ``active_tol``.
+        info: Requested method, selected method, final gap and per-stage
+            convergence diagnostics.
     """
 
     t: float
@@ -92,6 +150,7 @@ class CechGrad(NamedTuple):
     dt_dcoef: np.ndarray
     support: tuple[int, ...]
     active_set: tuple[int, ...]
+    info: CechInfo
 
 
 def _coefficient_basis(point: np.ndarray) -> np.ndarray:
@@ -243,93 +302,70 @@ def _centered_constraint_values(
     return values + offsets
 
 
-def cech(
-    coefs: np.ndarray,
+class _StageRun(NamedTuple):
+    result: MinimaxResult | None
+    stage: CechStage
+    values: np.ndarray | None
+    dual_value: float
+    gap_scale: float
+    error: str | None
+
+
+def _stage_status(
+    result: MinimaxResult,
     *,
-    method: MethodName | str = "fw+brentq+newton",
-    tol: float = 1e-9,
-    max_iter: int = 2000,
-    weight_tol: float = 1e-10,
-    active_tol: float = 1e-9,
-    newton_tol: float = 1e-14,
-    newton_max_iter: int = 20,
-) -> CechResult:
-    """Compute the Čech filtration time for a simplex of ellipsoids.
+    accepted: bool,
+    finite: bool,
+    finite_values: bool,
+) -> str:
+    """Return a stable public status for one engine result."""
+    if accepted:
+        return "converged"
+    if not finite or not finite_values:
+        return "nonfinite"
+    if result.metadata is not None:
+        newton_status = result.metadata.get("newton_status")
+        if isinstance(newton_status, str) and newton_status != "converged":
+            return newton_status
+    return "gap_not_met"
 
-    The returned ``t`` satisfies ``t**2 = alpha(sigma)``, where
-    ``alpha(sigma) = min_x max_i f_i(x)`` is the least squared scale at which
-    all growing ellipsoids share a common point.  For ``k = 2`` the Čech time
-    equals the tangency time computed by :func:`ellphi.tangency`, and ``cech``
-    agrees with it.
 
-    Args:
-        coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method. The default is
-            ``"fw+brentq+newton"``, pairwise Frank-Wolfe with adaptive Brent
-            line search followed by Newton polishing.
-        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
-            value|).
-        max_iter: Maximum Frank-Wolfe iterations.
-        weight_tol: Threshold defining the public ``support``; it does not
-            remove positive-weight rows from the normalization estimate.
-        active_tol: Relative tolerance for the public ``active_set`` tightness
-            test, with only the actual zero-clipping shift added when clipping
-            occurs.
-        newton_tol: Residual tolerance for Newton's own polishing iterations;
-            it does not alter the shared accepted-result gap test.
-        newton_max_iter: Maximum Newton-polishing iterations.
-
-    Stabilized solves are available only through the private minimax engine;
-    they are research controls and carry no public gradient guarantee.
-
-    Returns:
-        A result containing the Čech filtration time rather than the squared
-        filtration value.
-
-    Raises:
-        ValueError: If the coefficient array is not two-dimensional, is empty,
-            a tolerance is not finite and non-negative, or a coefficient row
-            has a non-symmetric or non-positive-definite quadratic matrix, or
-            the packed quadrics have no common non-negative filtration scale.
-            Packed input requires
-            ``d >= 2``, as for :func:`ellphi.tangency`.
-        RuntimeError: If the internal solver does not converge or produces a
-            non-finite output. The error names the method, iterations, final
-            duality gap, and ``tol`` and gives retry guidance.
-    """
-    coefs = np.asarray(coefs, dtype=float)
-    if coefs.ndim != 2:
-        raise ValueError("Expected coefficient array with shape (k, m)")
-    if coefs.shape[0] == 0:
-        raise ValueError("simplex must contain at least one vertex (k=0 given)")
-    if coefs.shape[1] == 3:
-        raise ValueError(
-            "packed input requires d >= 2, as for ellphi.tangency; "
-            "one-dimensional packed conics are not supported"
+def _run_stage(
+    matrices: np.ndarray,
+    centers: np.ndarray,
+    offsets: np.ndarray,
+    *,
+    method: str,
+    tol: float,
+    max_iter: int,
+    weight_tol: float,
+    newton_tol: float,
+    newton_max_iter: int,
+) -> _StageRun:
+    """Run one engine stage and retain its public convergence diagnostics."""
+    try:
+        result = solve_minimax(
+            matrices,
+            centers,
+            offsets=offsets,
+            method=cast(EngineMethodName, method),
+            tol=tol,
+            max_iter=max_iter,
+            weight_tol=weight_tol,
+            newton_tol=newton_tol,
+            newton_max_iter=newton_max_iter,
         )
-    _validate_tolerance("active_tol", active_tol)
-    _validate_solver_parameters(
-        coefs.shape[0],
-        tol=tol,
-        max_iter=max_iter,
-        weight_tol=weight_tol,
-        newton_tol=newton_tol,
-        newton_max_iter=newton_max_iter,
-    )
-    matrices, centers, offsets, row_roundoff_estimates = _prepare_coefs(coefs)
+    except Exception as exc:
+        stage = CechStage(
+            method=method,
+            converged=False,
+            status=f"exception:{type(exc).__name__}",
+            gap=float("nan"),
+            n_iter=0,
+        )
+        return _StageRun(None, stage, None, float("nan"), float("nan"), str(exc))
 
-    result = solve_minimax(
-        matrices,
-        centers,
-        offsets=offsets,
-        method=method,
-        tol=tol,
-        max_iter=max_iter,
-        weight_tol=weight_tol,
-        newton_tol=newton_tol,
-        newton_max_iter=newton_max_iter,
-    )
-    finite = (
+    finite = bool(
         np.isfinite(result.alpha)
         and np.all(np.isfinite(result.circumcenter))
         and np.all(np.isfinite(result.weights))
@@ -337,7 +373,7 @@ def cech(
     values = _centered_constraint_values(
         result.circumcenter, matrices, centers, offsets
     )
-    finite_values = np.all(np.isfinite(values))
+    finite_values = bool(np.all(np.isfinite(values)))
     final_gap = (
         float(np.max(values) - np.dot(result.weights, values))
         if finite and finite_values
@@ -349,15 +385,79 @@ def cech(
         else float("nan")
     )
     gap_scale = max(1.0, abs(dual_value)) if np.isfinite(dual_value) else float("nan")
-    if not result.converged or not finite or not finite_values:
-        reason = "did not converge" if not result.converged else "was non-finite"
-        raise RuntimeError(
-            "cech "
-            f"{reason}: method={result.method!r}, iterations={result.n_iter}, "
-            f"duality_gap={final_gap:.17g}, tol={tol:g}, "
-            f"duality_gap_scale={gap_scale:.17g}; "
-            "a larger max_iter or a different method may be chosen"
-        )
+    accepted = bool(
+        result.converged
+        and finite
+        and finite_values
+        and np.isfinite(final_gap)
+        and final_gap <= tol * gap_scale
+    )
+    status = _stage_status(
+        result,
+        accepted=accepted,
+        finite=finite,
+        finite_values=finite_values,
+    )
+    stage = CechStage(
+        method=result.method,
+        converged=accepted,
+        status=status,
+        gap=final_gap,
+        n_iter=result.n_iter,
+    )
+    return _StageRun(result, stage, values, dual_value, gap_scale, None)
+
+
+def _stage_diagnostics(run: _StageRun) -> str:
+    """Format one stage for a failure message."""
+    details = (
+        f"method={run.stage.method!r}, status={run.stage.status!r}, "
+        f"final_gap={run.stage.gap:.17g}, n_iter={run.stage.n_iter}"
+    )
+    if run.result is not None and run.result.metadata is not None:
+        n_fevals = run.result.metadata.get("n_fevals")
+        if n_fevals is not None:
+            details += f", n_fevals={n_fevals}"
+    if run.error:
+        details += f", cause={run.error!r}"
+    return details
+
+
+def _raise_named_failure(run: _StageRun, tol: float) -> None:
+    """Raise the legacy-shaped diagnostic for a named method."""
+    raise RuntimeError(
+        "cech did not converge: "
+        f"method={run.stage.method!r}, status={run.stage.status!r}, "
+        f"iterations={run.stage.n_iter}, duality_gap={run.stage.gap:.17g}, "
+        f"tol={tol:g}, duality_gap_scale={run.gap_scale:.17g}; "
+        f"{_stage_diagnostics(run)}; "
+        "a larger max_iter or a different method may be chosen"
+    )
+
+
+def _raise_auto_failure(runs: tuple[_StageRun, ...]) -> None:
+    """Raise a diagnostic retaining both failed auto-route stages."""
+    details = "; ".join(
+        f"stage {index}: {_stage_diagnostics(run)}"
+        for index, run in enumerate(runs, start=1)
+    )
+    raise RuntimeError(f"cech auto route failed: {details}")
+
+
+def _assemble_result(
+    run: _StageRun,
+    *,
+    requested_method: str,
+    stages: tuple[CechStage, ...],
+    row_roundoff_estimates: np.ndarray,
+    weight_tol: float,
+    active_tol: float,
+) -> CechResult:
+    """Build the public result from an accepted stage."""
+    assert run.result is not None
+    assert run.values is not None
+    result = run.result
+    values = run.values
     alpha = float(result.alpha)
     support_indices = np.flatnonzero(result.weights > weight_tol)
     support = tuple(int(i) for i in support_indices)
@@ -385,20 +485,142 @@ def cech(
     active_set = tuple(
         int(i) for i in np.flatnonzero(t_squared - values <= active_threshold)
     )
-
+    info = CechInfo(
+        requested_method=requested_method,
+        method_used=run.stage.method,
+        converged=run.stage.converged,
+        gap=run.stage.gap,
+        n_iter=run.stage.n_iter,
+        stages=stages,
+    )
     return CechResult(
         t=t,
         point=result.circumcenter,
         mu=result.weights,
         support=support,
         active_set=active_set,
+        info=info,
     )
+
+
+def cech(
+    coefs: np.ndarray,
+    *,
+    method: MethodName | str = "auto",
+    tol: float = 1e-9,
+    max_iter: int = 2000,
+    weight_tol: float = 1e-10,
+    active_tol: float = 1e-9,
+    newton_tol: float = 1e-14,
+    newton_max_iter: int = 20,
+) -> CechResult:
+    """Compute the Čech filtration time for a simplex of ellipsoids.
+
+    The returned ``t`` satisfies ``t**2 = alpha(sigma)``, where
+    ``alpha(sigma) = min_x max_i f_i(x)`` is the least squared scale at which
+    all growing ellipsoids share a common point.  For ``k = 2`` the Čech time
+    equals the tangency time computed by :func:`ellphi.tangency`, and ``cech``
+    agrees with it.
+
+    Args:
+        coefs: Packed conic coefficient vectors, shape ``(k, m)``.
+        method: Internal many-body solver method. The default ``"auto"``
+            first runs ``"fw+brentq+newton"`` with the caller's ``tol``,
+            ``max_iter``, and ``newton_tol``. If that stage does not converge,
+            it runs gap-enforced ``"scipy-slsqp"`` from uniform dual weights
+            with the same ``tol``. A named method never falls back.
+        tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
+            value|).
+        max_iter: Maximum Frank-Wolfe iterations.
+        weight_tol: Threshold defining the public ``support``; it does not
+            remove positive-weight rows from the normalization estimate.
+        active_tol: Relative tolerance for the public ``active_set`` tightness
+            test, with only the actual zero-clipping shift added when clipping
+            occurs.
+        newton_tol: Residual tolerance for Newton's own polishing iterations;
+            it does not alter the shared accepted-result gap test.
+        newton_max_iter: Maximum Newton-polishing iterations.
+
+    Stabilized solves are available only through the private minimax engine;
+    they are research controls and carry no public gradient guarantee.
+
+    Returns:
+        A result containing the Čech filtration time rather than the squared
+        filtration value. The trailing ``info`` field records the requested
+        method, selected method, final gap, count, and every attempted stage.
+
+    Raises:
+        ValueError: If the coefficient array is not two-dimensional, is empty,
+            a tolerance is not finite and non-negative, or a coefficient row
+            has a non-symmetric or non-positive-definite quadratic matrix, or
+            the packed quadrics have no common non-negative filtration scale.
+            Packed input requires
+            ``d >= 2``, as for :func:`ellphi.tangency`.
+        RuntimeError: If a named method does not converge or produces a
+            non-finite output, or if both stages of the ``"auto"`` route fail.
+            The error reports stage statuses, final gaps, and iteration or
+            evaluation counts.
+    """
+    coefs = np.asarray(coefs, dtype=float)
+    if coefs.ndim != 2:
+        raise ValueError("Expected coefficient array with shape (k, m)")
+    if coefs.shape[0] == 0:
+        raise ValueError("simplex must contain at least one vertex (k=0 given)")
+    if coefs.shape[1] == 3:
+        raise ValueError(
+            "packed input requires d >= 2, as for ellphi.tangency; "
+            "one-dimensional packed conics are not supported"
+        )
+    _validate_tolerance("active_tol", active_tol)
+    _validate_solver_parameters(
+        coefs.shape[0],
+        tol=tol,
+        max_iter=max_iter,
+        weight_tol=weight_tol,
+        newton_tol=newton_tol,
+        newton_max_iter=newton_max_iter,
+    )
+    matrices, centers, offsets, row_roundoff_estimates = _prepare_coefs(coefs)
+
+    if method != "auto" and method not in _NAMED_METHODS:
+        raise ValueError(f"Unknown method {method!r}")
+    requested_method = str(method)
+    stage_methods = (
+        ("fw+brentq+newton", "scipy-slsqp") if method == "auto" else (requested_method,)
+    )
+    runs: list[_StageRun] = []
+    for stage_method in stage_methods:
+        run = _run_stage(
+            matrices,
+            centers,
+            offsets,
+            method=stage_method,
+            tol=tol,
+            max_iter=max_iter,
+            weight_tol=weight_tol,
+            newton_tol=newton_tol,
+            newton_max_iter=newton_max_iter,
+        )
+        runs.append(run)
+        if run.stage.converged:
+            return _assemble_result(
+                run,
+                requested_method=requested_method,
+                stages=tuple(item.stage for item in runs),
+                row_roundoff_estimates=row_roundoff_estimates,
+                weight_tol=weight_tol,
+                active_tol=active_tol,
+            )
+        if method != "auto":
+            _raise_named_failure(run, tol)
+    _raise_auto_failure(tuple(runs))
+    raise AssertionError("unreachable")
 
 
 def cech_grad(
     coefs: np.ndarray,
     *,
-    method: MethodName | str = "fw+brentq+newton",
+    method: MethodName | str = "auto",
     tol: float = 1e-9,
     max_iter: int = 2000,
     weight_tol: float = 1e-10,
@@ -434,9 +656,11 @@ def cech_grad(
 
     Args:
         coefs: Packed conic coefficient vectors, shape ``(k, m)``.
-        method: Internal many-body solver method. The default is
-            ``"fw+brentq+newton"``, pairwise Frank-Wolfe with adaptive Brent
-            line search followed by Newton polishing.
+        method: Internal many-body solver method. The default ``"auto"``
+            first runs ``"fw+brentq+newton"`` with the caller's ``tol``,
+            ``max_iter``, and ``newton_tol``. If that stage does not converge,
+            it runs gap-enforced ``"scipy-slsqp"`` from uniform dual weights
+            with the same ``tol``. A named method never falls back.
         tol: Pairwise Frank-Wolfe gap tolerance, relative to max(1, |dual
             value|).
         max_iter: Maximum Frank-Wolfe iterations.
@@ -450,7 +674,8 @@ def cech_grad(
         newton_max_iter: Maximum Newton-polishing iterations.
 
     Returns:
-        Čech filtration data and ``dt_dcoef`` with shape ``(k, m)``.
+        Čech filtration data and ``dt_dcoef`` with shape ``(k, m)``. The
+        trailing ``info`` field mirrors the forward solve's diagnostics.
 
     Raises:
         ValueError: If a quadratic block is not symmetric positive definite.
@@ -480,4 +705,5 @@ def cech_grad(
         dt_dcoef=dt_dcoef,
         support=result.support,
         active_set=result.active_set,
+        info=result.info,
     )

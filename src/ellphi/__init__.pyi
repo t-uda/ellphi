@@ -33,8 +33,10 @@ from .grad import (
     coef_from_cov_grad as coef_from_cov_grad,
 )
 from .cech import (
+    CechInfo as CechInfo,
     CechGrad as CechGrad,
     CechResult as CechResult,
+    CechStage as CechStage,
     cech as cech,
     cech_grad as cech_grad,
 )
@@ -67,6 +69,8 @@ __all__ = [
     "coef_from_cov_grad",
     "CechResult",
     "CechGrad",
+    "CechStage",
+    "CechInfo",
     "cech",
     "cech_grad",
     "FloatArray",

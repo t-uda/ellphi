@@ -11,8 +11,9 @@ a simplex of packed ellipsoid coefficient vectors. For
 is the least squared scale at which all bodies share a common point.
 
 The result fields are ordered as
-`(t, point, mu, support, active_set)`. The gradient result fields are
-ordered as `(t, point, mu, dt_dcoef, support, active_set)`.
+`(t, point, mu, support, active_set, info)`. The gradient result fields are
+ordered as `(t, point, mu, dt_dcoef, support, active_set, info)`. The first
+five fields of `CechResult` retain their historical positional order.
 
 - `t`: the Čech filtration time, with `t^2 = alpha(sigma)`.
 - `point`: the common intersection point `x*` at the critical scale.
@@ -23,6 +24,10 @@ ordered as `(t, point, mu, dt_dcoef, support, active_set)`.
   `I = {i : t^2 - f_i(point) <= active_tol * max(1, t^2)}`; if `alpha` is
   clipped at zero, the actual clipping shift `t^2 - alpha` is added to this
   threshold.
+- `info`: a `CechInfo` record containing `requested_method`, `method_used`,
+  `converged`, the final `gap`, the selected stage's `n_iter`, and its
+  `stages` tuple. Each `CechStage` records `method`, `converged`, `status`,
+  `gap`, and `n_iter`.
 
 The public `cech` and `cech_grad` signatures intentionally do not expose
 matrix stabilization controls such as `regularization`,
@@ -45,15 +50,25 @@ two indices, and `active_set` has three. A solver that does not converge or
 produces non-finite output raises `RuntimeError` naming its method, iterations,
 final duality gap, `tol`, and the scale used for the relative gap test.
 
-The default solver is `fw+brentq+newton`, pairwise Frank-Wolfe on the dual
-simplex with an adaptive Brent line search followed by Newton polishing. Each
-Frank-Wolfe step selects the best vertex (largest constraint value) and the
-worst active vertex (smallest constraint value), then swaps mass along
-`e_s - e_v` with step at most `mu[v]`. Its gap tolerance is relative to
-`max(1, |dual value|)`. On the bundled surrogate, the near-tight zero-weight
-vertex 4 keeps re-entering as the swap target, so the all-index gap can stall;
-the default `fw+brentq+newton` therefore remains non-convergent within the
-default budget. Callers may choose a larger `max_iter` or a different `method`.
+## Default route
+
+The default `method="auto"` is a declared two-stage route. Stage 1 runs
+`fw+brentq+newton` with the caller's `tol`, `max_iter`, and `newton_tol`. If it
+does not converge, stage 2 runs the gap-enforced dual-weight solver
+`scipy-slsqp` from uniform weights with the same `tol`. `info.stages` records
+both stages when the fallback is used, including the first stage's status and
+final gap. The selected stage is reported by `info.method_used`, and the
+requested route remains visible in `info.requested_method`.
+
+The route never reports a non-converged result as success. If both stages fail,
+`cech` raises `RuntimeError` with each stage's status, final gap, and iteration
+or evaluation count. A named method runs only that method and raises on
+failure; named methods never fall back.
+
+Each Frank-Wolfe step in stage 1 selects the best vertex (largest constraint
+value) and the worst active vertex (smallest constraint value), then swaps mass
+along `e_s - e_v` with step at most `mu[v]`. Its gap tolerance is relative to
+`max(1, |dual value|)`.
 
 The private engine's internal field named `active_set` is the weight support
 (historical ellcech naming) and is not part of the public API.
